@@ -702,7 +702,7 @@ function GapSelectionStep({
         <CardHeader>
           <CardTitle className="text-base">Coverage Gaps</CardTitle>
           <CardDescription>
-            Matrix cells with no assets. Click "Create Content" in the Critical Gaps modal to start.
+            Matrix cells with no assets. Click &quot;Create Content&quot; in the Critical Gaps modal to start.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -728,7 +728,7 @@ function TrendingDiscoveryStep({
       <div>
         <h3 className="text-lg font-semibold mb-2">Discover Trending Topics</h3>
         <p className="text-sm text-muted-foreground mb-2">
-          We'll search for current industry conversations from reputable sources (consulting firms, industry media, research organizations) to make your content timely and credible.
+          We&apos;ll search for current industry conversations from reputable sources (consulting firms, industry media, research organizations) to make your content timely and credible.
         </p>
         <p className="text-xs text-muted-foreground mb-4">
           <strong>Value:</strong> Your content will reference current trends and cite credible sources, increasing authority and relevance.
@@ -853,10 +853,10 @@ function IdeaGenerationStep({
       <div>
         <h3 className="text-lg font-semibold mb-2">Generate Content Ideas</h3>
         <p className="text-sm text-muted-foreground mb-2">
-          We'll generate 3-5 strategic content ideas that solve your pain clusters using your brand identity, value proposition, and differentiators.
+          We&apos;ll generate 3-5 strategic content ideas that solve your pain clusters using your brand identity, value proposition, and differentiators.
         </p>
         <p className="text-xs text-muted-foreground mb-4">
-          <strong>Value:</strong> Each idea will directly address the pain cluster and leverage your unique positioning. You'll get ready-to-use concepts.
+          <strong>Value:</strong> Each idea will directly address the pain cluster and leverage your unique positioning. You&apos;ll get ready-to-use concepts.
         </p>
       </div>
 
@@ -915,9 +915,9 @@ function IdeaSelectionStep({
         <div className="bg-muted/50 rounded-md p-3 mb-4">
           <p className="text-xs font-medium mb-1">What happens when you click:</p>
           <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
-            <li>We'll create a detailed content brief (30-45 seconds)</li>
-            <li>You'll review the brief and approve it</li>
-            <li>We'll generate the complete draft with source citations (30-60 seconds)</li>
+            <li>We&apos;ll create a detailed content brief (30-45 seconds)</li>
+            <li>You&apos;ll review the brief and approve it</li>
+            <li>We&apos;ll generate the complete draft with source citations (30-60 seconds)</li>
           </ol>
         </div>
       </div>
@@ -1140,7 +1140,7 @@ function BriefReviewStep({
           Review the strategic brief with section-by-section guidance. This ensures the content aligns with your strategy.
         </p>
         <p className="text-xs text-muted-foreground mb-4">
-          <strong>Next step:</strong> Click "Generate Draft" to create the complete, publication-ready content with source citations.
+          <strong>Next step:</strong> Click &quot;Generate Draft&quot; to create the complete, publication-ready content with source citations.
         </p>
       </div>
 

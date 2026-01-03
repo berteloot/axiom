@@ -108,7 +108,7 @@ export function SaveSearchButton({ filters, disabled, onSaved }: SaveSearchButto
             <p className="font-medium mb-1">Filters to save:</p>
             <ul className="text-muted-foreground space-y-0.5">
               {filters.search && (
-                <li>• Search: "{filters.search}"</li>
+                <li>• Search: &quot;{filters.search}&quot;</li>
               )}
               {filters.funnelStages.length > 0 && (
                 <li>• Funnel: {filters.funnelStages.length} stage(s)</li>

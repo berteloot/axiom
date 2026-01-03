@@ -196,7 +196,7 @@ export function SmartCollectionList({
             <div className="text-sm text-muted-foreground py-4 px-2 text-center">
               <p>No saved collections yet.</p>
               <p className="text-xs mt-1">
-                Apply filters in the dashboard and click "Save View" to create one.
+                Apply filters in the dashboard and click &quot;Save View&quot; to create one.
               </p>
             </div>
           ) : (
@@ -234,7 +234,7 @@ export function SmartCollectionList({
                     <AlertDialogHeader>
                       <AlertDialogTitle>Delete Collection</AlertDialogTitle>
                       <AlertDialogDescription>
-                        Are you sure you want to delete "{collection.name}"? This action cannot be undone.
+                        Are you sure you want to delete &quot;{collection.name}&quot;? This action cannot be undone.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
