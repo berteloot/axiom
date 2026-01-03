@@ -1,0 +1,76 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter, usePathname } from "next/navigation";
+import { useAccount } from "@/lib/account-context";
+
+interface BillingGuardProps {
+  children: React.ReactNode;
+}
+
+export function BillingGuard({ children }: BillingGuardProps) {
+  const { currentAccount, isTrialExpired, isSubscriptionExpired, isLoading } = useAccount();
+  const router = useRouter();
+  const pathname = usePathname();
+  const [mounted, setMounted] = useState(false);
+
+  // Ensure this component only runs client-side logic after mount
+  // This prevents hydration mismatches
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Check if we're on an auth page that should be allowed without an account
+  const isAuthPage = pathname?.startsWith("/auth/") || pathname === "/auth";
+
+  useEffect(() => {
+    // Don't run redirects until component is mounted
+    if (!mounted) return;
+
+    // Don't redirect while loading or if already on billing/auth pages
+    if (isLoading || pathname.startsWith("/billing") || isAuthPage) {
+      return;
+    }
+
+    // Redirect to billing if trial or subscription is expired
+    if (isTrialExpired) {
+      router.push("/billing?reason=trial_expired");
+      return;
+    }
+
+    if (isSubscriptionExpired) {
+      router.push("/billing?reason=subscription_expired");
+      return;
+    }
+
+    // Redirect to account selection if no account is selected
+    if (!currentAccount) {
+      router.push("/auth/select-account");
+      return;
+    }
+  }, [currentAccount, isTrialExpired, isSubscriptionExpired, isLoading, router, pathname, isAuthPage, mounted]);
+
+  // On initial render (server or before mount), always render children
+  // to prevent hydration mismatch. Redirects will happen in useEffect.
+  if (!mounted) {
+    return <>{children}</>;
+  }
+
+  // Always allow auth pages to render (they handle their own auth checks)
+  if (isAuthPage) {
+    return <>{children}</>;
+  }
+
+  // Show loading state while checking account status
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-gray-900"></div>
+      </div>
+    );
+  }
+
+  // Redirect logic happens in useEffect - don't block rendering here
+  // This ensures the UI doesn't go completely blank
+  return <>{children}</>;
+}

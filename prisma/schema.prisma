@@ -1,0 +1,396 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum FunnelStage {
+  TOFU_AWARENESS
+  MOFU_CONSIDERATION
+  BOFU_DECISION
+  RETENTION
+}
+
+enum AssetStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+  APPROVED
+  ERROR
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  CANCELLED
+  EXPIRED
+}
+
+enum EmailVerificationStatus {
+  UNVERIFIED
+  VERIFIED
+  PENDING
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  CANCELLED
+}
+
+enum AccountType {
+  CORPORATE  // Single organization, unlimited users
+  AGENCY     // Multiple organizations, unlimited users
+}
+
+// User model for authentication and user management
+model User {
+  id                   String                  @id @default(cuid())
+  email                String                  @unique
+  name                 String?
+  password             String? // For credentials provider
+  emailVerified        EmailVerificationStatus @default(UNVERIFIED)
+  emailVerifiedAt      DateTime?
+  passwordResetToken   String?
+  passwordResetExpires DateTime?
+  accountType          AccountType?            // null = legacy users (treated as agency)
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+
+  // Relations
+  userAccounts        UserAccount[]
+  sessions            Session[]
+  sentInvitations     Invitation[]       @relation("InvitationSender")
+  receivedInvitations Invitation[]       @relation("InvitationRecipient")
+  smartCollections    SmartCollection[]
+
+  @@map("users")
+}
+
+// Account model (represents a company/organization)
+model Account {
+  id                 String             @id @default(cuid())
+  name               String
+  slug               String             @unique // URL-friendly identifier
+  description        String? // Organization description
+  website            String? // Organization website
+  subscriptionStatus SubscriptionStatus @default(TRIAL)
+  trialEndsAt        DateTime           @default(dbgenerated("NOW() + INTERVAL '14 days'")) // When trial expires, access restricted
+  subscriptionEndsAt DateTime? // For paid subscriptions
+  allowPublicSharing Boolean            @default(false) // Allow public asset sharing
+  requireApproval    Boolean            @default(true) // Require approval for new assets
+  maxFileSize        Int                @default(100) // Max file size in MB
+  retentionDays      Int                @default(365) // Data retention period
+  emailNotifications Boolean            @default(true) // Enable email notifications
+  webhookUrl         String? // Webhook URL for integrations
+  apiRateLimit       Int                @default(1000) // API rate limit per hour
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  // Relations
+  userAccounts     UserAccount[]
+  assets           Asset[]
+  collections      Collection[]
+  brandContext     BrandContext?
+  companyProfile   CompanyProfile? // Legacy - for backward compatibility
+  sessions         Session[]
+  accountManagers  AccountManager[]
+  sentInvitations  Invitation[]       @relation("InvitationAccount")
+  smartCollections SmartCollection[]
+
+  @@map("accounts")
+}
+
+// Account Manager model (informational contact persons for accounts)
+model AccountManager {
+  id        String   @id @default(cuid())
+  accountId String
+  name      String
+  email     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@map("account_managers")
+}
+
+// Many-to-many relationship between Users and Accounts with roles
+model UserAccount {
+  id        String   @id @default(cuid())
+  userId    String
+  accountId String
+  role      UserRole @default(MEMBER)
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, accountId])
+  @@map("user_accounts")
+}
+
+// Session model to track current account selection per user
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  accountId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([userId])
+  @@map("sessions")
+}
+
+// VerificationToken model for NextAuth email authentication
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// Invitation model for agency invites
+model Invitation {
+  id           String           @id @default(cuid())
+  email        String
+  token        String           @unique // Secure token for invite acceptance
+  role         UserRole         @default(MEMBER)
+  status       InvitationStatus @default(PENDING)
+  expiresAt    DateTime // Token expiration
+  invitedById  String // User who sent the invitation
+  accountId    String // Account to join
+  acceptedById String? // User who accepted (null if pending)
+  acceptedAt   DateTime? // When invitation was accepted
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  invitedBy  User    @relation("InvitationSender", fields: [invitedById], references: [id], onDelete: Cascade)
+  account    Account @relation("InvitationAccount", fields: [accountId], references: [id], onDelete: Cascade)
+  acceptedBy User?   @relation("InvitationRecipient", fields: [acceptedById], references: [id], onDelete: SetNull)
+
+  @@index([token])
+  @@index([email])
+  @@index([expiresAt])
+  @@map("invitations")
+}
+
+// Brand Context - Global company identity (one per account)
+model BrandContext {
+  id               String   @id @default(cuid())
+  accountId        String   @unique // One brand context per account
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  brandVoice       String[] // Array of predefined brand voice attributes
+  competitors      String[]
+  targetIndustries String[] // Global/macro industries
+  websiteUrl       String?
+
+  // Strategic context for asset analysis (auto-detected from website)
+  painClusters       String[] // Core problems the company solves (e.g., "Data Silos", "Manual Processes")
+  keyDifferentiators String[] // Unique selling points (e.g., "AI-Powered", "No-Code")
+  primaryICPRoles    String[] // Primary buyer job titles (e.g., "CTO", "VP of Marketing")
+  useCases           String[] // How customers use the product (e.g., "Sales Pipeline Management")
+  roiClaims          String[] // Specific ROI metrics (e.g., "40% cost reduction")
+  valueProposition   String? // Core value prop statement
+  customICPTargets   String[] // Custom ICP job titles created by the account (merged with standard list)
+
+  account      Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  productLines ProductLine[]
+
+  @@map("brand_contexts")
+}
+
+// Product Line - Specific products/categories within a company (many per account)
+model ProductLine {
+  id               String   @id @default(cuid())
+  brandContextId   String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  name             String // e.g., "Cloud Services", "Consumer Electronics"
+  description      String   @db.Text
+  valueProposition String   @db.Text // Why buy THIS product?
+  specificICP      String   @db.Text // Who buys THIS product?
+
+  brandContext BrandContext @relation(fields: [brandContextId], references: [id], onDelete: Cascade)
+  assets       Asset[]
+
+  @@unique([brandContextId, name])
+  @@index([brandContextId])
+  @@map("product_lines")
+}
+
+// Legacy CompanyProfile model - kept for backward compatibility during migration
+// TODO: Remove after data migration is complete
+model CompanyProfile {
+  id                   String   @id @default(cuid())
+  accountId            String   @unique // One profile per account
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  productName          String
+  productDescription   String   @db.Text
+  valueProposition     String   @db.Text
+  targetIndustries     String[]
+  idealCustomerProfile String   @db.Text
+  competitors          String[]
+  brandVoice           String
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@map("company_profiles")
+}
+
+model Asset {
+  id                  String      @id @default(cuid())
+  accountId           String // Account this asset belongs to
+  productLineId       String? // Optional: Which product line this asset belongs to
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  title               String
+  s3Url               String
+  s3Key               String // S3 object key (source of truth for S3 location)
+  fileType            String
+  extractedText       String?     @db.Text
+  funnelStage         FunnelStage
+  icpTargets          String[]
+  painClusters        String[]
+  outreachTip         String      @db.Text
+  status              AssetStatus @default(PENDING)
+  contentQualityScore Int?
+  expiryDate          DateTime?
+  atomicSnippets      Json? // Array of snippet objects
+  customCreatedAt     DateTime? // Manual creation date override
+  lastReviewedAt      DateTime? // Manual last update/review date
+  // AI traceability fields
+  aiModel             String? // Model used for analysis (e.g., "gpt-4o-2024-08-06")
+  promptVersion       String? // Version identifier for the prompt used
+  analyzedAt          DateTime? // When AI analysis was performed
+  aiConfidence        Float? // Overall confidence score (0-1)
+  dominantColor       String? // Dominant color hex code (e.g., "#FF5733")
+
+  // Relations
+  account          Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  productLine      ProductLine?      @relation(fields: [productLineId], references: [id], onDelete: SetNull)
+  collectionAssets CollectionAsset[]
+  derivativeAssets DerivativeAsset[] @relation("DerivedFrom")
+  transcriptSegments TranscriptSegment[]
+  transcriptionJob TranscriptionJob?
+
+  @@index([accountId])
+  @@index([productLineId])
+  @@map("assets")
+}
+
+model TranscriptSegment {
+  id        String   @id @default(cuid())
+  assetId   String
+  text      String   @db.Text
+  startTime Float
+  endTime   Float
+  speaker   String?
+  createdAt DateTime @default(now())
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([assetId])
+  @@index([startTime])
+  @@index([assetId, startTime])
+  @@map("transcript_segments")
+}
+
+model TranscriptionJob {
+  id        String   @id @default(cuid())
+  assetId   String   @unique // One job per asset
+  status    String   // "PENDING", "PROCESSING", "COMPLETED", "FAILED"
+  error     String?  @db.Text
+  progress  Int?     // 0-100 percentage
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  completedAt DateTime?
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([assetId])
+  @@index([status])
+  @@map("transcription_jobs")
+}
+
+model Collection {
+  id          String   @id @default(cuid())
+  accountId   String // Account this collection belongs to
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  name        String
+  description String?  @db.Text
+  slug        String   @unique // For public URLs like /share/fintech-bundle
+  viewCount   Int      @default(0)
+
+  account          Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  collectionAssets CollectionAsset[]
+
+  @@index([accountId])
+  @@map("collections")
+}
+
+model CollectionAsset {
+  id           String   @id @default(cuid())
+  createdAt    DateTime @default(now())
+  collectionId String
+  assetId      String
+  order        Int      @default(0) // For ordering assets in collection
+
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  asset      Asset      @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([collectionId, assetId])
+  @@map("collection_assets")
+}
+
+model DerivativeAsset {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  title       String
+  contentType String // e.g., "LinkedIn Post", "Email Blurb"
+  content     String   @db.Text
+  parentId    String // The original asset this was derived from
+
+  parent Asset @relation("DerivedFrom", fields: [parentId], references: [id], onDelete: Cascade)
+
+  @@map("derivative_assets")
+}
+
+// Smart Collection (Saved Search) - Dynamic folder based on filter state
+model SmartCollection {
+  id          String   @id @default(cuid())
+  name        String
+  userId      String
+  accountId   String // Account this smart collection belongs to
+  filterState Json // Stores active filters: { search, funnelStages, icpTargets, statuses, painClusters, sortBy, sortDirection }
+  createdAt   DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([accountId])
+  @@map("smart_collections")
+}
