@@ -7,23 +7,11 @@ import { requireAccountId } from "@/lib/account-utils";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// TODO: Implement proper authentication
-function isAuthenticated(request: NextRequest): boolean {
-  return true;
-}
-
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    if (!isAuthenticated(request)) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     const accountId = await requireAccountId(request);
 
     // Get the asset and verify it belongs to the current account

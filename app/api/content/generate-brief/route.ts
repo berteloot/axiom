@@ -9,10 +9,6 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-function isAuthenticated(request: NextRequest): boolean {
-  return true;
-}
-
 const ContentBriefSchema = z.object({
   strategicPositioning: z.object({
     whyThisMatters: z.string().describe("Why this content matters for this ICP at this stage"),
@@ -46,13 +42,6 @@ const ContentBriefSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
-    if (!isAuthenticated(request)) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     const accountId = await requireAccountId(request);
     const body = await request.json();
     const { selectedIdea, gap, trendingTopics } = body;

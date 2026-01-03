@@ -23,19 +23,8 @@ const LinkedInPostsSchema = z.object({
   posts: z.array(LinkedInPostSchema).length(3).describe("Three variations of LinkedIn posts with different hooks/angles"),
 });
 
-function isAuthenticated(request: NextRequest): boolean {
-  return true;
-}
-
 export async function POST(request: NextRequest) {
   try {
-    if (!isAuthenticated(request)) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     const accountId = await requireAccountId(request);
     const body = await request.json();
     const { assetId } = body;

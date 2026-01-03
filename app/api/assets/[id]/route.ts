@@ -8,23 +8,11 @@ import { updateAssetSchema } from "@/lib/validations";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// TODO: Implement proper authentication
-function isAuthenticated(request: NextRequest): boolean {
-  return true;
-}
-
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    if (!isAuthenticated(request)) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     const accountId = await requireAccountId(request);
 
     const asset = await prisma.asset.findFirst({
@@ -65,13 +53,6 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
-    if (!isAuthenticated(request)) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     const accountId = await requireAccountId(request);
 
     const body = await request.json();
@@ -156,13 +137,6 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    if (!isAuthenticated(request)) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     const accountId = await requireAccountId(request);
 
     // Get the asset first to get the S3 key and verify it belongs to the account

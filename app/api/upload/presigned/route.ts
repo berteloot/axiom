@@ -5,27 +5,11 @@ import { presignedUploadSchema } from "@/lib/validations";
 import { requireAccountId } from "@/lib/account-utils";
 import { getAccountS3Prefix } from "@/lib/services/account-service";
 
-// TODO: Implement proper authentication
-// For now, this is a placeholder that allows all requests
-function isAuthenticated(request: NextRequest): boolean {
-  // Add your authentication logic here
-  // Example: Check for session token, JWT, etc.
-  return true;
-}
-
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
-    // Check authentication
-    if (!isAuthenticated(request)) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     // Get current account ID for S3 organization
     let accountId: string;
     try {

@@ -1,5 +1,33 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
+    // Validate critical environment variables in production
+    if (process.env.NODE_ENV === 'production') {
+      const requiredEnvVars = [
+        'DATABASE_URL',
+        'NEXTAUTH_SECRET',
+        'NEXTAUTH_URL',
+        'AWS_ACCESS_KEY_ID',
+        'AWS_SECRET_ACCESS_KEY',
+        'AWS_S3_BUCKET_NAME',
+        'OPENAI_API_KEY',
+        'SENDGRID_API_KEY',
+        'EMAIL_FROM',
+      ];
+
+      const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+      
+      if (missingVars.length > 0) {
+        console.error('❌ CRITICAL: Missing required environment variables in production:');
+        missingVars.forEach(varName => console.error(`   - ${varName}`));
+        throw new Error(
+          `Missing required environment variables: ${missingVars.join(', ')}. ` +
+          'Please set all required environment variables before starting the application.'
+        );
+      }
+
+      console.log('✅ All required environment variables are set');
+    }
+
     // Only run on server-side (not in Edge runtime)
     const { prisma } = await import('./lib/prisma');
 

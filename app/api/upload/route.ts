@@ -18,21 +18,8 @@ const s3Client = new S3Client({
 
 const BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME || "";
 
-// TODO: Implement proper authentication
-function isAuthenticated(request: NextRequest): boolean {
-  return true;
-}
-
 export async function POST(request: NextRequest) {
   try {
-    // Check authentication
-    if (!isAuthenticated(request)) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     // Get the file from the request
     const formData = await request.formData();
     const file = formData.get("file") as File;

@@ -7,11 +7,6 @@ import { processAssetAsync } from "@/lib/services/asset-processor";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// TODO: Implement proper authentication
-function isAuthenticated(request: NextRequest): boolean {
-  return true;
-}
-
 /**
  * Retry processing a failed asset
  */
@@ -20,13 +15,6 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    if (!isAuthenticated(request)) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     const accountId = await requireAccountId(request);
 
     // Get the asset and verify it belongs to the current account

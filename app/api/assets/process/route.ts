@@ -9,24 +9,10 @@ import { processAssetSchema } from "@/lib/validations";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// TODO: Implement proper authentication
-function isAuthenticated(request: NextRequest): boolean {
-  // Add your authentication logic here
-  return true;
-}
-
 export async function POST(request: NextRequest) {
   try {
     console.log("Processing asset request...");
     
-    // Check authentication
-    if (!isAuthenticated(request)) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     const body = await request.json();
 
     // Validate request body

@@ -21,11 +21,28 @@ if (SENDGRID_API_KEY) {
   console.log("⚠️  SendGrid not configured - emails will be logged to console (DEV MODE)");
 }
 
-// Development fallback values
 // Ensure NEXTAUTH_URL is always set
 const NEXTAUTH_URL = process.env.NEXTAUTH_URL || 
   (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
-const NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "development-secret-key-change-this-in-production-12345678901234567890";
+
+// NEXTAUTH_SECRET is required - throw error in production if missing
+const NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET;
+if (!NEXTAUTH_SECRET) {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "❌ CRITICAL: NEXTAUTH_SECRET environment variable is required in production. " +
+      "Set it in your environment variables or .env file. " +
+      "Generate a secure secret with: openssl rand -base64 32"
+    );
+  } else {
+    // In development, warn but allow (developer can use .env file)
+    console.warn(
+      "⚠️  WARNING: NEXTAUTH_SECRET environment variable is not set. " +
+      "Add it to your .env file for development. " +
+      "Generate with: openssl rand -base64 32"
+    );
+  }
+}
 
 // Log configuration for debugging
 if (process.env.NODE_ENV === "development") {
@@ -39,7 +56,7 @@ export const authOptions: NextAuthOptions = {
   session: {
     strategy: "jwt",
   },
-  secret: NEXTAUTH_SECRET,
+  secret: NEXTAUTH_SECRET || undefined, // NextAuth will handle missing secret in dev
   // Let NextAuth auto-detect the URL from the request
   // This avoids client-side URL construction issues
   pages: {

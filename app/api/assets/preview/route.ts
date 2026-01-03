@@ -5,22 +5,10 @@ import { getPresignedDownloadUrl, extractKeyFromS3Url } from "@/lib/s3";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// TODO: Implement proper authentication
-function isAuthenticated(request: NextRequest): boolean {
-  return true;
-}
-
 export async function POST(request: NextRequest) {
   let s3Url: string | undefined;
   
   try {
-    if (!isAuthenticated(request)) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     const body = await request.json();
     s3Url = body.s3Url;
 

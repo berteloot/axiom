@@ -2,21 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireAccountId } from "@/lib/account-utils"
 
-function isAuthenticated(request: NextRequest): boolean {
-  // Add your authentication logic here
-  // For now, we'll assume authenticated if there's a session/token
-  return true
-}
-
 export async function GET(request: NextRequest) {
   try {
-    if (!isAuthenticated(request)) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      )
-    }
-
     const accountId = await requireAccountId(request);
 
     // Get the company profile for the current account
@@ -49,13 +36,6 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    if (!isAuthenticated(request)) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      )
-    }
-
     const accountId = await requireAccountId(request);
 
     const body = await request.json()

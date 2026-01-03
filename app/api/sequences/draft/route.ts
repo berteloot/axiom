@@ -10,9 +10,6 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-function isAuthenticated(request: NextRequest): boolean {
-  return true;
-}
 
 // Schema for sequence email response
 const EmailSchema = z.object({
@@ -51,31 +48,6 @@ function sortAssetsByStage(assets: any[]) {
 
 export async function POST(request: NextRequest) {
   try {
-    if (!isAuthenticated(request)) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
-    const accountId = await requireAccountId(request);
-    const body = await request.json();
-    const { assetIds } = body;
-
-    if (!Array.isArray(assetIds) || assetIds.length < 2 || assetIds.length > 4) {
-      return NextResponse.json(
-        { error: "Please select 2-4 assets for the sequence" },
-        { status: 400 }
-      );
-    }
-
-    // Fetch the selected assets with their metadata
-    const assets = await prisma.asset.findMany({
-      where: {
-        id: { in: assetIds },
-        accountId,
-      },
-    });
 
     if (assets.length !== assetIds.length) {
       return NextResponse.json(
