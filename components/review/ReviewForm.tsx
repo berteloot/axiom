@@ -94,6 +94,27 @@ export function ReviewForm({
     fetchIcpTargets();
   }, []); // Only on mount - component remounts when modal opens due to key prop
 
+  // Fetch product lines on mount
+  useEffect(() => {
+    const fetchProductLines = async () => {
+      setIsLoadingProductLines(true);
+      try {
+        const response = await fetch("/api/product-lines");
+        if (response.ok) {
+          const data = await response.json();
+          setProductLines(data.productLines || []);
+        } else {
+          console.error("[ReviewForm] Failed to fetch product lines:", response.status);
+        }
+      } catch (error) {
+        console.error("[ReviewForm] Error fetching product lines:", error);
+      } finally {
+        setIsLoadingProductLines(false);
+      }
+    };
+    fetchProductLines();
+  }, []); // Only on mount - component remounts when modal opens due to key prop
+
   // Auto-save custom ICP targets when they're created
   const handleIcpTargetsChange = async (selected: string[]) => {
     onFormDataChange({ icpTargets: selected });
@@ -145,7 +166,7 @@ export function ReviewForm({
 
       <div className="space-y-2">
         <div className="flex items-center gap-2">
-          <Label className="flex items-center gap-2">
+          <Label htmlFor="productLines" className="flex items-center gap-2">
             <Package className="h-4 w-4 text-muted-foreground" />
             Product Lines
           </Label>
@@ -167,7 +188,7 @@ export function ReviewForm({
           emptyText="No product lines found"
           disabled={isLoadingProductLines}
         />
-        {formData.productLineIds.length > 0 && (
+        {formData.productLineIds && formData.productLineIds.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-2">
             {formData.productLineIds.map((id) => {
               const productLine = productLines.find(pl => pl.id === id);
@@ -175,7 +196,7 @@ export function ReviewForm({
               return (
                 <Badge
                   key={id}
-                  variant="secondary"
+                  variant="outline"
                   className="text-xs flex items-center gap-1"
                 >
                   {productLine.name}
@@ -185,7 +206,7 @@ export function ReviewForm({
                       const newIds = formData.productLineIds.filter((i) => i !== id);
                       onFormDataChange({ productLineIds: newIds });
                     }}
-                    className="ml-1 hover:bg-secondary-foreground/20 rounded-full p-0.5"
+                    className="ml-1 hover:bg-muted rounded-full p-0.5"
                     aria-label={`Remove ${productLine.name}`}
                   >
                     <X className="h-3 w-3" />
@@ -196,7 +217,7 @@ export function ReviewForm({
           </div>
         )}
         <p className="text-xs text-muted-foreground">
-          Select product lines this asset belongs to. An asset can belong to multiple product lines.
+          {formData.productLineIds.length} product line{formData.productLineIds.length !== 1 ? 's' : ''} selected
         </p>
       </div>
 
