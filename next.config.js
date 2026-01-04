@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // IMPORTANT: Do NOT add output: "export" - this app requires SSR
+  // Deploy as Web Service (SSR) on Render, not as Static Site
   reactStrictMode: true,
   // Reduce aggressive reloading in development
   onDemandEntries: {

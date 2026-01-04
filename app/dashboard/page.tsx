@@ -1,6 +1,12 @@
 import { Suspense } from "react";
 import DashboardClient from "./DashboardClient";
 
+// Force dynamic rendering - this page uses client-side hooks that require runtime data
+// NOTE: This only works if deployed as Web Service (SSR), not Static Site
+// Ensure Render is configured as "Web Service" not "Static Site"
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 // Loading skeleton for dashboard
 function DashboardSkeleton() {
   return (

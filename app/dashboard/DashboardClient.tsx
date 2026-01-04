@@ -26,6 +26,41 @@ import { SaveSearchButton } from "@/components/smart-collections";
 import DownloadReportButton from "@/components/reports/DownloadReportButton";
 import { useAccount } from "@/lib/account-context";
 
+// Runtime guard to identify undefined components during build
+if (typeof window === 'undefined') {
+  // Server-side: log component availability
+  const components = {
+    Tabs,
+    TabsList,
+    TabsTrigger,
+    TabsContent,
+    Card,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle,
+    Button,
+    AssetMatrix,
+    AssetTable,
+    ReviewModal,
+    UploadModal,
+    SequenceActionBar,
+    SequenceModal,
+    AssetFilters,
+    CriticalGapsModal,
+    SaveSearchButton,
+    DownloadReportButton,
+  };
+  
+  const undefinedComponents = Object.entries(components)
+    .filter(([_, component]) => component === undefined)
+    .map(([name]) => name);
+  
+  if (undefinedComponents.length > 0) {
+    console.error('[DashboardClient] Undefined components detected:', undefinedComponents);
+  }
+}
+
 const STAGES: FunnelStage[] = [
   "TOFU_AWARENESS",
   "MOFU_CONSIDERATION",
