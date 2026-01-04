@@ -54,6 +54,27 @@ export function ProductLineForm({
     },
   })
 
+  const { reset } = form
+
+  // Reset form when initialData changes (important for edit mode)
+  React.useEffect(() => {
+    if (initialData) {
+      reset({
+        name: initialData.name || "",
+        description: initialData.description || "",
+        valueProposition: initialData.valueProposition || "",
+        specificICP: initialData.specificICP || [],
+      })
+    } else {
+      reset({
+        name: "",
+        description: "",
+        valueProposition: "",
+        specificICP: [],
+      })
+    }
+  }, [initialData, reset])
+
   const handleSubmit = form.handleSubmit(async (data) => {
     await onSubmit(data)
   })

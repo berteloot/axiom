@@ -125,6 +125,7 @@ export function ProductLinesManager({
               </DialogDescription>
             </DialogHeader>
             <ProductLineForm
+              key={editingProductLine?.id || "new"}
               initialData={editingProductLine ? {
                 name: editingProductLine.name,
                 description: editingProductLine.description,
