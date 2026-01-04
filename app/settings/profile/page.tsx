@@ -355,8 +355,8 @@ export default function CompanyProfilePage() {
             <div className="p-4 rounded-lg bg-muted/50 border border-border mb-4">
               <h4 className="font-medium mb-2">Why Product Lines?</h4>
               <p className="text-sm text-muted-foreground">
-                If your company has multiple products or categories (e.g., &quot;Cloud Services&quot; vs. &quot;Consumer Electronics&quot;),
-                define them here. The AI will identify which product line each asset belongs to and analyze it accordingly.
+                Product lines can represent business units, service offerings, product categories, or other organizational dimensions (e.g., &quot;Cloud Services&quot; vs. &quot;Consumer Electronics&quot;, &quot;Enterprise Solutions&quot; vs. &quot;SMB Products&quot;).
+                Define them here to help the AI identify which product line each asset belongs to and analyze it accordingly.
               </p>
             </div>
 

@@ -219,7 +219,7 @@ export function ProductLineForm({
           placeholder="e.g., Cloud Services, Consumer Electronics, Residential Solar"
         />
         <p className="text-xs text-muted-foreground">
-          A broad category or product line within your company.
+          A broad category, product line, business unit, service offering, or other dimension within your company (e.g., &quot;Cloud Services&quot;, &quot;Consumer Electronics&quot;, &quot;Enterprise Solutions&quot;).
         </p>
         {form.formState.errors.name && (
           <p className="text-sm text-red-500">

@@ -131,7 +131,7 @@ export function ProductLinesManager({
         <div>
           <h3 className="text-lg font-medium">Product Lines</h3>
           <p className="text-sm text-muted-foreground">
-            Define the different product categories or lines your company offers.
+            Define the different product categories, business units, services, or other dimensions your company offers.
           </p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={(open) => {
@@ -161,7 +161,7 @@ export function ProductLinesManager({
               <DialogDescription>
                 {editingProductLine 
                   ? "Update the details of this product line. Only the name is required."
-                  : "Create a new product line or category. Only the name is required—you can add descriptions and details later to help the AI better understand your products."
+                  : "Create a new product line, business unit, service offering, or other dimension. Only the name is required—you can add descriptions and details later to help the AI better understand your products."
                 }
               </DialogDescription>
             </DialogHeader>
