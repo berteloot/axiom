@@ -5,8 +5,28 @@ interface UploadProgress {
   message?: string;
 }
 
+
 // Threshold for using presigned URL direct upload (50MB or all videos)
 const PRESIGNED_THRESHOLD = 50 * 1024 * 1024; // 50MB
+
+// Helper: Read error body for fetch responses, prefer JSON error if available
+async function readErrorBody(res: Response): Promise<string> {
+  // Read the body ONCE, then try to parse JSON for a nicer message.
+  const raw = await res.text().catch(() => "");
+  if (!raw) return "";
+
+  try {
+    const data = JSON.parse(raw) as unknown;
+    if (data && typeof data === "object" && "error" in data) {
+      const err = (data as { error?: unknown }).error;
+      if (typeof err === "string") return err;
+    }
+  } catch {
+    // ignore JSON parse errors
+  }
+
+  return raw;
+}
 
 export function useFileUpload(onSuccess?: () => void) {
   const [uploadProgress, setUploadProgress] = useState<UploadProgress>({ status: "idle" });
@@ -102,10 +122,9 @@ export function useFileUpload(onSuccess?: () => void) {
         }
 
         if (!presignedRes.ok) {
-          const text = await presignedRes.text().catch(() => "");
-          const errorData = await presignedRes.json().catch(() => ({ error: text }));
+          const errText = await readErrorBody(presignedRes);
           throw new Error(
-            `Presigned URL error: ${presignedRes.status} ${presignedRes.statusText} - ${errorData.error || text}`.trim()
+            `Presigned URL error: ${presignedRes.status} ${presignedRes.statusText}${errText ? ` - ${errText}` : ""}`.trim()
           );
         }
 
@@ -116,7 +135,8 @@ export function useFileUpload(onSuccess?: () => void) {
 
         key = presignedKey;
         fileName = file.name;
-        fileType = file.type || "application/octet-stream";
+        // IMPORTANT: must match the Content-Type used when generating the presigned URL
+        fileType = inferredFileType || file.type || "application/octet-stream";
 
         // 2) Upload directly to S3 using presigned URL
         // Use a longer timeout for large video uploads (1 hour should be enough)
@@ -166,10 +186,9 @@ export function useFileUpload(onSuccess?: () => void) {
         });
 
         if (!uploadRes.ok) {
-          const text = await uploadRes.text().catch(() => "");
-          const errorData = await uploadRes.json().catch(() => ({ error: text }));
+          const errText = await readErrorBody(uploadRes);
           throw new Error(
-            `Upload error: ${uploadRes.status} ${uploadRes.statusText} - ${errorData.error || text}`.trim()
+            `Upload error: ${uploadRes.status} ${uploadRes.statusText}${errText ? ` - ${errText}` : ""}`.trim()
           );
         }
 
@@ -198,8 +217,10 @@ export function useFileUpload(onSuccess?: () => void) {
       });
 
       if (!processRes.ok) {
-        const text = await processRes.text().catch(() => "");
-        throw new Error(`Process error: ${processRes.status} ${processRes.statusText} ${text}`.trim());
+        const errText = await readErrorBody(processRes);
+        throw new Error(
+          `Process error: ${processRes.status} ${processRes.statusText}${errText ? ` - ${errText}` : ""}`.trim()
+        );
       }
 
       const result = await processRes.json();
