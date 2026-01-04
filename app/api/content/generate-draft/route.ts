@@ -358,6 +358,14 @@ You have NO reputable sources. This means:
 
     const systemPrompt = `You are a Senior B2B Content Writer creating a complete, publication-ready content draft.
 
+🔴 CRITICAL: WEB SEARCH & SOURCE REQUIREMENTS:
+- This content MUST be backed by reputable sources found through web search
+- ALL statistics, data points, and claims MUST be supported by the provided source URLs
+- You MUST include ALL reputable source URLs in the sources array
+- Source URLs are essential for credibility and fact-checking
+- If sources are provided, you MUST use them and cite them properly
+- Never create content without proper source attribution
+
 🔴 CRITICAL FACT-CHECKING RULES (MANDATORY - NO EXCEPTIONS):
 1. **NEVER make up facts, statistics, or numbers** - ONLY use data that appears in the source content extracts provided below
 2. **NEVER invent case studies, company names, or examples** - If a source doesn't mention "Company X", you CANNOT create it
@@ -415,6 +423,101 @@ ${sourcesText}`;
                       idea.assetType === "Case_Study" || 
                       brief.contentStructure.totalEstimatedWords > 2000;
 
+    // Determine content format requirements based on asset type
+    const isNonTextContent = idea.assetType === "Infographic" || idea.assetType === "Webinar_Recording";
+    
+    const formatSpecificInstructions = isNonTextContent
+      ? idea.assetType === "Infographic"
+        ? `
+🔴 INFOGRAPHIC CONTENT DRAFT REQUIREMENTS:
+
+You must create a COMPLETE, PRODUCTION-READY infographic content draft that includes:
+
+1. **Visual Structure & Layout**:
+   - Detailed section-by-section breakdown of visual elements
+   - Layout description (e.g., "Top banner with headline", "Left column with statistics", "Center flow diagram")
+   - Visual hierarchy and flow
+   - Color scheme suggestions (if relevant to brand)
+   - Typography recommendations (headlines, body text, captions)
+
+2. **Content for Each Visual Section**:
+   - Exact text for headlines, subheadings, and body copy
+   - Statistics and data points formatted for visual display
+   - Callout boxes with key messages
+   - Icon/graphic suggestions for each section
+   - Data visualizations needed (charts, graphs, diagrams)
+
+3. **Visual Elements Description**:
+   - Specific charts/graphs needed (bar chart, pie chart, flow diagram, etc.)
+   - Icons or illustrations required
+   - Visual metaphors or imagery suggestions
+   - Any infographic-specific elements (timelines, comparisons, before/after, etc.)
+
+4. **Production Notes**:
+   - Dimensions and format recommendations
+   - File format suggestions (for designer reference)
+   - Accessibility considerations (alt text, color contrast)
+   - Social media variations (if applicable)
+
+5. **Source Citations**:
+   - All statistics must be cited with source URLs
+   - Include a "Sources" section at the bottom of the infographic content
+   - Format citations for visual display (compact, readable)
+
+The draft should be structured so a designer can immediately start creating the visual infographic. Include ALL text content, data points, and visual specifications needed for production.
+`
+        : `
+🔴 WEBINAR RECORDING CONTENT DRAFT REQUIREMENTS:
+
+You must create a COMPLETE, PRODUCTION-READY webinar script/outline that includes:
+
+1. **Webinar Structure**:
+   - Opening hook (first 30 seconds)
+   - Introduction and agenda
+   - Main content sections (3-5 key sections)
+   - Q&A preparation section
+   - Closing call-to-action
+
+2. **Detailed Script for Each Section**:
+   - Speaker notes and talking points
+   - Exact transitions between sections
+   - Key messages to emphasize
+   - Visual aids/slides needed for each section
+   - Timing estimates for each segment
+
+3. **Slide Deck Outline**:
+   - Slide-by-slide breakdown with:
+     * Slide title
+     * Key bullet points or content
+     * Visual suggestions (charts, diagrams, images)
+     * Speaker notes for each slide
+
+4. **Interactive Elements**:
+   - Poll questions to engage audience
+   - Discussion prompts
+   - Breakout session suggestions (if applicable)
+   - Q&A preparation (anticipated questions and answers)
+
+5. **Supporting Materials**:
+   - Handout/one-pager content
+   - Follow-up email content
+   - Social media promotion copy
+
+6. **Source Citations**:
+   - All statistics and data must be cited
+   - Include source URLs in speaker notes
+   - Reference sources during presentation (verbal citations)
+
+7. **Production Notes**:
+   - Recommended duration
+   - Technical requirements
+   - Platform-specific considerations
+   - Recording tips
+
+The draft should be a complete script/outline that a presenter can use to deliver the webinar. Include ALL content, talking points, and production guidance needed.
+`
+      : "";
+
     const userPrompt = `Create a complete, publication-ready content draft based on this brief:
 
 CONTENT BRIEF:
@@ -434,6 +537,7 @@ This is a ${idea.assetType} targeting ${brief.contentStructure.totalEstimatedWor
 - Ensure each section builds on the previous one
 - Keep the pain cluster solution thread consistent throughout
 ` : ""}
+${formatSpecificInstructions}
 
 REQUIREMENTS:
 
@@ -509,7 +613,12 @@ If you didn't use a source but it was provided, still include it with a general 
 
 OUTPUT REQUIREMENTS:
 - Complete content draft ready for publication (after fact-checking marked items)
-- **Content must include inline citations** using publication names (e.g., "According to McKinsey & Company...")
+${isNonTextContent 
+  ? `- **For ${idea.assetType}**: Create a production-ready draft that includes all content, structure, and specifications needed to produce the final asset
+- **All text content** that will appear in the final asset (headlines, body copy, captions, speaker notes, etc.)
+- **Visual/structure specifications** needed for production (layout, slides, visual elements)
+- **Source citations** must be included in the content and formatted appropriately for the asset type`
+  : `- **Content must include inline citations** using publication names (e.g., "According to McKinsey & Company...")
 - **At the end of the content**, add a "Sources" or "References" section listing all sources used:
   
   ## Sources
@@ -526,7 +635,7 @@ OUTPUT REQUIREMENTS:
   Example: If a source has url: "https://mckinsey.com/article" and title: "McKinsey Report", 
   write: - [McKinsey Report](https://mckinsey.com/article) - consulting
   
-  Use markdown link format for URLs so they're clickable.
+  Use markdown link format for URLs so they're clickable.`}
 - **sources array**: MUST include ALL reputable sources provided above${reputableSourcesAll.length > 0 ? ` (you must include all ${reputableSourcesAll.length} sources listed above)` : " (if any reputable sources were provided)"}
   - Each source in the array should have:
     - url: Full URL
@@ -534,7 +643,10 @@ OUTPUT REQUIREMENTS:
     - sourceType: Type of source
     - citation: How it was cited in the content (e.g., "Cited as 'McKinsey & Company' in statistics about operational efficiency")
 - Fact-check notes for any claims that need verification
-- Word count and reading time estimate`;
+${isNonTextContent 
+  ? `- Production notes and specifications
+- Estimated production time/complexity`
+  : `- Word count and reading time estimate`}`;
 
     const completion = await openai.chat.completions.parse({
       model: "gpt-4o-2024-08-06",

@@ -10,46 +10,41 @@ export function useFileUpload(onSuccess?: () => void) {
 
   const uploadFile = useCallback(async (file: File) => {
     try {
-      setUploadProgress({ status: "uploading", message: "Requesting upload URL..." });
+      setUploadProgress({ status: "uploading", message: "Uploading file..." });
 
-      // 1) Ask API for presigned URL
-      const presignedRes = await fetch("/api/upload/presigned", {
+      // 1) Upload file through backend API (avoids CORS issues)
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const uploadRes = await fetch("/api/upload", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileName: file.name, fileType: file.type || "application/octet-stream" }),
+        body: formData,
       });
 
-      if (!presignedRes.ok) {
-        const text = await presignedRes.text().catch(() => "");
-        throw new Error(`Presigned URL error: ${presignedRes.status} ${presignedRes.statusText} ${text}`.trim());
+      if (!uploadRes.ok) {
+        const text = await uploadRes.text().catch(() => "");
+        const errorData = await uploadRes.json().catch(() => ({ error: text }));
+        throw new Error(
+          `Upload error: ${uploadRes.status} ${uploadRes.statusText} - ${errorData.error || text}`.trim()
+        );
       }
 
-      const { url, key } = (await presignedRes.json()) as { url: string; key: string };
-
-      setUploadProgress({ status: "uploading", message: "Uploading to S3..." });
-
-      // 2) Upload directly to S3 using PUT
-      const putRes = await fetch(url, {
-        method: "PUT",
-        headers: { "Content-Type": file.type || "application/octet-stream" },
-        body: file,
-      });
-
-      if (!putRes.ok) {
-        const text = await putRes.text().catch(() => "");
-        throw new Error(`S3 upload error: ${putRes.status} ${putRes.statusText} ${text}`.trim());
-      }
+      const { key, fileName, fileType } = (await uploadRes.json()) as {
+        key: string;
+        fileName: string;
+        fileType: string;
+      };
 
       setUploadProgress({ status: "processing", message: "Processing asset..." });
 
-      // 3) Trigger processing
+      // 2) Trigger processing
       const processRes = await fetch("/api/assets/process", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           key,
-          title: file.name,
-          fileType: file.type || "application/octet-stream",
+          title: fileName,
+          fileType: fileType || file.type || "application/octet-stream",
         }),
       });
 

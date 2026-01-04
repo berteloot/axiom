@@ -234,7 +234,9 @@ REQUIREMENTS:
 
 2. **Content Structure** (for [asset type])
    - **MUST include a section that directly addresses the pain cluster**: [pain cluster]
-   - Provide 3-5 recommended sections with:
+   - **For Infographic**: Provide visual structure with layout sections, visual elements needed, text content for each element, data visualizations required, and design recommendations
+   - **For Webinar Recording**: Provide script structure with opening hook, main presentation sections, slide-by-slide outline, interactive elements, and estimated duration
+   - **For text content**: Provide 3-5 recommended sections with:
      * Section title
      * Key messages per section (2-3 messages) - each should relate to solving the pain cluster
      * How this section solves the pain cluster (be specific)
@@ -245,6 +247,8 @@ REQUIREMENTS:
      * Case Study: 1000-2000 words
      * Blog Post: 800-1500 words
      * Technical Doc: Variable
+     * Infographic: Variable (focus on visual structure and text content)
+     * Webinar Recording: Variable (focus on script structure and duration)
 
 3. **Tone & Style Guidelines**
    - Brand voice: [brand voice]
@@ -275,6 +279,14 @@ Provide a comprehensive brief matching the schema.
 ```
 You are a Senior B2B Content Writer creating a complete, publication-ready content draft.
 
+🔴 CRITICAL: WEB SEARCH & SOURCE REQUIREMENTS:
+- This content MUST be backed by reputable sources found through web search
+- ALL statistics, data points, and claims MUST be supported by the provided source URLs
+- You MUST include ALL reputable source URLs in the sources array
+- Source URLs are essential for credibility and fact-checking
+- If sources are provided, you MUST use them and cite them properly
+- Never create content without proper source attribution
+
 🔴 CRITICAL FACT-CHECKING RULES (MANDATORY - NO EXCEPTIONS):
 1. **NEVER make up facts, statistics, or numbers** - ONLY use data that appears in the source content extracts provided below
 2. **NEVER invent case studies, company names, or examples** - If a source doesn't mention "Company X", you CANNOT create it
@@ -297,8 +309,9 @@ Your goal is to create a complete, publication-ready content draft that:
 1. **Solves the pain cluster(s)** - Clearly demonstrates how to solve the identified pain cluster
 2. Follows the content brief structure exactly
 3. Uses brand voice consistently
-4. Includes source citations for all data/statistics
-5. Is ready for immediate use (with fact-checking of marked items)
+4. Includes source citations for all data/statistics with URLs
+5. **For non-text content types (Infographic, Webinar_Recording)**: Creates production-ready drafts with all content, structure, and specifications needed
+6. Is ready for immediate use (with fact-checking of marked items)
 
 B2B CONTENT BEST PRACTICES:
 - Problem-first structure (agitate pain, then present solution)
@@ -394,9 +407,12 @@ REQUIREMENTS:
 
 OUTPUT:
 - Complete content draft ready for publication (after fact-checking marked items)
-- List of sources used with proper citations
+  - **For Infographic**: Visual structure, all text content, data visualizations, production specifications
+  - **For Webinar Recording**: Complete script, slide outline, talking points, interactive elements, production notes
+  - **For text content**: Full written content with inline citations
+- **List of sources used with proper citations and URLs** - ALL reputable source URLs MUST be included
 - Fact-check notes for any claims that need verification
-- Word count and reading time estimate
+- Word count and reading time estimate (for text content) OR production specifications (for non-text content)
 ```
 
 ---
@@ -408,10 +424,13 @@ OUTPUT:
 - Uses 🔴 CRITICAL markers for mandatory requirements
 - Requires demonstration of HOW to solve pain clusters
 
-### 2. **Source Credibility**
+### 2. **Source Credibility & Web Search**
+- **Web search is ALWAYS performed** via Jina AI Search API during trending topics discovery
 - Explicitly excludes competitor blogs
 - Prioritizes reputable sources (consulting, media, research)
-- Requires source citations for all data
+- Requires source citations for all data with URLs
+- ALL reputable source URLs MUST be included in the sources array
+- Sources are searched from reputable publications (McKinsey, Deloitte, Gartner, industry media, research orgs)
 
 ### 3. **Fact-Checking Safeguards**
 - Never make up facts (explicitly stated)
@@ -434,6 +453,12 @@ OUTPUT:
 - No engagement bait
 - No vague qualifiers
 - Clear, direct language
+
+### 7. **Non-Text Content Handling**
+- **Infographics**: Draft includes complete visual structure, all text content, data visualizations, layout specifications, and production notes
+- **Webinar Recordings**: Draft includes complete script, slide-by-slide outline, talking points, interactive elements, and production guidance
+- All non-text content drafts are production-ready and include all specifications needed to create the final asset
+- Source URLs are always included for credibility and fact-checking
 
 ---
 

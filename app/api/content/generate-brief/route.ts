@@ -149,7 +149,24 @@ REQUIREMENTS:
 
 2. **Content Structure** (for ${selectedIdea.assetType})
    - **MUST include a section that directly addresses the pain cluster**: ${gap.painCluster || brandContext.painClusters[0] || "Not specified"}
-   - Provide 3-5 recommended sections with:
+   ${selectedIdea.assetType === "Infographic"
+     ? `- **For Infographic**: Provide visual structure with:
+     * Layout sections (e.g., header, main content areas, footer)
+     * Visual elements needed per section (charts, icons, diagrams)
+     * Text content for each visual element (headlines, statistics, captions)
+     * Data visualizations required (bar charts, pie charts, flow diagrams, timelines)
+     * Color and design recommendations
+     * Estimated dimensions and format`
+     : selectedIdea.assetType === "Webinar_Recording"
+     ? `- **For Webinar Recording**: Provide script structure with:
+     * Opening hook and introduction
+     * Main presentation sections (3-5 key sections)
+     * Slide-by-slide outline with talking points
+     * Interactive elements (polls, Q&A preparation)
+     * Closing and call-to-action
+     * Estimated duration (typically 30-60 minutes)
+     * Supporting materials needed (handouts, follow-up content)`
+     : `- Provide 3-5 recommended sections with:
      * Section title
      * Key messages per section (2-3 messages) - each should relate to solving the pain cluster
      * How this section solves the pain cluster (be specific)
@@ -161,7 +178,7 @@ REQUIREMENTS:
      * Whitepaper: 2000-4000 words
      * Case Study: 1000-2000 words
      * Blog Post: 800-1500 words
-     * Technical Doc: Variable
+     * Technical Doc: Variable`}
 
 3. **Tone & Style Guidelines**
    - Brand voice: ${brandVoiceText}
