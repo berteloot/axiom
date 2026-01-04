@@ -14,7 +14,7 @@ services:
     runtime: node
     plan: starter  # Free tier, upgrade as needed
     region: oregon  # Should match database region
-    buildCommand: apt-get update && apt-get install -y ffmpeg && npm install && npx prisma generate && npm run build
+    buildCommand: npm install && npx prisma generate && npm run build
     startCommand: npm start
     healthCheckPath: /
     envVars:

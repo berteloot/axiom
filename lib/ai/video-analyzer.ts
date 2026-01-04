@@ -8,50 +8,24 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { writeFile, readFile, unlink } from "fs/promises";
 import { randomUUID } from "crypto";
-import { platform } from "os";
 import { processVideoFromS3 } from "./video-transcriber";
 
-    // Dynamically set ffmpeg path based on platform
-    // This function is called at runtime, not at module load time, to avoid webpack bundling issues
-    function setFfmpegPath() {
-      try {
-        let ffmpegPath: { path: string } | null = null;
-        const currentPlatform = platform();
-        const currentArch = process.arch;
+// ============================================================================
+// FFMPEG SETUP (for audio extraction)
+// ============================================================================
 
-        // Use eval to make require() dynamic and prevent webpack from bundling
-        const dynamicRequire = (moduleName: string) => {
-          return eval('require')(moduleName);
-        };
-    
-    if (currentPlatform === "darwin") {
-      // Check if it's ARM64 (Apple Silicon) or x64 (Intel)
-      if (currentArch === "arm64") {
-        ffmpegPath = dynamicRequire("@ffmpeg-installer/darwin-arm64");
-      } else {
-        ffmpegPath = dynamicRequire("@ffmpeg-installer/darwin-x64");
-      }
-    } else if (currentPlatform === "linux") {
-      if (currentArch === "arm64") {
-        ffmpegPath = dynamicRequire("@ffmpeg-installer/linux-arm64");
-      } else {
-        ffmpegPath = dynamicRequire("@ffmpeg-installer/linux-x64");
-      }
-    } else if (currentPlatform === "win32") {
-      ffmpegPath = dynamicRequire("@ffmpeg-installer/win32-x64");
-    } else {
-      // Fallback: try to use system ffmpeg if available
-      console.warn(`[FFMPEG] Unsupported platform: ${currentPlatform}, trying system ffmpeg`);
-      return; // Don't set path, let fluent-ffmpeg use system ffmpeg
-    }
-    
-    if (ffmpegPath && ffmpegPath.path) {
-      ffmpeg.setFfmpegPath(ffmpegPath.path);
-      console.log(`[FFMPEG] Using platform-specific ffmpeg: ${ffmpegPath.path}`);
+// Set ffmpeg path using ffmpeg-static (portable, works on all platforms)
+function setFfmpegPath() {
+  try {
+    // Use dynamic require to prevent webpack from bundling ffmpeg-static at build time
+    const ffmpegStatic = eval('require')('ffmpeg-static');
+    if (ffmpegStatic) {
+      ffmpeg.setFfmpegPath(ffmpegStatic);
+      console.log(`[FFMPEG] Using ffmpeg-static: ${ffmpegStatic}`);
     }
   } catch (error) {
-    console.warn("[FFMPEG] Could not load platform-specific ffmpeg installer, trying system ffmpeg:", error);
-    // Fallback: use system ffmpeg if available
+    console.warn("[FFMPEG] ffmpeg-static not available, trying system ffmpeg:", error);
+    // Fallback: use system ffmpeg if available (e.g., installed via apt-get on Render)
   }
 }
 

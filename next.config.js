@@ -12,11 +12,7 @@ const nextConfig = {
   experimental: {
     serverComponentsExternalPackages: [
       'unpdf',
-      '@ffmpeg-installer/darwin-arm64',
-      '@ffmpeg-installer/darwin-x64',
-      '@ffmpeg-installer/linux-arm64',
-      '@ffmpeg-installer/linux-x64',
-      '@ffmpeg-installer/win32-x64',
+      'ffmpeg-static',
     ],
     // Enable instrumentation hook for server startup cleanup
     instrumentationHook: true,
@@ -35,13 +31,9 @@ const nextConfig = {
       config.externals.push({
         canvas: 'canvas',
       });
-      // Don't bundle platform-specific ffmpeg installers
+      // Don't bundle ffmpeg-static (it contains platform-specific binaries)
       config.externals.push({
-        '@ffmpeg-installer/darwin-arm64': '@ffmpeg-installer/darwin-arm64',
-        '@ffmpeg-installer/darwin-x64': '@ffmpeg-installer/darwin-x64',
-        '@ffmpeg-installer/linux-arm64': '@ffmpeg-installer/linux-arm64',
-        '@ffmpeg-installer/linux-x64': '@ffmpeg-installer/linux-x64',
-        '@ffmpeg-installer/win32-x64': '@ffmpeg-installer/win32-x64',
+        'ffmpeg-static': 'ffmpeg-static',
       });
     }
     
