@@ -1,12 +1,13 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Mail, X } from "lucide-react";
+import { Mail, X, Edit } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SequenceActionBarProps {
   selectedCount: number;
   onDraftSequence: () => void;
+  onBulkEdit?: () => void;
   onClearSelection: () => void;
   isLoading?: boolean;
 }
@@ -14,10 +15,13 @@ interface SequenceActionBarProps {
 export function SequenceActionBar({
   selectedCount,
   onDraftSequence,
+  onBulkEdit,
   onClearSelection,
   isLoading = false,
 }: SequenceActionBarProps) {
   if (selectedCount === 0) return null;
+
+  const showSequenceButton = selectedCount >= 2 && selectedCount <= 4;
 
   return (
     <div
@@ -32,16 +36,31 @@ export function SequenceActionBar({
       </div>
       
       <div className="flex items-center gap-2">
-        <Button
-          variant="default"
-          size="sm"
-          onClick={onDraftSequence}
-          disabled={isLoading || selectedCount < 2 || selectedCount > 4}
-          className="gap-2"
-        >
-          <Mail className="h-4 w-4" />
-          {isLoading ? "Drafting..." : "Draft Nurture Sequence"}
-        </Button>
+        {onBulkEdit && (
+          <Button
+            variant="default"
+            size="sm"
+            onClick={onBulkEdit}
+            disabled={isLoading}
+            className="gap-2"
+          >
+            <Edit className="h-4 w-4" />
+            Bulk Edit
+          </Button>
+        )}
+        
+        {showSequenceButton && (
+          <Button
+            variant="default"
+            size="sm"
+            onClick={onDraftSequence}
+            disabled={isLoading}
+            className="gap-2"
+          >
+            <Mail className="h-4 w-4" />
+            {isLoading ? "Drafting..." : "Draft Nurture Sequence"}
+          </Button>
+        )}
         
         <Button
           variant="ghost"
@@ -55,7 +74,7 @@ export function SequenceActionBar({
         </Button>
       </div>
 
-      {selectedCount < 2 && (
+      {!showSequenceButton && selectedCount > 0 && selectedCount < 2 && (
         <div className="text-xs text-muted-foreground">
           Select 2-4 assets to create a sequence
         </div>

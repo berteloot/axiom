@@ -8,6 +8,7 @@ import { AssetMatrix } from "@/components/dashboard/AssetMatrix";
 import { UploadModal } from "@/components/UploadModal";
 import { SequenceActionBar } from "@/components/SequenceActionBar";
 import { SequenceModal } from "@/components/SequenceModal";
+import { BulkEditModal } from "@/components/BulkEditModal";
 import { AssetFilters, applyAssetFilters, AssetFiltersState, SortField, SortDirection } from "@/components/AssetFilters";
 import { Asset, FunnelStage, AssetStatus } from "@/lib/types";
 import { BrandContext } from "@/lib/report-analysis";
@@ -102,6 +103,7 @@ export default function DashboardClient() {
   const [isSequenceModalOpen, setIsSequenceModalOpen] = useState(false);
   const [sequenceData, setSequenceData] = useState<any>(null);
   const [isDraftingSequence, setIsDraftingSequence] = useState(false);
+  const [isBulkEditModalOpen, setIsBulkEditModalOpen] = useState(false);
   const [isCriticalGapsModalOpen, setIsCriticalGapsModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("strategy");
   const [brandContext, setBrandContext] = useState<BrandContext | null>(null);
@@ -230,6 +232,38 @@ export default function DashboardClient() {
     // Switch to library view so user can see the processing asset
     setActiveTab("library");
   };
+
+  const handleBulkEdit = async (updates: {
+    productLineId?: string | null
+    icpTargets?: string[]
+    funnelStage?: FunnelStage
+  }) => {
+    try {
+      const response = await fetch("/api/assets/bulk-update", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          assetIds: selectedAssetIds,
+          ...updates,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || "Failed to update assets")
+      }
+
+      // Refresh assets
+      await fetchAssets()
+      // Clear selection
+      setSelectedAssetIds([])
+    } catch (error) {
+      console.error("Error bulk updating assets:", error)
+      throw error
+    }
+  }
 
   const handleDraftSequence = async () => {
     if (selectedAssetIds.length < 2 || selectedAssetIds.length > 4) {
@@ -644,8 +678,16 @@ export default function DashboardClient() {
       <SequenceActionBar
         selectedCount={selectedAssetIds.length}
         onDraftSequence={handleDraftSequence}
+        onBulkEdit={() => setIsBulkEditModalOpen(true)}
         onClearSelection={() => setSelectedAssetIds([])}
         isLoading={isDraftingSequence}
+      />
+
+      <BulkEditModal
+        open={isBulkEditModalOpen}
+        onOpenChange={setIsBulkEditModalOpen}
+        selectedCount={selectedAssetIds.length}
+        onSave={handleBulkEdit}
       />
 
       <SequenceModal
