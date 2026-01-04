@@ -90,10 +90,12 @@ function AcceptInviteForm() {
 
       if (response.ok) {
         setSuccess(true);
-        // Redirect to dashboard after a short delay
+        // Force a full page reload to refresh account context
+        // Redirect to select-account to let user choose which account to use
+        // (especially important if they accepted multiple invitations)
         setTimeout(() => {
-          router.push("/dashboard");
-        }, 2000);
+          window.location.href = "/auth/select-account";
+        }, 1500);
       } else {
         setError(data.error || "Failed to accept invitation");
       }
@@ -147,10 +149,12 @@ function AcceptInviteForm() {
           </CardHeader>
           <CardContent className="text-center">
             <p className="text-sm text-gray-600 mb-4">
-              Redirecting you to your dashboard...
+              Redirecting you to account selection...
             </p>
-            <Button onClick={() => router.push("/dashboard")}>
-              Go to Dashboard
+            <Button onClick={() => {
+              window.location.href = "/auth/select-account";
+            }}>
+              Go to Account Selection
             </Button>
           </CardContent>
         </Card>
