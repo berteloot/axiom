@@ -329,8 +329,8 @@ Before going to production:
 
 **Error: Prisma Client not generated**
 ```bash
-# Solution: Build command should include prisma generate
-Build Command: npm install && npx prisma generate && npm run build
+# Solution: Build command should include prisma generate and ffmpeg
+Build Command: apt-get update && apt-get install -y ffmpeg && npm install && npx prisma generate && npm run build
 ```
 
 **Error: Module not found**
