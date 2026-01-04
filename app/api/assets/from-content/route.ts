@@ -1,0 +1,202 @@
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { requireAccountId } from "@/lib/account-utils";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { z } from "zod";
+import { FunnelStage } from "@/lib/types";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const AWS_REGION = process.env.AWS_REGION || "us-east-1";
+const AWS_ACCESS_KEY_ID = process.env.AWS_ACCESS_KEY_ID;
+const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY;
+const BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME || "";
+
+const s3Client = new S3Client({
+  region: AWS_REGION,
+  ...(AWS_ACCESS_KEY_ID && AWS_SECRET_ACCESS_KEY
+    ? {
+        credentials: {
+          accessKeyId: AWS_ACCESS_KEY_ID,
+          secretAccessKey: AWS_SECRET_ACCESS_KEY,
+        },
+      }
+    : {}),
+});
+
+// Request body validation schema
+const SaveContentRequestSchema = z.object({
+  title: z.string().min(1, "Title is required"),
+  content: z.string().min(1, "Content is required"),
+  assetType: z.enum([
+    "Whitepaper",
+    "Case_Study",
+    "Blog_Post",
+    "Infographic",
+    "Webinar_Recording",
+    "Sales_Deck",
+    "Technical_Doc",
+  ]),
+  funnelStage: z.enum(["TOFU_AWARENESS", "MOFU_CONSIDERATION", "BOFU_DECISION", "RETENTION"]),
+  icpTargets: z.array(z.string()).min(1, "At least one ICP target is required"),
+  painClusters: z.array(z.string()).optional().default([]),
+  sources: z.array(z.object({
+    url: z.string(),
+    title: z.string(),
+    sourceType: z.string(),
+    citation: z.string().optional(),
+  })).optional().default([]),
+  productLineId: z.string().optional(),
+});
+
+/**
+ * POST /api/assets/from-content
+ * Creates a new asset from generated content
+ */
+export async function POST(request: NextRequest) {
+  try {
+    // Authenticate and get account ID
+    let accountId: string;
+    try {
+      accountId = await requireAccountId(request);
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
+    // Parse and validate request body
+    const body = await request.json();
+    const validationResult = SaveContentRequestSchema.safeParse(body);
+
+    if (!validationResult.success) {
+      return NextResponse.json(
+        {
+          error: "Validation failed",
+          details: validationResult.error.issues,
+        },
+        { status: 400 }
+      );
+    }
+
+    const {
+      title,
+      content,
+      assetType,
+      funnelStage,
+      icpTargets,
+      painClusters,
+      sources,
+      productLineId,
+    } = validationResult.data;
+
+    // Check if S3 is configured
+    if (!BUCKET_NAME) {
+      return NextResponse.json(
+        { error: "S3 storage is not configured. Please contact support." },
+        { status: 500 }
+      );
+    }
+
+    // Generate a unique filename
+    const timestamp = Date.now();
+    const sanitizedTitle = title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "")
+      .substring(0, 50);
+    const filename = `${sanitizedTitle}-${timestamp}.md`;
+    const s3Key = `generated-content/${accountId}/${filename}`;
+
+    // Add sources section to content if there are sources
+    let fullContent = content;
+    if (sources && sources.length > 0) {
+      const sourcesSection = `\n\n---\n\n## Sources\n\n${sources
+        .map((s) => `- [${s.title}](${s.url}) - ${s.sourceType}`)
+        .join("\n")}`;
+      
+      // Only add if not already present in content
+      if (!content.includes("## Sources")) {
+        fullContent = content + sourcesSection;
+      }
+    }
+
+    // Upload content to S3 as markdown
+    try {
+      const uploadCommand = new PutObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: s3Key,
+        Body: fullContent,
+        ContentType: "text/markdown",
+        Metadata: {
+          "original-title": title,
+          "asset-type": assetType,
+          "funnel-stage": funnelStage,
+          "generated-at": new Date().toISOString(),
+        },
+      });
+
+      await s3Client.send(uploadCommand);
+    } catch (s3Error) {
+      console.error("S3 upload error:", s3Error);
+      return NextResponse.json(
+        { error: "Failed to upload content to storage" },
+        { status: 500 }
+      );
+    }
+
+    // Build S3 URL
+    const s3Url = `https://${BUCKET_NAME}.s3.${AWS_REGION}.amazonaws.com/${encodeURIComponent(s3Key).replace(/%2F/g, "/")}`;
+
+    // Determine file type based on asset type
+    const fileType = assetType === "Infographic" 
+      ? "image/png" // Infographics would typically be images
+      : assetType === "Webinar_Recording"
+      ? "video/mp4" // Webinars would be videos
+      : "text/markdown"; // Most generated content is text-based
+
+    // Create the asset in the database
+    const asset = await prisma.asset.create({
+      data: {
+        accountId,
+        productLineId: productLineId || null,
+        title,
+        s3Url,
+        s3Key,
+        fileType,
+        extractedText: fullContent,
+        funnelStage: funnelStage as FunnelStage,
+        icpTargets,
+        painClusters,
+        outreachTip: `This ${assetType.replace(/_/g, " ")} was created to address ${painClusters.join(", ") || "key business challenges"} for ${icpTargets.join(", ")}.`,
+        status: "ANALYZED", // Mark as analyzed since it's already complete content
+        aiModel: "content-workflow",
+        promptVersion: "v1",
+        analyzedAt: new Date(),
+      },
+    });
+
+    console.log(`[Save Content] Created asset ${asset.id} for account ${accountId}`);
+
+    return NextResponse.json({
+      success: true,
+      asset: {
+        id: asset.id,
+        title: asset.title,
+        funnelStage: asset.funnelStage,
+        icpTargets: asset.icpTargets,
+      },
+      message: `"${title}" has been added to your asset library`,
+    });
+  } catch (error) {
+    console.error("Error saving content as asset:", error);
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : "Failed to save content",
+      },
+      { status: 500 }
+    );
+  }
+}

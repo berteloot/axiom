@@ -640,6 +640,9 @@ ${ideasText}
               onReset={handleReset} 
               onClose={() => onOpenChange(false)}
               onExportIdeas={contentIdeas ? handleExportAllIdeas : undefined}
+              draft={contentDraft}
+              idea={selectedIdea}
+              gap={selectedGap}
             />
           )}
         </div>
@@ -1404,19 +1407,132 @@ function CompleteStep({
   onReset,
   onClose,
   onExportIdeas,
+  draft,
+  idea,
+  gap,
 }: {
   onReset: () => void;
   onClose: () => void;
   onExportIdeas?: (format?: "copy" | "pdf" | "docx") => void;
+  draft?: ContentDraft | null;
+  idea?: ContentIdea | null;
+  gap?: Gap | null;
 }) {
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const handleSaveToLibrary = async () => {
+    if (!draft || !idea || !gap) {
+      setSaveError("Missing content data. Please try creating the content again.");
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveError(null);
+
+    try {
+      const response = await fetch("/api/assets/from-content", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: draft.title,
+          content: draft.content,
+          assetType: idea.assetType,
+          funnelStage: gap.stage,
+          icpTargets: [gap.icp],
+          painClusters: gap.painCluster ? [gap.painCluster] : [],
+          sources: draft.sources,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to save to asset library");
+      }
+
+      const result = await response.json();
+      setSaveSuccess(true);
+      console.log("Asset saved successfully:", result);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Failed to save to asset library");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const canSave = draft && idea && gap && !saveSuccess;
+
   return (
     <div className="space-y-4 text-center py-8">
       <CheckCircle2 className="h-16 w-16 mx-auto text-green-500 mb-4" />
       <h3 className="text-xl font-semibold">Content Created Successfully!</h3>
       <p className="text-sm text-muted-foreground max-w-md mx-auto">
-        Your content draft is ready. You can copy it, export it, or create another piece of content.
+        Your content draft is ready. You can save it to your asset library, export it, or create another piece of content.
       </p>
-      <div className="flex gap-2 justify-center mt-6">
+
+      {/* Save to Library Section */}
+      {canSave && (
+        <Card className="max-w-md mx-auto mt-4">
+          <CardContent className="pt-4">
+            <div className="text-left space-y-2">
+              <p className="text-sm font-medium">Save to Asset Library</p>
+              <p className="text-xs text-muted-foreground">
+                This will add "{draft?.title}" to your library as:
+              </p>
+              <div className="flex flex-wrap gap-2 mt-2">
+                <Badge variant="secondary">{gap?.icp}</Badge>
+                <Badge variant="outline">{STAGE_DISPLAY[gap?.stage as FunnelStage]}</Badge>
+                {gap?.painCluster && (
+                  <Badge variant="outline">{gap.painCluster}</Badge>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {saveSuccess && (
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4 max-w-md mx-auto">
+          <p className="text-sm font-medium text-green-800 flex items-center justify-center gap-2">
+            <CheckCircle2 className="h-4 w-4" />
+            Saved to Asset Library!
+          </p>
+          <p className="text-xs text-green-700 mt-1">
+            The asset has been added with {gap?.icp} as the ICP target and {STAGE_DISPLAY[gap?.stage as FunnelStage]} funnel stage.
+          </p>
+        </div>
+      )}
+
+      {saveError && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 max-w-md mx-auto">
+          <p className="text-sm font-medium text-red-800 flex items-center justify-center gap-2">
+            <AlertCircle className="h-4 w-4" />
+            {saveError}
+          </p>
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2 justify-center mt-6">
+        {canSave && (
+          <Button 
+            onClick={handleSaveToLibrary} 
+            disabled={isSaving}
+            className="bg-green-600 hover:bg-green-700"
+          >
+            {isSaving ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="h-4 w-4 mr-2" />
+                Save to Asset Library
+              </>
+            )}
+          </Button>
+        )}
         {onExportIdeas && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
