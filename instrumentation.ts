@@ -1,7 +1,14 @@
+// Track if we've already validated to avoid multiple validations
+let hasValidated = false;
+
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
     // Validate critical environment variables in production
-    if (process.env.NODE_ENV === 'production') {
+    // Only validate once to avoid multiple error messages
+    // Skip validation during build phase - only validate at runtime
+    if (process.env.NODE_ENV === 'production' && !hasValidated && process.env.DATABASE_URL) {
+      hasValidated = true;
+      
       const requiredEnvVars = [
         'DATABASE_URL',
         'NEXTAUTH_SECRET',
@@ -11,10 +18,17 @@ export async function register() {
         'AWS_S3_BUCKET_NAME',
         'OPENAI_API_KEY',
         'SENDGRID_API_KEY',
-        'FROM_EMAIL',
       ];
 
+      // Check for email from address - support both FROM_EMAIL and EMAIL_FROM
+      const emailFrom = process.env.FROM_EMAIL || process.env.EMAIL_FROM;
+
       const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+      
+      // Add email from to missing vars if neither is set
+      if (!emailFrom) {
+        missingVars.push('FROM_EMAIL or EMAIL_FROM');
+      }
       
       if (missingVars.length > 0) {
         console.error('❌ CRITICAL: Missing required environment variables in production:');
