@@ -33,7 +33,7 @@ interface BulkEditModalProps {
   onOpenChange: (open: boolean) => void
   selectedCount: number
   onSave: (updates: {
-    productLineId?: string | null
+    productLineIds?: string[]
     icpTargets?: string[]
     funnelStage?: FunnelStage
   }) => Promise<void>
@@ -47,7 +47,7 @@ export function BulkEditModal({
 }: BulkEditModalProps) {
   const [productLines, setProductLines] = React.useState<ProductLine[]>([])
   const [isLoadingProductLines, setIsLoadingProductLines] = React.useState(true)
-  const [selectedProductLine, setSelectedProductLine] = React.useState<string | null | undefined>(undefined)
+  const [selectedProductLineIds, setSelectedProductLineIds] = React.useState<string[]>([])
   const [selectedIcpTargets, setSelectedIcpTargets] = React.useState<string[]>([])
   const [icpOptions, setIcpOptions] = React.useState<string[]>(ALL_JOB_TITLES)
   const [isLoadingIcp, setIsLoadingIcp] = React.useState(true)
@@ -94,7 +94,7 @@ export function BulkEditModal({
   // Reset form when modal opens
   React.useEffect(() => {
     if (open) {
-      setSelectedProductLine(undefined)
+      setSelectedProductLineIds([])
       setSelectedIcpTargets([])
       setSelectedFunnelStage(undefined)
       setError(null)
@@ -104,7 +104,7 @@ export function BulkEditModal({
   const handleSave = async () => {
     // Check if at least one field is being updated
     if (
-      selectedProductLine === undefined &&
+      selectedProductLineIds.length === 0 &&
       selectedIcpTargets.length === 0 &&
       selectedFunnelStage === undefined
     ) {
@@ -117,13 +117,13 @@ export function BulkEditModal({
 
     try {
       const updates: {
-        productLineId?: string | null
+        productLineIds?: string[]
         icpTargets?: string[]
         funnelStage?: FunnelStage
       } = {}
 
-      if (selectedProductLine !== undefined) {
-        updates.productLineId = selectedProductLine || null
+      if (selectedProductLineIds.length > 0) {
+        updates.productLineIds = selectedProductLineIds
       }
       if (selectedIcpTargets.length > 0) {
         updates.icpTargets = selectedIcpTargets
@@ -142,7 +142,7 @@ export function BulkEditModal({
   }
 
   const hasChanges =
-    selectedProductLine !== undefined ||
+    selectedProductLineIds.length > 0 ||
     selectedIcpTargets.length > 0 ||
     selectedFunnelStage !== undefined
 
@@ -163,40 +163,63 @@ export function BulkEditModal({
         )}
 
         <div className="space-y-6 mt-4">
-          {/* Product Line */}
+          {/* Product Lines */}
           <div className="space-y-2">
             <Label className="flex items-center gap-2">
               <Package className="h-4 w-4 text-muted-foreground" />
-              Product Line
+              Product Lines
             </Label>
-            <Select
-              value={selectedProductLine === null ? "none" : selectedProductLine || "unchanged"}
-              onValueChange={(value) => {
-                if (value === "unchanged") {
-                  setSelectedProductLine(undefined)
-                } else if (value === "none") {
-                  setSelectedProductLine(null)
-                } else {
-                  setSelectedProductLine(value)
-                }
+            <MultiSelectCombobox
+              options={productLines.map(pl => pl.name)}
+              value={selectedProductLineIds.map(id => {
+                const pl = productLines.find(p => p.id === id);
+                return pl?.name || id;
+              })}
+              onChange={(selected) => {
+                const selectedIds = selected
+                  .map((name) => productLines.find(pl => pl.name === name)?.id)
+                  .filter((id): id is string => id !== undefined);
+                setSelectedProductLineIds(selectedIds);
               }}
+              placeholder={isLoadingProductLines ? "Loading product lines..." : "Select product lines..."}
+              searchPlaceholder="Search product lines..."
+              emptyText="No product lines found"
               disabled={isLoadingProductLines || isSaving}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select product line" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="unchanged">(No change)</SelectItem>
-                <SelectItem value="none">None (Remove product line)</SelectItem>
-                {productLines.map((pl) => (
-                  <SelectItem key={pl.id} value={pl.id}>
-                    {pl.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            />
+            {selectedProductLineIds.length > 0 && (
+              <div className="mt-2 space-y-2">
+                <p className="text-xs text-muted-foreground font-medium">
+                  {selectedProductLineIds.length} selected product line{selectedProductLineIds.length !== 1 ? "s" : ""}:
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {selectedProductLineIds.map((id) => {
+                    const productLine = productLines.find(pl => pl.id === id);
+                    if (!productLine) return null;
+                    return (
+                      <Badge
+                        key={id}
+                        variant="secondary"
+                        className="text-xs pr-1"
+                      >
+                        {productLine.name}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedProductLineIds(selectedProductLineIds.filter((i) => i !== id))
+                          }}
+                          className="ml-1.5 rounded-full hover:bg-secondary-foreground/20 p-0.5"
+                          aria-label={`Remove ${productLine.name}`}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <p className="text-xs text-muted-foreground">
-              Assign all selected assets to this product line, or remove the product line assignment.
+              Assign all selected assets to these product lines. Leave empty to keep unchanged.
             </p>
           </div>
 

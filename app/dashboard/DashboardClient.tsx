@@ -234,7 +234,7 @@ export default function DashboardClient() {
   };
 
   const handleBulkEdit = async (updates: {
-    productLineId?: string | null
+    productLineIds?: string[]
     icpTargets?: string[]
     funnelStage?: FunnelStage
   }) => {

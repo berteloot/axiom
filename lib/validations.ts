@@ -93,6 +93,7 @@ export const updateAssetSchema = z.object({
     .max(3, "Maximum 3 pain clusters allowed")
     .optional(),
   outreachTip: z.string().max(2000).optional(),
+  productLineIds: z.array(z.string()).optional(), // Array of product line IDs
   status: z.enum([
     "PENDING",
     "PROCESSING",

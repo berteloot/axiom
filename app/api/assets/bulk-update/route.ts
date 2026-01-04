@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic"
 
 const bulkUpdateSchema = z.object({
   assetIds: z.array(z.string()).min(1, "At least one asset ID is required"),
-  productLineId: z.string().nullable().optional(),
+  productLineIds: z.array(z.string()).optional(), // Array of product line IDs
   icpTargets: z.array(z.string()).optional(),
   funnelStage: z.enum([
     "TOFU_AWARENESS",
@@ -32,7 +32,7 @@ export async function PATCH(request: NextRequest) {
       )
     }
 
-    const { assetIds, productLineId, icpTargets, funnelStage } = validation.data
+    const { assetIds, productLineIds, icpTargets, funnelStage } = validation.data
 
     // Verify all assets belong to the current account
     const assets = await prisma.asset.findMany({
@@ -49,22 +49,24 @@ export async function PATCH(request: NextRequest) {
       )
     }
 
-    // If productLineId is provided, verify it exists and belongs to the account
-    if (productLineId !== undefined) {
-      if (productLineId !== null) {
-        const productLine = await prisma.productLine.findFirst({
-          where: {
-            id: productLineId,
-            brandContext: {
-              accountId,
-            },
+    // If productLineIds is provided, verify all exist and belong to the account
+    if (productLineIds !== undefined) {
+      const brandContext = await prisma.brandContext.findUnique({
+        where: { accountId },
+        include: {
+          productLines: {
+            select: { id: true },
           },
-        })
+        },
+      })
 
-        if (!productLine) {
+      if (brandContext) {
+        const validProductLineIds = brandContext.productLines.map(pl => pl.id)
+        const invalidIds = productLineIds.filter(id => !validProductLineIds.includes(id))
+        if (invalidIds.length > 0) {
           return NextResponse.json(
-            { error: "Product line not found or does not belong to your account" },
-            { status: 404 }
+            { error: `Invalid product line IDs: ${invalidIds.join(", ")}` },
+            { status: 400 }
           )
         }
       }
@@ -72,14 +74,10 @@ export async function PATCH(request: NextRequest) {
 
     // Build update data object (only include fields that are defined)
     const updateData: {
-      productLineId?: string | null
       icpTargets?: string[]
       funnelStage?: string
     } = {}
 
-    if (productLineId !== undefined) {
-      updateData.productLineId = productLineId
-    }
     if (icpTargets !== undefined) {
       updateData.icpTargets = icpTargets
     }
@@ -87,14 +85,42 @@ export async function PATCH(request: NextRequest) {
       updateData.funnelStage = funnelStage
     }
 
-    // Bulk update all assets
-    const result = await prisma.asset.updateMany({
-      where: {
-        id: { in: assetIds },
-        accountId,
-      },
-      data: updateData,
-    })
+    // Update asset fields (excluding product lines which are handled separately)
+    if (Object.keys(updateData).length > 0) {
+      await prisma.asset.updateMany({
+        where: {
+          id: { in: assetIds },
+          accountId,
+        },
+        data: updateData,
+      })
+    }
+
+    // Update product lines if provided
+    if (productLineIds !== undefined) {
+      // Delete existing associations for all selected assets
+      await prisma.assetProductLine.deleteMany({
+        where: {
+          assetId: { in: assetIds },
+        },
+      })
+
+      // Create new associations for all selected assets
+      if (productLineIds.length > 0) {
+        const associations = assetIds.flatMap(assetId =>
+          productLineIds.map(productLineId => ({
+            assetId,
+            productLineId,
+          }))
+        )
+
+        await prisma.assetProductLine.createMany({
+          data: associations,
+        })
+      }
+    }
+
+    const result = { count: assetIds.length }
 
     return NextResponse.json({
       success: true,

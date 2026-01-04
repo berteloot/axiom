@@ -51,8 +51,8 @@ enum InvitationStatus {
 }
 
 enum AccountType {
-  CORPORATE  // Single organization, unlimited users
-  AGENCY     // Multiple organizations, unlimited users
+  CORPORATE // Single organization, unlimited users
+  AGENCY // Multiple organizations, unlimited users
 }
 
 // User model for authentication and user management
@@ -65,15 +65,15 @@ model User {
   emailVerifiedAt      DateTime?
   passwordResetToken   String?
   passwordResetExpires DateTime?
-  accountType          AccountType?            // null = legacy users (treated as agency)
+  accountType          AccountType? // null = legacy users (treated as agency)
   createdAt            DateTime                @default(now())
   updatedAt            DateTime                @updatedAt
 
   // Relations
   userAccounts        UserAccount[]
   sessions            Session[]
-  sentInvitations     Invitation[]       @relation("InvitationSender")
-  receivedInvitations Invitation[]       @relation("InvitationRecipient")
+  sentInvitations     Invitation[]      @relation("InvitationSender")
+  receivedInvitations Invitation[]      @relation("InvitationRecipient")
   smartCollections    SmartCollection[]
 
   @@map("users")
@@ -107,7 +107,7 @@ model Account {
   companyProfile   CompanyProfile? // Legacy - for backward compatibility
   sessions         Session[]
   accountManagers  AccountManager[]
-  sentInvitations  Invitation[]       @relation("InvitationAccount")
+  sentInvitations  Invitation[]      @relation("InvitationAccount")
   smartCollections SmartCollection[]
 
   @@map("accounts")
@@ -230,8 +230,8 @@ model ProductLine {
   valueProposition String   @db.Text // Why buy THIS product?
   specificICP      String[] // Target ICP roles for THIS product (uses same options as asset ICP targets)
 
-  brandContext BrandContext @relation(fields: [brandContextId], references: [id], onDelete: Cascade)
-  assets       Asset[]
+  brandContext BrandContext       @relation(fields: [brandContextId], references: [id], onDelete: Cascade)
+  assets       AssetProductLine[]
 
   @@unique([brandContextId, name])
   @@index([brandContextId])
@@ -261,7 +261,6 @@ model CompanyProfile {
 model Asset {
   id                  String      @id @default(cuid())
   accountId           String // Account this asset belongs to
-  productLineId       String? // Optional: Which product line this asset belongs to
   createdAt           DateTime    @default(now())
   updatedAt           DateTime    @updatedAt
   title               String
@@ -287,16 +286,31 @@ model Asset {
   dominantColor       String? // Dominant color hex code (e.g., "#FF5733")
 
   // Relations
-  account          Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  productLine      ProductLine?      @relation(fields: [productLineId], references: [id], onDelete: SetNull)
-  collectionAssets CollectionAsset[]
-  derivativeAssets DerivativeAsset[] @relation("DerivedFrom")
+  account            Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  productLines       AssetProductLine[]
+  collectionAssets   CollectionAsset[]
+  derivativeAssets   DerivativeAsset[]   @relation("DerivedFrom")
   transcriptSegments TranscriptSegment[]
-  transcriptionJob TranscriptionJob?
+  transcriptionJob   TranscriptionJob?
 
   @@index([accountId])
-  @@index([productLineId])
   @@map("assets")
+}
+
+// Join table for many-to-many relationship between Assets and ProductLines
+model AssetProductLine {
+  id            String   @id @default(cuid())
+  assetId       String
+  productLineId String
+  createdAt     DateTime @default(now())
+
+  asset       Asset       @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  productLine ProductLine @relation(fields: [productLineId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, productLineId])
+  @@index([assetId])
+  @@index([productLineId])
+  @@map("asset_product_lines")
 }
 
 model TranscriptSegment {
@@ -317,13 +331,13 @@ model TranscriptSegment {
 }
 
 model TranscriptionJob {
-  id        String   @id @default(cuid())
-  assetId   String   @unique // One job per asset
-  status    String   // "PENDING", "PROCESSING", "COMPLETED", "FAILED"
-  error     String?  @db.Text
-  progress  Int?     // 0-100 percentage
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String    @id @default(cuid())
+  assetId     String    @unique // One job per asset
+  status      String // "PENDING", "PROCESSING", "COMPLETED", "FAILED"
+  error       String?   @db.Text
+  progress    Int? // 0-100 percentage
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   completedAt DateTime?
 
   asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)

@@ -101,6 +101,10 @@ export function TeamMembersSection({ accountId, accountName }: TeamMembersSectio
   const [deleteInvitationId, setDeleteInvitationId] = useState<string | null>(null);
   const [isDeletingInvitation, setIsDeletingInvitation] = useState(false);
   
+  // Delete team member state
+  const [deleteMemberId, setDeleteMemberId] = useState<string | null>(null);
+  const [isDeletingMember, setIsDeletingMember] = useState(false);
+  
   // Resend state
   const [resendingInvitationId, setResendingInvitationId] = useState<string | null>(null);
   
@@ -350,7 +354,39 @@ export function TeamMembersSection({ accountId, accountName }: TeamMembersSectio
     }
   };
 
+  const handleDeleteMember = async (memberId: string) => {
+    setIsDeletingMember(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const response = await fetch(`/api/accounts/${accountId}/members/${memberId}`, {
+        method: "DELETE",
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setSuccess(data.message || "Team member removed successfully");
+        setDeleteMemberId(null);
+        await loadTeamMembers();
+        setTimeout(() => setSuccess(null), 3000);
+      } else {
+        setError(data.error || "Failed to remove team member");
+        setTimeout(() => setError(null), 5000);
+      }
+    } catch (error) {
+      console.error("Error removing team member:", error);
+      setError("Failed to remove team member. Please try again.");
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setIsDeletingMember(false);
+    }
+  };
+
   const pendingInvitations = invitations.filter((inv) => inv.status === "PENDING");
+  
+  // Get member to delete for confirmation dialog
+  const memberToDelete = deleteMemberId ? teamMembers.find(m => m.id === deleteMemberId) : null;
   
   // Check for expired invitations
   const now = new Date();
@@ -528,6 +564,13 @@ export function TeamMembersSection({ accountId, accountName }: TeamMembersSectio
                                       <Send className="h-4 w-4 mr-2" />
                                     )}
                                     Send Login Email
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem 
+                                    onClick={() => setDeleteMemberId(member.id)}
+                                    className="text-destructive focus:text-destructive"
+                                  >
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    Remove Member
                                   </DropdownMenuItem>
                                 </DropdownMenuContent>
                               </DropdownMenu>
@@ -749,6 +792,42 @@ export function TeamMembersSection({ accountId, accountName }: TeamMembersSectio
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Member Confirmation Dialog */}
+      <AlertDialog open={deleteMemberId !== null} onOpenChange={(open) => !open && setDeleteMemberId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove Team Member?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {memberToDelete ? (
+                <>
+                  Are you sure you want to remove <strong>{memberToDelete.name || memberToDelete.email}</strong> from {accountName}? 
+                  They will lose access to all assets and resources in this account. This action cannot be undone.
+                </>
+              ) : (
+                "Are you sure you want to remove this team member? They will lose access to all assets and resources in this account. This action cannot be undone."
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingMember}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteMemberId && handleDeleteMember(deleteMemberId)}
+              disabled={isDeletingMember}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeletingMember ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Removing...
+                </>
+              ) : (
+                "Remove Member"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

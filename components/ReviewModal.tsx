@@ -46,6 +46,7 @@ export function ReviewModal({
     icpTargets: asset.icpTargets,
     painClusters: asset.painClusters.join(", "),
     outreachTip: asset.outreachTip,
+    productLineIds: asset.productLines?.map(pl => pl.id) || [],
   });
   const [customCreatedAt, setCustomCreatedAt] = useState<Date | null>(
     asset.customCreatedAt ? new Date(asset.customCreatedAt) : null
@@ -71,6 +72,7 @@ export function ReviewModal({
         icpTargets: asset.icpTargets,
         painClusters: asset.painClusters.join(", "),
         outreachTip: asset.outreachTip,
+        productLineIds: asset.productLines?.map(pl => pl.id) || [],
       });
       setCustomCreatedAt(asset.customCreatedAt ? new Date(asset.customCreatedAt) : null);
       setLastReviewedAt(asset.lastReviewedAt ? new Date(asset.lastReviewedAt) : null);
@@ -104,6 +106,7 @@ export function ReviewModal({
           icpTargets: formData.icpTargets,
           painClusters: painClusters,
           outreachTip: formData.outreachTip,
+          productLineIds: formData.productLineIds,
           status: "APPROVED",
           customCreatedAt: customCreatedAt?.toISOString() || null,
           lastReviewedAt: lastReviewedAt?.toISOString() || null,

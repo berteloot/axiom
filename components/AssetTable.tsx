@@ -272,10 +272,28 @@ export function AssetTable({
                       </div>
                     </TableCell>
                   <TableCell className="min-w-[100px] max-w-[150px] px-2">
-                    {asset.productLine ? (
-                      <Badge variant="secondary" className="text-xs truncate max-w-full" title={asset.productLine.name}>
-                        {asset.productLine.name}
-                      </Badge>
+                    {asset.productLines && asset.productLines.length > 0 ? (
+                      <div className="flex flex-wrap gap-0.5">
+                        {asset.productLines.slice(0, 1).map((productLine) => (
+                          <Badge 
+                            key={productLine.id} 
+                            variant="secondary" 
+                            className="text-xs truncate max-w-full" 
+                            title={productLine.name}
+                          >
+                            {productLine.name}
+                          </Badge>
+                        ))}
+                        {asset.productLines.length > 1 && (
+                          <Badge 
+                            variant="secondary" 
+                            className="text-xs" 
+                            title={asset.productLines.slice(1).map(pl => pl.name).join(", ")}
+                          >
+                            +{asset.productLines.length - 1}
+                          </Badge>
+                        )}
+                      </div>
                     ) : (
                       <span className="text-muted-foreground text-xs">—</span>
                     )}

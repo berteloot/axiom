@@ -107,8 +107,10 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
     assets.forEach((asset) => {
       asset.icpTargets.forEach((icp) => icpTargets.add(icp));
       asset.painClusters.forEach((cluster) => painClusters.add(cluster));
-      if (asset.productLine) {
-        productLines.set(asset.productLine.id, asset.productLine.name);
+      if (asset.productLines && asset.productLines.length > 0) {
+        asset.productLines.forEach((pl) => {
+          productLines.set(pl.id, pl.name);
+        });
       }
     });
 
@@ -533,7 +535,7 @@ export function applyAssetFilters(assets: Asset[], filters: AssetFiltersState): 
   // Product Lines filter
   if (filters.productLines.length > 0) {
     filtered = filtered.filter((asset) =>
-      asset.productLine && filters.productLines.includes(asset.productLine.id)
+      asset.productLines && asset.productLines.some((pl) => filters.productLines.includes(pl.id))
     );
   }
 

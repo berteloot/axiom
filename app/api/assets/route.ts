@@ -15,13 +15,17 @@ export async function GET(request: NextRequest) {
         accountId,
       },
       include: {
-        productLine: {
-          select: {
-            id: true,
-            name: true,
-            description: true,
-            valueProposition: true,
-            specificICP: true,
+        productLines: {
+          include: {
+            productLine: {
+              select: {
+                id: true,
+                name: true,
+                description: true,
+                valueProposition: true,
+                specificICP: true,
+              },
+            },
           },
         },
       },
@@ -30,7 +34,13 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    return NextResponse.json({ assets });
+    // Transform to match the expected format (flatten productLines)
+    const transformedAssets = assets.map(asset => ({
+      ...asset,
+      productLines: asset.productLines.map(ap => ap.productLine),
+    }));
+
+    return NextResponse.json({ assets: transformedAssets });
   } catch (error) {
     console.error("Error fetching assets:", error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";

@@ -45,9 +45,8 @@ export interface Asset {
   analyzedAt?: string | null;
   aiConfidence?: number | null;
   dominantColor?: string | null; // Dominant color hex code (e.g., "#FF5733")
-  // Product line relation
-  productLineId?: string | null;
-  productLine?: ProductLine | null; // Product/Service line this asset belongs to
+  // Product lines relation (many-to-many)
+  productLines?: ProductLine[]; // Product/Service lines this asset belongs to
 }
 
 export interface TranscriptSegment {

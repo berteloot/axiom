@@ -20,6 +20,21 @@ export async function GET(
         id: params.id,
         accountId, // Ensure asset belongs to current account
       },
+      include: {
+        productLines: {
+          include: {
+            productLine: {
+              select: {
+                id: true,
+                name: true,
+                description: true,
+                valueProposition: true,
+                specificICP: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     if (!asset) {
@@ -29,7 +44,13 @@ export async function GET(
       );
     }
 
-    return NextResponse.json({ asset });
+    // Transform to match expected format
+    const transformedAsset = {
+      ...asset,
+      productLines: asset.productLines.map(ap => ap.productLine),
+    };
+
+    return NextResponse.json({ asset: transformedAsset });
   } catch (error) {
     console.error("Error fetching asset:", error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
@@ -76,6 +97,7 @@ export async function PATCH(
       icpTargets,
       painClusters,
       outreachTip,
+      productLineIds,
       status,
       customCreatedAt,
       lastReviewedAt,
@@ -97,6 +119,30 @@ export async function PATCH(
       );
     }
 
+    // Verify product line IDs belong to the account if provided
+    if (productLineIds !== undefined) {
+      const brandContext = await prisma.brandContext.findUnique({
+        where: { accountId },
+        include: {
+          productLines: {
+            select: { id: true },
+          },
+        },
+      });
+
+      if (brandContext) {
+        const validProductLineIds = brandContext.productLines.map(pl => pl.id)
+        const invalidIds = productLineIds.filter(id => !validProductLineIds.includes(id))
+        if (invalidIds.length > 0) {
+          return NextResponse.json(
+            { error: `Invalid product line IDs: ${invalidIds.join(", ")}` },
+            { status: 400 }
+          )
+        }
+      }
+    }
+
+    // Update asset fields
     const asset = await prisma.asset.update({
       where: { id: params.id },
       data: {
@@ -111,9 +157,76 @@ export async function PATCH(
         ...(lastReviewedAt !== undefined && { lastReviewedAt: lastReviewedAt ? new Date(lastReviewedAt) : null }),
         ...(expiryDate !== undefined && { expiryDate: expiryDate ? new Date(expiryDate) : null }),
       },
+      include: {
+        productLines: {
+          include: {
+            productLine: {
+              select: {
+                id: true,
+                name: true,
+                description: true,
+                valueProposition: true,
+                specificICP: true,
+              },
+            },
+          },
+        },
+      },
     });
 
-    return NextResponse.json({ asset });
+    // Update product lines if provided
+    if (productLineIds !== undefined) {
+      // Delete existing associations
+      await prisma.assetProductLine.deleteMany({
+        where: { assetId: params.id },
+      });
+
+      // Create new associations
+      if (productLineIds.length > 0) {
+        await prisma.assetProductLine.createMany({
+          data: productLineIds.map(plId => ({
+            assetId: params.id,
+            productLineId: plId,
+          })),
+        });
+      }
+
+      // Fetch updated asset with product lines
+      const updatedAsset = await prisma.asset.findUnique({
+        where: { id: params.id },
+        include: {
+          productLines: {
+            include: {
+              productLine: {
+                select: {
+                  id: true,
+                  name: true,
+                  description: true,
+                  valueProposition: true,
+                  specificICP: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (updatedAsset) {
+        const transformedAsset = {
+          ...updatedAsset,
+          productLines: updatedAsset.productLines.map(ap => ap.productLine),
+        };
+        return NextResponse.json({ asset: transformedAsset });
+      }
+    }
+
+    // Transform response
+    const transformedAsset = {
+      ...asset,
+      productLines: asset.productLines.map(ap => ap.productLine),
+    };
+
+    return NextResponse.json({ asset: transformedAsset });
   } catch (error) {
     console.error("Error updating asset:", error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";

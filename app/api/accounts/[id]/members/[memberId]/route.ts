@@ -213,3 +213,148 @@ export async function PATCH(
     );
   }
 }
+
+// DELETE /api/accounts/[id]/members/[memberId] - Remove team member from account
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string; memberId: string }> }
+) {
+  try {
+    const { id: accountId, memberId } = await params;
+    const session = await getServerSession(authOptions);
+    
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { error: "Authentication required" },
+        { status: 401 }
+      );
+    }
+
+    // Verify user has permission (admin/owner only)
+    const hasPermission = await isUserAdminOrOwner(request);
+    if (!hasPermission) {
+      return NextResponse.json(
+        { error: "Insufficient permissions. Only admins and owners can manage team members." },
+        { status: 403 }
+      );
+    }
+
+    // Verify the account exists and user is a member
+    const userAccount = await prisma.userAccount.findUnique({
+      where: {
+        userId_accountId: {
+          userId: session.user.id,
+          accountId,
+        }
+      }
+    });
+
+    if (!userAccount) {
+      return NextResponse.json(
+        { error: "Account not found or you don't have access to it." },
+        { status: 404 }
+      );
+    }
+
+    // Verify the member exists and belongs to this account
+    // memberId is the UserAccount ID
+    const memberAccount = await prisma.userAccount.findUnique({
+      where: {
+        id: memberId,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+          }
+        },
+        account: true
+      }
+    });
+
+    if (!memberAccount) {
+      return NextResponse.json(
+        { error: "Team member not found" },
+        { status: 404 }
+      );
+    }
+
+    // Verify the member belongs to the correct account
+    if (memberAccount.accountId !== accountId) {
+      return NextResponse.json(
+        { error: "Team member does not belong to this account" },
+        { status: 403 }
+      );
+    }
+
+    // Prevent deleting OWNER members
+    if (memberAccount.role === "OWNER") {
+      return NextResponse.json(
+        { error: "Cannot remove account owners. Transfer ownership first or delete the account." },
+        { status: 403 }
+      );
+    }
+
+    // Cannot delete yourself
+    if (memberAccount.userId === session.user.id) {
+      return NextResponse.json(
+        { error: "Cannot remove yourself from the account. Ask another admin or owner to remove you." },
+        { status: 400 }
+      );
+    }
+
+    // Delete the user account relationship and handle session cleanup in a transaction
+    await prisma.$transaction(async (tx) => {
+      // Delete the user account relationship
+      await tx.userAccount.delete({
+        where: { id: memberId },
+      });
+
+      // If this user had their session set to this account, update it
+      const session = await tx.session.findUnique({
+        where: { userId: memberAccount.userId },
+      });
+
+      if (session && session.accountId === accountId) {
+        // Try to switch to another account if available
+        const otherAccount = await tx.userAccount.findFirst({
+          where: {
+            userId: memberAccount.userId,
+            accountId: { not: accountId },
+          },
+        });
+
+        if (otherAccount) {
+          await tx.session.update({
+            where: { userId: memberAccount.userId },
+            data: { accountId: otherAccount.accountId },
+          });
+        } else {
+          // No other account - delete the session
+          await tx.session.delete({
+            where: { userId: memberAccount.userId },
+          }).catch(() => {
+            // Session might not exist, that's okay
+          });
+        }
+      }
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: `Team member ${memberAccount.user.email} has been removed from the account`,
+    });
+
+  } catch (error: any) {
+    console.error("Error removing team member:", error);
+    return NextResponse.json(
+      { 
+        error: "Failed to remove team member",
+        details: process.env.NODE_ENV === "development" ? error.message : undefined
+      },
+      { status: 500 }
+    );
+  }
+}

@@ -23,8 +23,8 @@ import { MultiSelectCombobox } from "@/components/ui/combobox";
 import { EditableBadge } from "@/components/ui/editable-badge";
 import { ALL_JOB_TITLES } from "@/lib/job-titles";
 import { extractCustomTargets, isCustomTarget } from "@/lib/icp-targets";
-import { Info, X } from "lucide-react";
-import { Asset, FunnelStage } from "@/lib/types";
+import { Info, X, Package } from "lucide-react";
+import { Asset, FunnelStage, ProductLine } from "@/lib/types";
 
 interface ReviewFormProps {
   asset: Asset;
@@ -34,6 +34,7 @@ interface ReviewFormProps {
     icpTargets: string[];
     painClusters: string;
     outreachTip: string;
+    productLineIds: string[];
   };
   customCreatedAt: Date | null;
   lastReviewedAt: Date | null;
@@ -60,6 +61,8 @@ export function ReviewForm({
   const [icpOptions, setIcpOptions] = useState<string[]>(ALL_JOB_TITLES);
   const [isLoadingIcp, setIsLoadingIcp] = useState(true);
   const [customTargets, setCustomTargets] = useState<string[]>([]);
+  const [productLines, setProductLines] = useState<ProductLine[]>([]);
+  const [isLoadingProductLines, setIsLoadingProductLines] = useState(true);
 
   // Fetch unified ICP targets on mount (component remounts when modal opens)
   useEffect(() => {
@@ -138,6 +141,63 @@ export function ReviewForm({
           value={formData.title}
           onChange={(e) => onFormDataChange({ title: e.target.value })}
         />
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <Label className="flex items-center gap-2">
+            <Package className="h-4 w-4 text-muted-foreground" />
+            Product Lines
+          </Label>
+        </div>
+        <MultiSelectCombobox
+          options={productLines.map(pl => pl.name)}
+          value={formData.productLineIds.map(id => {
+            const pl = productLines.find(p => p.id === id);
+            return pl?.name || id;
+          })}
+          onChange={(selected) => {
+            const selectedIds = selected
+              .map((name) => productLines.find(pl => pl.name === name)?.id)
+              .filter((id): id is string => id !== undefined);
+            onFormDataChange({ productLineIds: selectedIds });
+          }}
+          placeholder={isLoadingProductLines ? "Loading product lines..." : "Select product lines..."}
+          searchPlaceholder="Search product lines..."
+          emptyText="No product lines found"
+          disabled={isLoadingProductLines}
+        />
+        {formData.productLineIds.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-2">
+            {formData.productLineIds.map((id) => {
+              const productLine = productLines.find(pl => pl.id === id);
+              if (!productLine) return null;
+              return (
+                <Badge
+                  key={id}
+                  variant="secondary"
+                  className="text-xs flex items-center gap-1"
+                >
+                  {productLine.name}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newIds = formData.productLineIds.filter((i) => i !== id);
+                      onFormDataChange({ productLineIds: newIds });
+                    }}
+                    className="ml-1 hover:bg-secondary-foreground/20 rounded-full p-0.5"
+                    aria-label={`Remove ${productLine.name}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              );
+            })}
+          </div>
+        )}
+        <p className="text-xs text-muted-foreground">
+          Select product lines this asset belongs to. An asset can belong to multiple product lines.
+        </p>
       </div>
 
       <div className="space-y-2">
