@@ -18,8 +18,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Badge } from "@/components/ui/badge"
 import { ProductLineForm, ProductLineFormData } from "./ProductLineForm"
-import { Plus, Trash2, Package, AlertCircle, Pencil } from "lucide-react"
+import { ProductLineReviewModal } from "./ProductLineReviewModal"
+import { Plus, Trash2, Package, AlertCircle, Pencil, Eye } from "lucide-react"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,6 +32,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { formatDistanceToNow } from "date-fns"
 
 interface ProductLine {
   id: string
@@ -58,6 +61,8 @@ export function ProductLinesManager({
   const [isDialogOpen, setIsDialogOpen] = React.useState(false)
   const [isAdding, setIsAdding] = React.useState(false)
   const [editingProductLine, setEditingProductLine] = React.useState<ProductLine | null>(null)
+  const [reviewingProductLine, setReviewingProductLine] = React.useState<ProductLine | null>(null)
+  const [isReviewModalOpen, setIsReviewModalOpen] = React.useState(false)
   const [deleteId, setDeleteId] = React.useState<string | null>(null)
   const [isDeleting, setIsDeleting] = React.useState(false)
 
@@ -79,6 +84,19 @@ export function ProductLinesManager({
   const handleEdit = (productLine: ProductLine) => {
     setEditingProductLine(productLine)
     setIsDialogOpen(true)
+  }
+
+  const handleReview = (productLine: ProductLine) => {
+    setReviewingProductLine(productLine)
+    setIsReviewModalOpen(true)
+  }
+
+  const handleEditFromReview = () => {
+    if (reviewingProductLine) {
+      setIsReviewModalOpen(false)
+      setEditingProductLine(reviewingProductLine)
+      setIsDialogOpen(true)
+    }
   }
 
   const handleCloseDialog = () => {
@@ -153,54 +171,110 @@ export function ProductLinesManager({
           </Button>
         </div>
       ) : (
-        <div className="border rounded-lg">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Value Proposition</TableHead>
-                <TableHead className="w-[100px]">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {productLines.map((line) => (
-                <TableRow key={line.id}>
-                  <TableCell className="font-medium">{line.name}</TableCell>
-                  <TableCell className="max-w-xs truncate">
-                    {line.description}
-                  </TableCell>
-                  <TableCell className="max-w-xs truncate">
-                    {line.valueProposition}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleEdit(line)}
-                        disabled={isLoading}
-                        title="Edit product line"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setDeleteId(line.id)}
-                        disabled={isLoading}
-                        title="Delete product line"
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
-                  </TableCell>
+        <div className="border rounded-lg overflow-hidden">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="min-w-[150px]">Name</TableHead>
+                  <TableHead className="min-w-[200px]">Description</TableHead>
+                  <TableHead className="min-w-[200px]">Value Proposition</TableHead>
+                  <TableHead className="min-w-[180px]">Target Audience</TableHead>
+                  <TableHead className="min-w-[120px]">Created</TableHead>
+                  <TableHead className="text-right min-w-[140px]">Actions</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {productLines.map((line) => {
+                  const createdDate = new Date(line.createdAt)
+                  const relativeDate = formatDistanceToNow(createdDate, { addSuffix: true })
+                  
+                  return (
+                    <TableRow key={line.id}>
+                      <TableCell className="font-medium">{line.name}</TableCell>
+                      <TableCell className="max-w-xs">
+                        <p className="line-clamp-2 text-sm text-muted-foreground">
+                          {line.description || <span className="text-muted-foreground italic">No description</span>}
+                        </p>
+                      </TableCell>
+                      <TableCell className="max-w-xs">
+                        <p className="line-clamp-2 text-sm text-muted-foreground">
+                          {line.valueProposition || <span className="text-muted-foreground italic">No value proposition</span>}
+                        </p>
+                      </TableCell>
+                      <TableCell>
+                        {line.specificICP && line.specificICP.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {line.specificICP.slice(0, 2).map((icp, index) => (
+                              <Badge key={index} variant="secondary" className="text-xs">
+                                {icp}
+                              </Badge>
+                            ))}
+                            {line.specificICP.length > 2 && (
+                              <Badge variant="secondary" className="text-xs">
+                                +{line.specificICP.length - 2}
+                              </Badge>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-sm text-muted-foreground italic">None</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span className="text-sm">{relativeDate}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {createdDate.toLocaleDateString()}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-1 justify-end">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleReview(line)}
+                            disabled={isLoading}
+                            title="Review product line"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleEdit(line)}
+                            disabled={isLoading}
+                            title="Edit product line"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setDeleteId(line.id)}
+                            disabled={isLoading}
+                            title="Delete product line"
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </div>
         </div>
       )}
+
+      {/* Review Modal */}
+      <ProductLineReviewModal
+        productLine={reviewingProductLine}
+        open={isReviewModalOpen}
+        onOpenChange={setIsReviewModalOpen}
+        onEdit={handleEditFromReview}
+      />
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
