@@ -38,11 +38,14 @@ if (!NEXTAUTH_SECRET && process.env.NODE_ENV !== "production") {
   );
 }
 
-// Log configuration for debugging
-if (process.env.NODE_ENV === "development") {
-  console.log("🔐 NextAuth Config:");
-  console.log("   NEXTAUTH_URL:", NEXTAUTH_URL);
-  console.log("   NEXTAUTH_SECRET:", NEXTAUTH_SECRET ? "✅ Set" : "❌ Missing");
+// Log configuration for debugging (always log in production to verify URL)
+console.log("🔐 NextAuth Config:");
+console.log("   NEXTAUTH_URL:", NEXTAUTH_URL);
+console.log("   NEXTAUTH_SECRET:", NEXTAUTH_SECRET ? "✅ Set" : "❌ Missing");
+if (NEXTAUTH_URL.includes("localhost") && process.env.NODE_ENV === "production") {
+  console.error("❌ CRITICAL: NEXTAUTH_URL is set to localhost in production!");
+  console.error("❌ This will cause verification links to use localhost URLs");
+  console.error("❌ Please set NEXTAUTH_URL to your production domain in Render environment variables");
 }
 
 export const authOptions: NextAuthOptions = {
@@ -51,8 +54,8 @@ export const authOptions: NextAuthOptions = {
     strategy: "jwt",
   },
   secret: NEXTAUTH_SECRET || undefined, // NextAuth will handle missing secret in dev
-  // Let NextAuth auto-detect the URL from the request
-  // This avoids client-side URL construction issues
+  // Explicitly set the URL to prevent localhost issues in production
+  url: NEXTAUTH_URL,
   pages: {
     signIn: "/auth/signin",
     error: "/auth/error",
@@ -78,6 +81,18 @@ export const authOptions: NextAuthOptions = {
         if (!url || typeof url !== "string") {
           console.error("Invalid URL provided by NextAuth:", url);
           throw new Error("Failed to generate verification URL");
+        }
+
+        // CRITICAL FIX: Replace localhost URLs with production URL
+        // NextAuth sometimes generates localhost URLs even in production
+        if (url.includes("localhost") && NEXTAUTH_URL && !NEXTAUTH_URL.includes("localhost")) {
+          console.warn("⚠️  NextAuth generated localhost URL, replacing with NEXTAUTH_URL");
+          console.warn("⚠️  Original URL:", url);
+          // Replace localhost with the production URL
+          const urlObj = new URL(url);
+          const productionUrl = new URL(NEXTAUTH_URL);
+          url = url.replace(urlObj.origin, productionUrl.origin);
+          console.warn("⚠️  Fixed URL:", url);
         }
 
         try {
