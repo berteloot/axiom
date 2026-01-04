@@ -4,7 +4,7 @@ import EmailProvider from "next-auth/providers/email"
 import { prisma } from "@/lib/prisma"
 import { randomBytes } from "crypto"
 import sgMail from "@sendgrid/mail"
-import { getAccountType, removeAccountType } from "@/lib/account-type-store"
+import { getAccountType, getAccountName, removeAccountType } from "@/lib/account-type-store"
 
 // Configure SendGrid
 const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
@@ -54,8 +54,6 @@ export const authOptions: NextAuthOptions = {
     strategy: "jwt",
   },
   secret: NEXTAUTH_SECRET || undefined, // NextAuth will handle missing secret in dev
-  // Explicitly set the URL to prevent localhost issues in production
-  url: NEXTAUTH_URL,
   pages: {
     signIn: "/auth/signin",
     error: "/auth/error",
@@ -202,15 +200,23 @@ export const authOptions: NextAuthOptions = {
       // Get accountType from temporary store (set during signup)
       const accountType = user.email ? getAccountType(user.email) : null;
       
-      // Determine default account name based on accountType
+      // Get accountName from temporary store (set during signup)
+      const storedAccountName = user.email ? getAccountName(user.email) : null;
+      
+      // Use stored account name if available, otherwise fall back to default
       let accountName: string;
-      if (accountType === "CORPORATE") {
-        accountName = `${user.name || "My"} Organization`;
-      } else if (accountType === "AGENCY") {
-        accountName = `${user.name || "My"} Agency`;
+      if (storedAccountName) {
+        accountName = storedAccountName;
       } else {
-        // Legacy users or sign-in without signup (default to organization)
-        accountName = `${user.name || "My"} Organization`;
+        // Fallback to default naming if name wasn't provided during signup
+        if (accountType === "CORPORATE") {
+          accountName = `${user.name || "My"} Organization`;
+        } else if (accountType === "AGENCY") {
+          accountName = `${user.name || "My"} Agency`;
+        } else {
+          // Legacy users or sign-in without signup (default to organization)
+          accountName = `${user.name || "My"} Organization`;
+        }
       }
 
       // Update user with accountType and verification status

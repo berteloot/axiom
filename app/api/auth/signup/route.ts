@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { email, accountType, callbackUrl } = body;
+    const { email, accountType, accountName, callbackUrl } = body;
 
     if (!email || typeof email !== "string" || !email.includes("@")) {
       return NextResponse.json(
@@ -32,6 +32,14 @@ export async function POST(request: NextRequest) {
     if (!accountType || !["CORPORATE", "AGENCY"].includes(accountType)) {
       return NextResponse.json(
         { error: "Valid account type is required (CORPORATE or AGENCY)" },
+        { status: 400 }
+      );
+    }
+
+    // Validate account name
+    if (!accountName || typeof accountName !== "string" || accountName.trim().length === 0) {
+      return NextResponse.json(
+        { error: `${accountType === "AGENCY" ? "Agency" : "Organization"} name is required` },
         { status: 400 }
       );
     }
@@ -48,8 +56,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Store accountType temporarily for retrieval in createUser event
-    setAccountType(email, accountType);
+    // Store accountType and accountName temporarily for retrieval in createUser event
+    setAccountType(email, accountType, accountName.trim());
 
     // Store accountType temporarily in database (we'll use a simple approach)
     // We'll store it in a cookie-like mechanism or pass it in the callback URL

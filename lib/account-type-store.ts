@@ -1,14 +1,14 @@
-// Temporary store for accountType during signup process
-// This helps us pass accountType from signup API to createUser event
+// Temporary store for accountType and accountName during signup process
+// This helps us pass accountType and accountName from signup API to createUser event
 
-const accountTypeStore = new Map<string, { accountType: "CORPORATE" | "AGENCY"; expiresAt: Date }>();
+const accountTypeStore = new Map<string, { accountType: "CORPORATE" | "AGENCY"; accountName?: string; expiresAt: Date }>();
 
-// Store accountType for an email (expires after 24 hours)
-export function setAccountType(email: string, accountType: "CORPORATE" | "AGENCY") {
+// Store accountType and optional accountName for an email (expires after 24 hours)
+export function setAccountType(email: string, accountType: "CORPORATE" | "AGENCY", accountName?: string) {
   const expiresAt = new Date();
   expiresAt.setHours(expiresAt.getHours() + 24);
   
-  accountTypeStore.set(email.toLowerCase(), { accountType, expiresAt });
+  accountTypeStore.set(email.toLowerCase(), { accountType, accountName, expiresAt });
   
   // Clean up expired entries periodically
   cleanupExpired();
@@ -29,6 +29,23 @@ export function getAccountType(email: string): "CORPORATE" | "AGENCY" | null {
   }
   
   return entry.accountType;
+}
+
+// Get accountName for an email
+export function getAccountName(email: string): string | null {
+  const entry = accountTypeStore.get(email.toLowerCase());
+  
+  if (!entry) {
+    return null;
+  }
+  
+  // Check if expired
+  if (entry.expiresAt < new Date()) {
+    accountTypeStore.delete(email.toLowerCase());
+    return null;
+  }
+  
+  return entry.accountName || null;
 }
 
 // Remove accountType after use

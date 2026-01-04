@@ -15,6 +15,7 @@ type AccountType = "CORPORATE" | "AGENCY";
 function SignUpForm() {
   const [email, setEmail] = useState("");
   const [accountType, setAccountType] = useState<AccountType | "">("");
+  const [accountName, setAccountName] = useState("");
   const [loading, setLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
   const router = useRouter();
@@ -26,6 +27,11 @@ function SignUpForm() {
     
     if (!accountType) {
       alert("Please select an account type");
+      return;
+    }
+
+    if (!accountName.trim()) {
+      alert(`Please enter your ${accountType === "AGENCY" ? "agency" : "organization"} name`);
       return;
     }
 
@@ -45,6 +51,7 @@ function SignUpForm() {
         body: JSON.stringify({
           email,
           accountType,
+          accountName: accountName.trim(),
           callbackUrl: callbackUrl || "/dashboard",
         }),
       });
@@ -124,6 +131,33 @@ function SignUpForm() {
               </p>
             </div>
 
+            {accountType && (
+              <div className="space-y-2">
+                <Label htmlFor="accountName">
+                  {accountType === "AGENCY" ? "Agency Name" : "Organization Name"}
+                </Label>
+                <Input
+                  id="accountName"
+                  type="text"
+                  placeholder={
+                    accountType === "AGENCY" 
+                      ? "e.g., Digital Marketing Agency" 
+                      : "e.g., Acme Corporation"
+                  }
+                  value={accountName}
+                  onChange={(e) => setAccountName(e.target.value)}
+                  required
+                  disabled={loading}
+                  maxLength={100}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {accountType === "AGENCY" 
+                    ? "This is the name of your agency. You can create client accounts later." 
+                    : "This is the name of your organization."}
+                </p>
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="email">Email address</Label>
               <Input
@@ -140,7 +174,7 @@ function SignUpForm() {
             <Button
               type="submit"
               className="w-full"
-              disabled={loading || !email || !accountType}
+              disabled={loading || !email || !accountType || !accountName.trim()}
             >
               {loading ? "Sending..." : "Continue"}
             </Button>

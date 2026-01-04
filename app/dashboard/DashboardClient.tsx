@@ -484,6 +484,13 @@ export default function DashboardClient() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 sm:mb-8">
           <div className="min-w-0 flex-1">
+            {currentAccount?.name && (
+              <div className="mb-2">
+                <h2 className="text-xl sm:text-2xl font-semibold font-roboto-condensed text-brand-dark-blue truncate">
+                  {currentAccount.name}
+                </h2>
+              </div>
+            )}
             <h1 className="text-2xl sm:text-3xl font-bold font-roboto-condensed text-brand-dark-blue">Marketing Intelligence</h1>
             <p className="text-sm sm:text-base text-muted-foreground mt-1 sm:mt-2">
               Strategic overview of your marketing assets
