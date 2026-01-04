@@ -5,13 +5,46 @@ interface UploadProgress {
   message?: string;
 }
 
-
-// Threshold for using presigned URL direct upload (50MB or all videos)
-const PRESIGNED_THRESHOLD = 50 * 1024 * 1024; // 50MB
+// MIME type mapping for common file extensions
+const MIME_TYPES: Record<string, string> = {
+  // Video
+  mp4: "video/mp4",
+  mov: "video/quicktime",
+  avi: "video/x-msvideo",
+  webm: "video/webm",
+  mpeg: "video/mpeg",
+  mpg: "video/mpeg",
+  m4v: "video/x-m4v",
+  mkv: "video/x-matroska",
+  flv: "video/x-flv",
+  "3gp": "video/3gpp",
+  // Images
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  gif: "image/gif",
+  webp: "image/webp",
+  svg: "image/svg+xml",
+  // Documents
+  pdf: "application/pdf",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ppt: "application/vnd.ms-powerpoint",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  txt: "text/plain",
+  csv: "text/csv",
+  json: "application/json",
+  // Audio
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  ogg: "audio/ogg",
+  m4a: "audio/mp4",
+};
 
 // Helper: Read error body for fetch responses, prefer JSON error if available
 async function readErrorBody(res: Response): Promise<string> {
-  // Read the body ONCE, then try to parse JSON for a nicer message.
   const raw = await res.text().catch(() => "");
   if (!raw) return "";
 
@@ -28,6 +61,19 @@ async function readErrorBody(res: Response): Promise<string> {
   return raw;
 }
 
+// Helper: Infer MIME type from file extension
+function inferMimeType(fileName: string, browserType: string): string {
+  const ext = fileName.split(".").pop()?.toLowerCase() || "";
+  
+  // Trust browser type if it's set and not generic
+  if (browserType && browserType !== "application/octet-stream") {
+    return browserType;
+  }
+  
+  // Look up MIME type from extension
+  return MIME_TYPES[ext] || browserType || "application/octet-stream";
+}
+
 export function useFileUpload(onSuccess?: () => void) {
   const [uploadProgress, setUploadProgress] = useState<UploadProgress>({ status: "idle" });
 
@@ -36,190 +82,120 @@ export function useFileUpload(onSuccess?: () => void) {
       setUploadProgress({ status: "uploading", message: "Uploading file..." });
 
       const fileSize = file.size;
-      
-      // Check if file is a video by MIME type or extension
-      // Some browsers don't set MIME type correctly, so we check extension as fallback
-      const isVideoByType = file.type.startsWith("video/");
       const fileExtension = file.name.split(".").pop()?.toLowerCase() || "";
-      const videoExtensions = ["mp4", "mov", "avi", "webm", "mpeg", "mpg", "m4v", "mkv", "flv", "3gp"];
-      const isVideoByExtension = videoExtensions.includes(fileExtension);
-      const isVideo = isVideoByType || isVideoByExtension;
       
-      // ALWAYS use presigned URLs for videos, regardless of size
-      // Also use presigned URLs for large files (>50MB)
-      // This prevents backend timeouts and 502 errors
-      let usePresigned = isVideo || fileSize > PRESIGNED_THRESHOLD;
-      
-      // Safety check: If somehow a video is detected but usePresigned is false, force it
-      if (isVideo && !usePresigned) {
-        console.warn("Video detected but usePresigned was false - forcing presigned URL");
-        usePresigned = true;
-      }
+      // Infer the correct MIME type
+      const fileType = inferMimeType(file.name, file.type);
       
       // Debug logging
-      console.log("Upload decision:", {
+      console.log("Upload started (DIRECT S3):", {
         fileName: file.name,
-        fileType: file.type,
+        browserType: file.type,
+        inferredType: fileType,
         fileExtension,
         fileSize: `${(fileSize / 1024 / 1024).toFixed(2)} MB`,
-        isVideoByType,
-        isVideoByExtension,
-        isVideo,
-        usePresigned,
       });
 
-      let key: string;
-      let fileName: string;
-      let fileType: string;
+      // ============================================================
+      // RADICALLY SIMPLE: ALL uploads go directly to S3 via presigned URL
+      // This completely bypasses the backend for file data transfer
+      // No FormData, no proxy, no server memory issues, no timeouts
+      // ============================================================
 
-      if (usePresigned) {
-        // For large files/videos: Use presigned URL for direct S3 upload
-        // This bypasses the Next.js server, preventing timeouts and memory issues
-        console.log(`Using presigned URL for ${isVideo ? "video" : "large"} file: ${(fileSize / 1024 / 1024).toFixed(2)} MB`);
-
-        // 1) Get presigned URL from backend
-        // Infer file type from extension if MIME type is missing or incorrect
-        let inferredFileType = file.type;
-        if (!inferredFileType || inferredFileType === "application/octet-stream") {
-          const mimeTypes: Record<string, string> = {
-            mp4: "video/mp4",
-            mov: "video/quicktime",
-            avi: "video/x-msvideo",
-            webm: "video/webm",
-            mpeg: "video/mpeg",
-            mpg: "video/mpeg",
-            m4v: "video/x-m4v",
-            mkv: "video/x-matroska",
-            flv: "video/x-flv",
-            "3gp": "video/3gpp",
-          };
-          inferredFileType = mimeTypes[fileExtension] || (isVideo ? "video/mp4" : "application/octet-stream");
-        }
-        
-        // Add timeout to presigned URL request (30 seconds should be plenty)
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000);
-        
-        let presignedRes: Response;
-        try {
-          presignedRes = await fetch("/api/upload/presigned", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              fileName: file.name,
-              fileType: inferredFileType,
-            }),
-            signal: controller.signal,
-          });
-        } catch (fetchError) {
-          clearTimeout(timeoutId);
-          if (fetchError instanceof Error && fetchError.name === "AbortError") {
-            throw new Error("Request to generate upload URL timed out. Please try again.");
-          }
-          throw fetchError;
-        } finally {
-          clearTimeout(timeoutId);
-        }
-
-        if (!presignedRes.ok) {
-          const errText = await readErrorBody(presignedRes);
-          throw new Error(
-            `Presigned URL error: ${presignedRes.status} ${presignedRes.statusText}${errText ? ` - ${errText}` : ""}`.trim()
-          );
-        }
-
-        const { url: presignedUrl, key: presignedKey } = (await presignedRes.json()) as {
-          url: string;
-          key: string;
-        };
-
-        key = presignedKey;
-        fileName = file.name;
-        // IMPORTANT: must match the Content-Type used when generating the presigned URL
-        fileType = inferredFileType || file.type || "application/octet-stream";
-
-        // 2) Upload directly to S3 using presigned URL
-        // Use a longer timeout for large video uploads (1 hour should be enough)
-        const uploadController = new AbortController();
-        const uploadTimeoutId = setTimeout(() => uploadController.abort(), 3600000); // 1 hour
-        
-        let s3UploadRes: Response;
-        try {
-          s3UploadRes = await fetch(presignedUrl, {
-            method: "PUT",
-            body: file,
-            headers: {
-              "Content-Type": fileType,
-            },
-            signal: uploadController.signal,
-          });
-        } catch (uploadError) {
-          clearTimeout(uploadTimeoutId);
-          if (uploadError instanceof Error && uploadError.name === "AbortError") {
-            throw new Error("Upload timed out. The file may be too large. Please try again or contact support.");
-          }
-          throw uploadError;
-        } finally {
-          clearTimeout(uploadTimeoutId);
-        }
-
-        if (!s3UploadRes.ok) {
-          const text = await s3UploadRes.text().catch(() => "");
-          throw new Error(
-            `S3 upload error: ${s3UploadRes.status} ${s3UploadRes.statusText} - ${text}`.trim()
-          );
-        }
-      } else {
-        // For smaller files: Upload through backend API (simpler, avoids CORS)
-        // Double-check that this is NOT a video (safety check)
-        if (isVideo) {
-          console.error("Video file detected but usePresigned is false - this should not happen!");
-          throw new Error("Video files must use direct S3 upload. Please try again.");
-        }
-        
-        const formData = new FormData();
-        formData.append("file", file);
-
-        const uploadRes = await fetch("/api/upload", {
+      // Step 1: Get presigned URL from backend (small JSON request, fast)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s for URL generation
+      
+      let presignedRes: Response;
+      try {
+        presignedRes = await fetch("/api/upload/presigned", {
           method: "POST",
-          body: formData,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileName: file.name,
+            fileType: fileType,
+          }),
+          signal: controller.signal,
         });
-
-        if (!uploadRes.ok) {
-          const errText = await readErrorBody(uploadRes);
-          throw new Error(
-            `Upload error: ${uploadRes.status} ${uploadRes.statusText}${errText ? ` - ${errText}` : ""}`.trim()
-          );
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        if (fetchError instanceof Error && fetchError.name === "AbortError") {
+          throw new Error("Request to generate upload URL timed out. Please try again.");
         }
-
-        const result = (await uploadRes.json()) as {
-          key: string;
-          fileName: string;
-          fileType: string;
-        };
-
-        key = result.key;
-        fileName = result.fileName;
-        fileType = result.fileType;
+        throw fetchError;
+      } finally {
+        clearTimeout(timeoutId);
       }
+
+      if (!presignedRes.ok) {
+        const errText = await readErrorBody(presignedRes);
+        throw new Error(
+          `Failed to prepare upload: ${presignedRes.status} ${presignedRes.statusText}${errText ? ` - ${errText}` : ""}`.trim()
+        );
+      }
+
+      const { url: presignedUrl, key } = (await presignedRes.json()) as {
+        url: string;
+        key: string;
+      };
+
+      console.log("Got presigned URL, uploading directly to S3...");
+
+      // Step 2: Upload directly to S3 (browser → S3, no server in between)
+      // Use a generous timeout based on file size (minimum 5 min, scale with size)
+      const uploadTimeoutMs = Math.max(5 * 60 * 1000, (fileSize / (1024 * 1024)) * 60 * 1000); // ~1 min per MB, min 5 min
+      const uploadController = new AbortController();
+      const uploadTimeoutId = setTimeout(() => uploadController.abort(), uploadTimeoutMs);
+      
+      let s3UploadRes: Response;
+      try {
+        s3UploadRes = await fetch(presignedUrl, {
+          method: "PUT",
+          body: file,
+          headers: {
+            "Content-Type": fileType,
+          },
+          signal: uploadController.signal,
+        });
+      } catch (uploadError) {
+        clearTimeout(uploadTimeoutId);
+        if (uploadError instanceof Error && uploadError.name === "AbortError") {
+          throw new Error("Upload timed out. Please check your connection and try again.");
+        }
+        // Log detailed error for debugging
+        console.error("S3 upload failed:", uploadError);
+        throw new Error("Upload failed. Please check your connection and try again.");
+      } finally {
+        clearTimeout(uploadTimeoutId);
+      }
+
+      if (!s3UploadRes.ok) {
+        const text = await s3UploadRes.text().catch(() => "");
+        console.error("S3 upload response error:", s3UploadRes.status, text);
+        throw new Error(
+          `Upload failed: ${s3UploadRes.status} ${s3UploadRes.statusText}`.trim()
+        );
+      }
+
+      console.log("S3 upload complete, processing asset...");
 
       setUploadProgress({ status: "processing", message: "Processing asset..." });
 
-      // 2) Trigger processing
+      // Step 3: Trigger asset processing (small JSON request, fast)
       const processRes = await fetch("/api/assets/process", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           key,
-          title: fileName,
-          fileType: fileType || file.type || "application/octet-stream",
+          title: file.name,
+          fileType: fileType,
         }),
       });
 
       if (!processRes.ok) {
         const errText = await readErrorBody(processRes);
         throw new Error(
-          `Process error: ${processRes.status} ${processRes.statusText}${errText ? ` - ${errText}` : ""}`.trim()
+          `Processing failed: ${processRes.status} ${processRes.statusText}${errText ? ` - ${errText}` : ""}`.trim()
         );
       }
 
