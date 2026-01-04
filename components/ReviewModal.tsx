@@ -231,7 +231,6 @@ export function ReviewModal({
                   variant="outline"
                   onClick={() => setIsLinkedInModalOpen(true)}
                   disabled={saving || deleting}
-                  className="flex items-center gap-2"
                 >
                   <Linkedin className="h-4 w-4" />
                   LinkedIn Post
@@ -241,7 +240,6 @@ export function ReviewModal({
                 variant="outline"
                 onClick={handleDownload}
                 disabled={saving || deleting}
-                className="flex items-center gap-2"
               >
                 <Download className="h-4 w-4" />
                 Download
@@ -257,7 +255,6 @@ export function ReviewModal({
                 variant="destructive"
                 onClick={() => setShowDeleteDialog(true)}
                 disabled={saving || deleting}
-                className="gap-2"
               >
                 <Trash2 className="h-4 w-4" />
                 Delete
