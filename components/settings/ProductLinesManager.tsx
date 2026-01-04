@@ -65,9 +65,11 @@ export function ProductLinesManager({
   const [isReviewModalOpen, setIsReviewModalOpen] = React.useState(false)
   const [deleteId, setDeleteId] = React.useState<string | null>(null)
   const [isDeleting, setIsDeleting] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
 
   const handleAdd = async (data: ProductLineFormData) => {
     setIsAdding(true)
+    setError(null)
     try {
       if (editingProductLine) {
         await onUpdate(editingProductLine.id, data)
@@ -76,6 +78,12 @@ export function ProductLinesManager({
       }
       setIsDialogOpen(false)
       setEditingProductLine(null)
+      setError(null)
+    } catch (err) {
+      console.error("Error saving product line:", err)
+      const errorMessage = err instanceof Error ? err.message : "Failed to save product line"
+      setError(errorMessage)
+      // Don't close dialog on error so user can see the error and retry
     } finally {
       setIsAdding(false)
     }
@@ -102,6 +110,7 @@ export function ProductLinesManager({
   const handleCloseDialog = () => {
     setIsDialogOpen(false)
     setEditingProductLine(null)
+    setError(null)
   }
 
   const handleDelete = async () => {
@@ -125,9 +134,23 @@ export function ProductLinesManager({
             Define the different product categories or lines your company offers.
           </p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={handleCloseDialog}>
+        <Dialog open={isDialogOpen} onOpenChange={(open) => {
+          setIsDialogOpen(open)
+          if (!open) {
+            // Reset when closing
+            setEditingProductLine(null)
+            setError(null)
+          } else {
+            // When opening via DialogTrigger, ensure we're in "add" mode
+            setEditingProductLine(null)
+            setError(null)
+          }
+        }}>
           <DialogTrigger asChild>
-            <Button>
+            <Button onClick={() => {
+              setEditingProductLine(null)
+              setError(null)
+            }}>
               <Plus className="h-4 w-4 mr-2" />
               Add Product Line
             </Button>
@@ -142,6 +165,12 @@ export function ProductLinesManager({
                 }
               </DialogDescription>
             </DialogHeader>
+            {error && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 text-destructive border border-destructive/20 text-sm">
+                <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
             <ProductLineForm
               key={editingProductLine?.id || "new"}
               initialData={editingProductLine ? {
@@ -165,7 +194,11 @@ export function ProductLinesManager({
           <p className="text-sm text-muted-foreground mb-4">
             Add your first product line to help the AI categorize and analyze your assets more accurately.
           </p>
-          <Button onClick={() => setIsDialogOpen(true)}>
+          <Button onClick={() => {
+            setEditingProductLine(null)
+            setError(null)
+            setIsDialogOpen(true)
+          }}>
             <Plus className="h-4 w-4 mr-2" />
             Add Product Line
           </Button>

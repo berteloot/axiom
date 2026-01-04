@@ -150,8 +150,10 @@ export default function CompanyProfilePage() {
       })
 
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || "Failed to create product line")
+        const errorData = await response.json().catch(() => ({}))
+        const errorMessage = errorData.error || "Failed to create product line"
+        setError(errorMessage)
+        throw new Error(errorMessage)
       }
 
       const result = await response.json()
@@ -164,6 +166,7 @@ export default function CompanyProfilePage() {
       setTimeout(() => setSuccessMessage(null), 3000)
     } catch (error) {
       console.error("Error creating product line:", error)
+      // Error is already set in setError above, but we still throw to let ProductLinesManager handle it
       throw error
     }
   }
