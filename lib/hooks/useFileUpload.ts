@@ -5,6 +5,9 @@ interface UploadProgress {
   message?: string;
 }
 
+// Threshold for using presigned URL direct upload (50MB or all videos)
+const PRESIGNED_THRESHOLD = 50 * 1024 * 1024; // 50MB
+
 export function useFileUpload(onSuccess?: () => void) {
   const [uploadProgress, setUploadProgress] = useState<UploadProgress>({ status: "idle" });
 
@@ -12,28 +15,89 @@ export function useFileUpload(onSuccess?: () => void) {
     try {
       setUploadProgress({ status: "uploading", message: "Uploading file..." });
 
-      // 1) Upload file through backend API (avoids CORS issues)
-      const formData = new FormData();
-      formData.append("file", file);
+      const fileSize = file.size;
+      const isVideo = file.type.startsWith("video/");
+      const usePresigned = isVideo || fileSize > PRESIGNED_THRESHOLD;
 
-      const uploadRes = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
+      let key: string;
+      let fileName: string;
+      let fileType: string;
 
-      if (!uploadRes.ok) {
-        const text = await uploadRes.text().catch(() => "");
-        const errorData = await uploadRes.json().catch(() => ({ error: text }));
-        throw new Error(
-          `Upload error: ${uploadRes.status} ${uploadRes.statusText} - ${errorData.error || text}`.trim()
-        );
+      if (usePresigned) {
+        // For large files/videos: Use presigned URL for direct S3 upload
+        // This bypasses the Next.js server, preventing timeouts and memory issues
+        console.log(`Using presigned URL for ${isVideo ? "video" : "large"} file: ${(fileSize / 1024 / 1024).toFixed(2)} MB`);
+
+        // 1) Get presigned URL from backend
+        const presignedRes = await fetch("/api/upload/presigned", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileName: file.name,
+            fileType: file.type || "application/octet-stream",
+          }),
+        });
+
+        if (!presignedRes.ok) {
+          const text = await presignedRes.text().catch(() => "");
+          const errorData = await presignedRes.json().catch(() => ({ error: text }));
+          throw new Error(
+            `Presigned URL error: ${presignedRes.status} ${presignedRes.statusText} - ${errorData.error || text}`.trim()
+          );
+        }
+
+        const { url: presignedUrl, key: presignedKey } = (await presignedRes.json()) as {
+          url: string;
+          key: string;
+        };
+
+        key = presignedKey;
+        fileName = file.name;
+        fileType = file.type || "application/octet-stream";
+
+        // 2) Upload directly to S3 using presigned URL
+        const s3UploadRes = await fetch(presignedUrl, {
+          method: "PUT",
+          body: file,
+          headers: {
+            "Content-Type": fileType,
+          },
+        });
+
+        if (!s3UploadRes.ok) {
+          const text = await s3UploadRes.text().catch(() => "");
+          throw new Error(
+            `S3 upload error: ${s3UploadRes.status} ${s3UploadRes.statusText} - ${text}`.trim()
+          );
+        }
+      } else {
+        // For smaller files: Upload through backend API (simpler, avoids CORS)
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const uploadRes = await fetch("/api/upload", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!uploadRes.ok) {
+          const text = await uploadRes.text().catch(() => "");
+          const errorData = await uploadRes.json().catch(() => ({ error: text }));
+          throw new Error(
+            `Upload error: ${uploadRes.status} ${uploadRes.statusText} - ${errorData.error || text}`.trim()
+          );
+        }
+
+        const result = (await uploadRes.json()) as {
+          key: string;
+          fileName: string;
+          fileType: string;
+        };
+
+        key = result.key;
+        fileName = result.fileName;
+        fileType = result.fileType;
       }
-
-      const { key, fileName, fileType } = (await uploadRes.json()) as {
-        key: string;
-        fileName: string;
-        fileType: string;
-      };
 
       setUploadProgress({ status: "processing", message: "Processing asset..." });
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { Upload } from "@aws-sdk/lib-storage";
 import { v4 as uuidv4 } from "uuid";
 import { requireAccountId } from "@/lib/account-utils";
 import { getAccountS3Prefix } from "@/lib/services/account-service";
@@ -7,6 +8,9 @@ import { getAccountS3Prefix } from "@/lib/services/account-service";
 // Ensure this route runs in Node.js runtime
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// Increase max duration for large file uploads (Next.js 14+)
+export const maxDuration = 300; // 5 minutes
 
 const s3Client = new S3Client({
   region: process.env.AWS_REGION || "us-east-1",
@@ -17,6 +21,10 @@ const s3Client = new S3Client({
 });
 
 const BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME || "";
+
+// Threshold for using multipart upload (50MB for non-video files)
+// Videos always use multipart upload regardless of size
+const MULTIPART_THRESHOLD = 50 * 1024 * 1024;
 
 export async function POST(request: NextRequest) {
   try {
@@ -96,16 +104,49 @@ export async function POST(request: NextRequest) {
     // Convert file to buffer
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+    const fileSize = buffer.length;
+    const isVideo = contentType.startsWith("video/");
 
-    // Upload to S3
-    const putCommand = new PutObjectCommand({
-      Bucket: BUCKET_NAME,
-      Key: fileKey,
-      Body: buffer,
-      ContentType: contentType,
-    });
+    // Use multipart upload for:
+    // 1. All video files (regardless of size) - prevents timeouts
+    // 2. Large files (>50MB) - prevents memory issues
+    // This prevents timeouts and memory issues
+    if (isVideo || fileSize > MULTIPART_THRESHOLD) {
+      console.log(`Using multipart upload for large file: ${fileSize} bytes (${(fileSize / 1024 / 1024).toFixed(2)} MB)`);
+      
+      const upload = new Upload({
+        client: s3Client,
+        params: {
+          Bucket: BUCKET_NAME,
+          Key: fileKey,
+          Body: buffer,
+          ContentType: contentType,
+        },
+        // Multipart upload configuration
+        partSize: 10 * 1024 * 1024, // 10MB parts
+        leavePartsOnError: false, // Clean up on error
+      });
 
-    await s3Client.send(putCommand);
+      // Monitor upload progress
+      upload.on("httpUploadProgress", (progress) => {
+        if (progress.loaded && progress.total) {
+          const percent = Math.round((progress.loaded / progress.total) * 100);
+          console.log(`Upload progress: ${percent}% (${(progress.loaded / 1024 / 1024).toFixed(2)} MB / ${(progress.total / 1024 / 1024).toFixed(2)} MB)`);
+        }
+      });
+
+      await upload.done();
+    } else {
+      // Use simple upload for smaller files
+      const putCommand = new PutObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: fileKey,
+        Body: buffer,
+        ContentType: contentType,
+      });
+
+      await s3Client.send(putCommand);
+    }
 
     return NextResponse.json({
       success: true,
