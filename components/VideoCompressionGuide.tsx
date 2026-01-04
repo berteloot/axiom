@@ -46,7 +46,7 @@ export function VideoCompressionGuide({ fileSize, onClose }: VideoCompressionGui
             The app automatically tries multiple strategies in order:
           </p>
           <ol className="text-sm text-green-700 dark:text-green-300 list-decimal list-inside mt-2 space-y-1">
-            <li><strong>Automatic compression</strong> - Compresses videos >50MB using FFmpeg</li>
+            <li><strong>Automatic compression</strong> - Compresses videos &gt;50MB using FFmpeg</li>
             <li><strong>Audio extraction</strong> - Extracts audio track (90%+ size reduction)</li>
             <li><strong>Smart chunking</strong> - Splits into 10-minute segments if needed</li>
             <li><strong>First 10 minutes only</strong> - Fast fallback for very large files</li>
