@@ -11,7 +11,7 @@ export async function register() {
         'AWS_S3_BUCKET_NAME',
         'OPENAI_API_KEY',
         'SENDGRID_API_KEY',
-        'EMAIL_FROM',
+        'FROM_EMAIL',
       ];
 
       const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
