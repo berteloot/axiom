@@ -74,6 +74,7 @@ export async function POST(request: NextRequest) {
         png: "image/png",
         gif: "image/gif",
         webp: "image/webp",
+        svg: "image/svg+xml",
         // Video (Audio-First analysis)
         mp4: "video/mp4",
         mov: "video/quicktime",
