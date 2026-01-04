@@ -708,13 +708,13 @@ export async function searchTrendingTopics(
       }
     }
 
-    // Call Jina Search API - returns top 5 results
+    // Call Jina Search API - returns top 5 results as JSON with proper URLs
     const jinaSearchUrl = `${JINA_SEARCH_URL}/${encodeURIComponent(searchQuery)}`;
     
     const response = await fetch(jinaSearchUrl, {
       headers: {
         "Authorization": `Bearer ${JINA_API_KEY}`,
-        "Accept": "text/plain",
+        "Accept": "application/json", // Use JSON format for reliable URL extraction
         "X-With-Generated-Alt": "true",
       },
     });
@@ -730,10 +730,14 @@ export async function searchTrendingTopics(
       };
     }
 
-    // Jina Search returns a combined markdown of top 5 results
-    const markdown = await response.text();
-
-    if (!markdown || markdown.trim().length < 50) {
+    // Parse Jina JSON response - contains data array with url, title, content
+    const jinaResponse = await response.json();
+    
+    // Extract search results from Jina JSON response
+    const jinaResults: Array<{ url: string; title: string; content: string }> = 
+      jinaResponse.data || [];
+    
+    if (!jinaResults || jinaResults.length === 0) {
       return {
         results: [],
         trendingTopics: [],
@@ -741,6 +745,21 @@ export async function searchTrendingTopics(
         sourcesUsed: [],
       };
     }
+
+    // Log search results for debugging
+    console.log(`Jina Search returned ${jinaResults.length} results with URLs:`, 
+      jinaResults.map(r => ({ url: r.url, title: r.title }))
+    );
+
+    // Build structured data to pass to OpenAI for analysis
+    // Now we have ACTUAL URLs from Jina, not extracted from markdown
+    const searchResultsForAnalysis = jinaResults.slice(0, 10).map((r, idx) => 
+      `RESULT ${idx + 1}:
+- URL: ${r.url}
+- Title: ${r.title}
+- Content: ${r.content?.substring(0, 1500) || "No content available"}
+---`
+    ).join("\n\n");
 
     // Parse the results and extract insights using OpenAI
     const completion = await openai.chat.completions.parse({
@@ -760,13 +779,21 @@ export async function searchTrendingTopics(
 3. **AVOID**: Competitor blogs, vendor marketing content, unverified sources
 4. **Source credibility matters** - Only cite sources that add credibility
 
+🔴 CRITICAL URL HANDLING:
+- Each search result includes a URL field - you MUST use the EXACT URL provided
+- Do NOT modify, shorten, or invent URLs
+- Copy the URL exactly as shown in each search result
+
 Extract from the search results:
 1. Key trending topics (3-7 topics) - specific, actionable topics currently being discussed
-2. Relevance assessment for each result (high/medium/low)
-3. Source type classification (consulting, industry_media, research, other)
-4. Reputability assessment (true for consulting firms, established media, research orgs)
-5. Strategic insights for content creation based on trending topics
-6. List of reputable sources used (URLs only, excluding competitor blogs)
+2. For each result:
+   - Use the EXACT URL from the search result
+   - Use the EXACT title from the search result
+   - Relevance assessment (high/medium/low)
+   - Source type classification (consulting, industry_media, research, other)
+   - Reputability assessment (true for consulting firms, established media, research orgs)
+3. Strategic insights for content creation based on trending topics
+4. List of reputable sources used (URLs only, excluding competitor blogs)
 
 Focus on:
 - Topics that relate to solving pain clusters (especially: ${context?.painCluster || "the identified pain cluster"})
@@ -798,6 +825,7 @@ ${context ? `
 - EXCLUDE any results from competitor websites: ${context?.competitors?.join(", ") || "None"}
 - PRIORITIZE reputable sources (consulting firms, industry media, research organizations)
 - Only include sources that add credibility to the content
+- Use the EXACT URLs provided in each search result - do NOT modify them
 
 Focus on finding trending topics that:
 1. Relate to solving the pain cluster(s): ${context?.painCluster || context?.painClusters?.join(", ") || "Not specified"}
@@ -805,8 +833,8 @@ Focus on finding trending topics that:
 3. Show current industry conversations about these problems
 4. Come from reputable, credible sources
 
-Search Results:
-${markdown.substring(0, 10000)}`,
+Search Results (EACH HAS A URL FIELD - USE IT EXACTLY):
+${searchResultsForAnalysis}`,
         },
       ],
       response_format: zodResponseFormat(TrendingTopicsSchema, "trending_topics"),
@@ -819,24 +847,145 @@ ${markdown.substring(0, 10000)}`,
       throw new Error("AI failed to analyze trending topics");
     }
 
-    // Post-process: ensure sourcesUsed reflects reputable sources, and remove likely competitor results
+    // Create URL lookup map from Jina results to fix any AI URL errors
+    const jinaUrlMap = new Map<string, { url: string; title: string; content: string }>();
+    for (const r of jinaResults) {
+      if (r.url && r.title) {
+        // Map by normalized title for fuzzy matching
+        jinaUrlMap.set(r.title.toLowerCase().trim(), r);
+        // Also map by URL for direct lookup
+        jinaUrlMap.set(r.url.toLowerCase().trim(), r);
+      }
+    }
+
+    // Post-process: ensure URLs from Jina are correctly used
+    // The AI might return malformed URLs, so we fix them from the original Jina data
+    const fixedResults = (analysis.results ?? []).map(r => {
+      let fixedUrl = r.url;
+      let fixedTitle = r.title;
+      let fixedContent = r.content;
+      
+      // Try to find the original Jina result by title or URL
+      const titleKey = r.title?.toLowerCase().trim();
+      const urlKey = r.url?.toLowerCase().trim();
+      
+      const jinaMatch = jinaUrlMap.get(titleKey) || jinaUrlMap.get(urlKey);
+      
+      if (jinaMatch) {
+        // Use the actual URL from Jina (most reliable)
+        fixedUrl = jinaMatch.url;
+        // Optionally use the full content if AI truncated it
+        if (!fixedContent || fixedContent.length < 100) {
+          fixedContent = jinaMatch.content?.substring(0, 2000) || fixedContent;
+        }
+      } else {
+        // If no match found, try to find by partial URL match
+        for (const [, jinaResult] of jinaUrlMap) {
+          if (jinaResult.url && r.url && (
+            jinaResult.url.includes(r.url) || 
+            r.url.includes(jinaResult.url.split('/').slice(-2).join('/'))
+          )) {
+            fixedUrl = jinaResult.url;
+            fixedContent = jinaResult.content?.substring(0, 2000) || fixedContent;
+            break;
+          }
+        }
+      }
+      
+      return {
+        ...r,
+        url: fixedUrl,
+        title: fixedTitle,
+        content: fixedContent,
+      };
+    });
+
+    // Post-process: remove competitor results
     const competitorTerms = (context?.competitors ?? [])
       .map(c => c.toLowerCase().trim())
       .filter(Boolean);
 
-    const filteredResults = (analysis.results ?? []).filter(r => {
+    const filteredResults = fixedResults.filter(r => {
       const haystack = `${r.url} ${r.title} ${r.content}`.toLowerCase();
       if (competitorTerms.some(t => t && haystack.includes(t))) return false;
       return true;
     });
 
+    // If AI returned fewer results than Jina provided, supplement with Jina results
+    // This ensures we don't lose valuable sources
+    const existingUrls = new Set(filteredResults.map(r => r.url.toLowerCase()));
+    const supplementalResults: typeof filteredResults = [];
+    
+    for (const jinaResult of jinaResults) {
+      if (!existingUrls.has(jinaResult.url.toLowerCase())) {
+        // Check if this is a competitor
+        const haystack = `${jinaResult.url} ${jinaResult.title} ${jinaResult.content}`.toLowerCase();
+        if (!competitorTerms.some(t => t && haystack.includes(t))) {
+          supplementalResults.push({
+            url: jinaResult.url,
+            title: jinaResult.title,
+            content: jinaResult.content?.substring(0, 2000) || "",
+            relevance: "medium" as const,
+            sourceType: "other" as const, // Will be classified below
+            isReputable: false, // Will be determined below
+          });
+        }
+      }
+    }
+
+    // Combine and ensure we have up to 5 results
+    const combinedResults = [...filteredResults, ...supplementalResults].slice(0, 5);
+
+    // Determine reputability based on URL patterns for any results that aren't already classified
+    const reputableDomains = [
+      'mckinsey.com', 'deloitte.com', 'pwc.com', 'gartner.com', 'forrester.com',
+      'bcg.com', 'bain.com', 'accenture.com', 'ey.com', 'kpmg.com',
+      'hbr.org', 'mit.edu', 'stanford.edu', 'harvard.edu', 'forbes.com',
+      'wsj.com', 'ft.com', 'economist.com', 'bloomberg.com', 'reuters.com',
+      'idc.com', 'statista.com', 'pew', '.gov', '.edu'
+    ];
+    
+    const industryMediaDomains = [
+      'techcrunch.com', 'wired.com', 'zdnet.com', 'venturebeat.com', 'theverge.com',
+      'arstechnica.com', 'cnet.com', 'computerworld.com', 'infoworld.com'
+    ];
+
+    const finalResults = combinedResults.map(r => {
+      const urlLower = r.url.toLowerCase();
+      let sourceType = r.sourceType;
+      let isReputable = r.isReputable;
+      
+      // Check if URL matches reputable domains
+      if (reputableDomains.some(d => urlLower.includes(d))) {
+        isReputable = true;
+        if (urlLower.includes('mckinsey') || urlLower.includes('deloitte') || 
+            urlLower.includes('pwc') || urlLower.includes('bcg') || 
+            urlLower.includes('bain') || urlLower.includes('accenture') ||
+            urlLower.includes('gartner') || urlLower.includes('forrester')) {
+          sourceType = "consulting" as const;
+        } else if (urlLower.includes('.edu') || urlLower.includes('idc.') || 
+                   urlLower.includes('statista') || urlLower.includes('pew')) {
+          sourceType = "research" as const;
+        } else {
+          sourceType = "industry_media" as const;
+        }
+      } else if (industryMediaDomains.some(d => urlLower.includes(d))) {
+        sourceType = "industry_media" as const;
+        isReputable = true;
+      }
+      
+      return { ...r, sourceType, isReputable };
+    });
+
     const sourcesUsed = dedupeStrings(
-      filteredResults.filter(r => r.isReputable).map(r => r.url)
+      finalResults.filter(r => r.isReputable).map(r => r.url)
     );
+
+    console.log(`Processed ${finalResults.length} results, ${sourcesUsed.length} reputable sources with URLs:`, sourcesUsed);
 
     return {
       ...analysis,
-      results: filteredResults,
+      results: finalResults,
       sourcesUsed,
     };
   } catch (error) {
