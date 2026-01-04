@@ -21,11 +21,20 @@ export function useFileUpload(onSuccess?: () => void) {
       // Some browsers don't set MIME type correctly, so we check extension as fallback
       const isVideoByType = file.type.startsWith("video/");
       const fileExtension = file.name.split(".").pop()?.toLowerCase() || "";
-      const videoExtensions = ["mp4", "mov", "avi", "webm", "mpeg", "mpg", "m4v"];
+      const videoExtensions = ["mp4", "mov", "avi", "webm", "mpeg", "mpg", "m4v", "mkv", "flv", "3gp"];
       const isVideoByExtension = videoExtensions.includes(fileExtension);
       const isVideo = isVideoByType || isVideoByExtension;
       
-      const usePresigned = isVideo || fileSize > PRESIGNED_THRESHOLD;
+      // ALWAYS use presigned URLs for videos, regardless of size
+      // Also use presigned URLs for large files (>50MB)
+      // This prevents backend timeouts and 502 errors
+      let usePresigned = isVideo || fileSize > PRESIGNED_THRESHOLD;
+      
+      // Safety check: If somehow a video is detected but usePresigned is false, force it
+      if (isVideo && !usePresigned) {
+        console.warn("Video detected but usePresigned was false - forcing presigned URL");
+        usePresigned = true;
+      }
       
       // Debug logging
       console.log("Upload decision:", {
@@ -60,18 +69,37 @@ export function useFileUpload(onSuccess?: () => void) {
             mpeg: "video/mpeg",
             mpg: "video/mpeg",
             m4v: "video/x-m4v",
+            mkv: "video/x-matroska",
+            flv: "video/x-flv",
+            "3gp": "video/3gpp",
           };
-          inferredFileType = mimeTypes[fileExtension] || "application/octet-stream";
+          inferredFileType = mimeTypes[fileExtension] || (isVideo ? "video/mp4" : "application/octet-stream");
         }
         
-        const presignedRes = await fetch("/api/upload/presigned", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fileName: file.name,
-            fileType: inferredFileType,
-          }),
-        });
+        // Add timeout to presigned URL request (30 seconds should be plenty)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
+        
+        let presignedRes: Response;
+        try {
+          presignedRes = await fetch("/api/upload/presigned", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              fileName: file.name,
+              fileType: inferredFileType,
+            }),
+            signal: controller.signal,
+          });
+        } catch (fetchError) {
+          clearTimeout(timeoutId);
+          if (fetchError instanceof Error && fetchError.name === "AbortError") {
+            throw new Error("Request to generate upload URL timed out. Please try again.");
+          }
+          throw fetchError;
+        } finally {
+          clearTimeout(timeoutId);
+        }
 
         if (!presignedRes.ok) {
           const text = await presignedRes.text().catch(() => "");
@@ -91,13 +119,29 @@ export function useFileUpload(onSuccess?: () => void) {
         fileType = file.type || "application/octet-stream";
 
         // 2) Upload directly to S3 using presigned URL
-        const s3UploadRes = await fetch(presignedUrl, {
-          method: "PUT",
-          body: file,
-          headers: {
-            "Content-Type": fileType,
-          },
-        });
+        // Use a longer timeout for large video uploads (1 hour should be enough)
+        const uploadController = new AbortController();
+        const uploadTimeoutId = setTimeout(() => uploadController.abort(), 3600000); // 1 hour
+        
+        let s3UploadRes: Response;
+        try {
+          s3UploadRes = await fetch(presignedUrl, {
+            method: "PUT",
+            body: file,
+            headers: {
+              "Content-Type": fileType,
+            },
+            signal: uploadController.signal,
+          });
+        } catch (uploadError) {
+          clearTimeout(uploadTimeoutId);
+          if (uploadError instanceof Error && uploadError.name === "AbortError") {
+            throw new Error("Upload timed out. The file may be too large. Please try again or contact support.");
+          }
+          throw uploadError;
+        } finally {
+          clearTimeout(uploadTimeoutId);
+        }
 
         if (!s3UploadRes.ok) {
           const text = await s3UploadRes.text().catch(() => "");
@@ -107,6 +151,12 @@ export function useFileUpload(onSuccess?: () => void) {
         }
       } else {
         // For smaller files: Upload through backend API (simpler, avoids CORS)
+        // Double-check that this is NOT a video (safety check)
+        if (isVideo) {
+          console.error("Video file detected but usePresigned is false - this should not happen!");
+          throw new Error("Video files must use direct S3 upload. Please try again.");
+        }
+        
         const formData = new FormData();
         formData.append("file", file);
 

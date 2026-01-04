@@ -101,17 +101,31 @@ export async function POST(request: NextRequest) {
       contentType = mimeTypes[extension] || "application/octet-stream";
     }
 
+    // SAFETY CHECK: Reject videos at this route - they should use presigned URLs
+    // This prevents 502 timeouts from large video uploads
+    const isVideo = contentType.startsWith("video/") || 
+                    ["mp4", "mov", "avi", "webm", "mpeg", "mpg", "m4v", "mkv", "flv", "3gp"]
+                      .includes(fileExtension.toLowerCase());
+    
+    if (isVideo) {
+      console.error(`Video file ${file.name} attempted to use /api/upload route - this should use presigned URLs`);
+      return NextResponse.json(
+        { 
+          error: "Video files must be uploaded using direct S3 upload. Please try again.",
+          code: "VIDEO_MUST_USE_PRESIGNED"
+        },
+        { status: 400 }
+      );
+    }
+
     // Convert file to buffer
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const fileSize = buffer.length;
-    const isVideo = contentType.startsWith("video/");
 
-    // Use multipart upload for:
-    // 1. All video files (regardless of size) - prevents timeouts
-    // 2. Large files (>50MB) - prevents memory issues
-    // This prevents timeouts and memory issues
-    if (isVideo || fileSize > MULTIPART_THRESHOLD) {
+    // Use multipart upload for large files (>50MB) - prevents memory issues
+    // Note: Videos should never reach this point due to safety check above
+    if (fileSize > MULTIPART_THRESHOLD) {
       console.log(`Using multipart upload for large file: ${fileSize} bytes (${(fileSize / 1024 / 1024).toFixed(2)} MB)`);
       
       const upload = new Upload({
