@@ -3,6 +3,7 @@ import { randomBytes } from "crypto";
 import { prisma } from "@/lib/prisma";
 import sgMail from "@sendgrid/mail";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { hashToken } from "@/lib/token-utils";
 
 // Configure SendGrid
 const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
@@ -21,37 +22,46 @@ const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 
 // Generate and store verification token (NextAuth compatible)
 async function createVerificationToken(email: string) {
-  const token = randomBytes(32).toString("hex");
+  // Generate raw token for URL
+  const rawToken = randomBytes(32).toString("hex");
+  // Hash token the same way NextAuth does (SHA256(token + NEXTAUTH_SECRET))
+  const hashedToken = hashToken(rawToken);
   const expires = new Date();
   expires.setHours(expires.getHours() + 24); // 24 hours
 
   // Store in database using NextAuth's VerificationToken format
+  // NextAuth hashes tokens before storing, so we must store the hashed version
   try {
     // Delete any existing tokens for this email first
     await (prisma as any).verificationToken.deleteMany({
       where: { identifier: email },
     });
     
-    // Create new token
+    // Create new token with HASHED token (NextAuth will hash the URL token and compare)
     await (prisma as any).verificationToken.create({
       data: {
         identifier: email,
-        token: token,
+        token: hashedToken, // Store hashed token in DB
         expires: expires,
       },
     });
+    
+    console.log("[Send Verification] Token created:");
+    console.log("[Send Verification] Raw token (for URL):", rawToken);
+    console.log("[Send Verification] Hashed token (stored in DB):", hashedToken);
   } catch (error: any) {
     console.error("Error creating verification token:", error);
     console.error("Available Prisma models:", Object.keys(prisma).filter(k => !k.startsWith('_') && !k.startsWith('$')));
     // In dev mode, still return a token even if DB fails (for testing)
     if (process.env.NODE_ENV === "development") {
       console.warn("⚠️  Database token creation failed, but continuing with generated token for testing");
-      return { token, expires };
+      return { token: rawToken, expires };
     }
     throw error;
   }
 
-  return { token, expires };
+  // Return raw token for URL (NextAuth will hash it when verifying)
+  return { token: rawToken, expires };
 }
 
 export async function POST(request: NextRequest) {
