@@ -217,11 +217,11 @@ export function AssetTable({
     <div className="rounded-md border overflow-hidden">
       <div className="overflow-x-auto -mx-4 sm:mx-0">
         <div className="inline-block min-w-full align-middle px-4 sm:px-0">
-          <Table>
+          <Table className="table-fixed">
             <TableHeader>
               <TableRow>
                 {onSelectionChange && (
-                  <TableHead className="w-10 px-2">
+                  <TableHead className="w-[48px] px-2">
                     <Checkbox
                       checked={allSelectableSelected && assets.length > 0}
                       onCheckedChange={handleSelectAll}
@@ -229,13 +229,13 @@ export function AssetTable({
                     />
                   </TableHead>
                 )}
-                <TableHead className="min-w-[140px] max-w-[200px]">Title</TableHead>
-                <TableHead className="min-w-[100px] max-w-[150px]">Product Line</TableHead>
-                <TableHead className="min-w-[100px] max-w-[140px]">ICP Targets</TableHead>
-                <TableHead className="min-w-[80px] max-w-[100px]">Stage</TableHead>
-                <TableHead className="min-w-[70px] max-w-[90px]">Status</TableHead>
-                <TableHead className="min-w-[90px] max-w-[110px]">Date</TableHead>
-                <TableHead className="text-right min-w-[140px]">Actions</TableHead>
+                <TableHead className="w-[200px] px-4">Title</TableHead>
+                <TableHead className="w-[150px] px-4">Product Line</TableHead>
+                <TableHead className="w-[140px] px-4">ICP Targets</TableHead>
+                <TableHead className="w-[100px] px-4">Stage</TableHead>
+                <TableHead className="w-[120px] px-4">Status</TableHead>
+                <TableHead className="w-[120px] px-4">Date</TableHead>
+                <TableHead className="text-right w-[180px] px-4">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -246,7 +246,7 @@ export function AssetTable({
                 return (
                   <TableRow key={asset.id}>
                     {onSelectionChange && (
-                      <TableCell>
+                      <TableCell className="w-[48px] px-2">
                         <Checkbox
                           checked={isSelected}
                           onCheckedChange={(checked) => handleSelectAsset(asset.id, checked as boolean)}
@@ -255,7 +255,7 @@ export function AssetTable({
                         />
                       </TableCell>
                     )}
-                    <TableCell className="font-medium min-w-[140px] max-w-[200px] px-2">
+                    <TableCell className="font-medium w-[200px] px-4">
                       <div className="flex items-center gap-1.5">
                         {getFileTypeIcon(asset.fileType)}
                         {asset.dominantColor && (
@@ -271,7 +271,7 @@ export function AssetTable({
                         </span>
                       </div>
                     </TableCell>
-                  <TableCell className="min-w-[100px] max-w-[150px] px-2">
+                  <TableCell className="w-[150px] px-4">
                     {asset.productLines && asset.productLines.length > 0 ? (
                       <div className="flex flex-wrap gap-0.5">
                         {asset.productLines.slice(0, 1).map((productLine) => (
@@ -298,14 +298,14 @@ export function AssetTable({
                       <span className="text-muted-foreground text-xs">—</span>
                     )}
                   </TableCell>
-                  <TableCell className="min-w-[100px] max-w-[140px] px-2">
+                  <TableCell className="w-[140px] px-4">
                     <div className="flex flex-wrap gap-0.5">
                       {asset.icpTargets.length > 0 ? (
                         asset.icpTargets.slice(0, 1).map((target, idx) => (
                           <Badge
                             key={idx}
                             variant="outline"
-                            className="text-xs truncate max-w-[100px]"
+                            className="text-xs truncate max-w-full"
                             title={target}
                           >
                             {target}
@@ -321,7 +321,7 @@ export function AssetTable({
                       )}
                     </div>
                   </TableCell>
-                  <TableCell className="min-w-[80px] max-w-[100px] px-2">
+                  <TableCell className="w-[100px] px-4">
                     <Badge
                       variant="outline"
                       className={`text-xs ${getStageColor(asset.funnelStage)}`}
@@ -329,7 +329,7 @@ export function AssetTable({
                       {formatStageShort(asset.funnelStage)}
                     </Badge>
                   </TableCell>
-                  <TableCell className="min-w-[70px] max-w-[90px] px-2">
+                  <TableCell className="w-[120px] px-4">
                     <Badge
                       variant="outline"
                       className={`text-xs ${getStatusColor(asset.status)}`}
@@ -337,7 +337,7 @@ export function AssetTable({
                       {asset.status}
                     </Badge>
                   </TableCell>
-                  <TableCell className="min-w-[90px] max-w-[110px] px-2">
+                  <TableCell className="w-[120px] px-4">
                     <div className="flex flex-col gap-0.5 text-xs">
                       <span className="text-muted-foreground">
                         {formatDate(getPrimaryDate(asset))}
@@ -349,7 +349,7 @@ export function AssetTable({
                       )}
                     </div>
                   </TableCell>
-                  <TableCell className="text-right min-w-[140px] px-2">
+                  <TableCell className="text-right w-[180px] px-4">
                     <div className="flex justify-end gap-1">
                       {asset.status === "ERROR" && (
                         <Button
