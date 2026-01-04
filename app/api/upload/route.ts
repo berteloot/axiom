@@ -4,6 +4,7 @@ import { Upload } from "@aws-sdk/lib-storage";
 import { v4 as uuidv4 } from "uuid";
 import { requireAccountId } from "@/lib/account-utils";
 import { getAccountS3Prefix } from "@/lib/services/account-service";
+import { Readable } from "stream";
 
 // Ensure this route runs in Node.js runtime
 export const runtime = "nodejs";
@@ -21,6 +22,10 @@ const s3Client = new S3Client({
 });
 
 const BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME || "";
+
+if (!BUCKET_NAME) {
+  console.warn("[UPLOAD] AWS_S3_BUCKET_NAME is not set");
+}
 
 // Threshold for using multipart upload (50MB for non-video files)
 // Videos always use multipart upload regardless of size
@@ -118,12 +123,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Convert file to buffer
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const fileSize = buffer.length;
+    // Use the File size to avoid buffering the entire upload in memory
+    const fileSize = typeof file.size === "number" ? file.size : 0;
 
-    // Use multipart upload for large files (>50MB) - prevents memory issues
+    if (!BUCKET_NAME) {
+      return NextResponse.json(
+        { error: "Server misconfiguration: S3 bucket is not set" },
+        { status: 500 }
+      );
+    }
+
+    // Use multipart upload for large files (>50MB) - stream upload to avoid memory pressure
     // Note: Videos should never reach this point due to safety check above
     if (fileSize > MULTIPART_THRESHOLD) {
       console.log(`Using multipart upload for large file: ${fileSize} bytes (${(fileSize / 1024 / 1024).toFixed(2)} MB)`);
@@ -133,8 +143,9 @@ export async function POST(request: NextRequest) {
         params: {
           Bucket: BUCKET_NAME,
           Key: fileKey,
-          Body: buffer,
+          Body: Readable.fromWeb(file.stream() as unknown as ReadableStream<any>),
           ContentType: contentType,
+          ContentLength: fileSize,
         },
         // Multipart upload configuration
         partSize: 10 * 1024 * 1024, // 10MB parts
@@ -155,8 +166,9 @@ export async function POST(request: NextRequest) {
       const putCommand = new PutObjectCommand({
         Bucket: BUCKET_NAME,
         Key: fileKey,
-        Body: buffer,
+        Body: Readable.fromWeb(file.stream() as unknown as ReadableStream<any>),
         ContentType: contentType,
+        ContentLength: fileSize,
       });
 
       await s3Client.send(putCommand);
