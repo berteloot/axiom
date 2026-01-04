@@ -643,6 +643,7 @@ ${ideasText}
               draft={contentDraft}
               idea={selectedIdea}
               gap={selectedGap}
+              trendingSources={contentIdeas?.trendingSources}
             />
           )}
         </div>
@@ -1410,6 +1411,7 @@ function CompleteStep({
   draft,
   idea,
   gap,
+  trendingSources,
 }: {
   onReset: () => void;
   onClose: () => void;
@@ -1417,6 +1419,13 @@ function CompleteStep({
   draft?: ContentDraft | null;
   idea?: ContentIdea | null;
   gap?: Gap | null;
+  trendingSources?: Array<{
+    url: string;
+    title: string;
+    content?: string;
+    sourceType?: string;
+    isReputable?: boolean;
+  }>;
 }) {
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -1432,6 +1441,25 @@ function CompleteStep({
     setSaveError(null);
 
     try {
+      // Merge draft sources with reputable trending sources
+      // Prioritize reputable sources from research
+      const reputableTrendingSources = (trendingSources || [])
+        .filter(s => s.isReputable && s.url)
+        .map(s => ({
+          url: s.url,
+          title: s.title,
+          sourceType: s.sourceType || "research",
+          citation: `Research source: ${s.title}`,
+        }));
+
+      // Combine with draft sources, avoiding duplicates
+      const draftSourceUrls = new Set((draft.sources || []).map(s => s.url));
+      const additionalSources = reputableTrendingSources.filter(
+        s => !draftSourceUrls.has(s.url)
+      );
+
+      const allSources = [...(draft.sources || []), ...additionalSources];
+
       const response = await fetch("/api/assets/from-content", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1442,7 +1470,7 @@ function CompleteStep({
           funnelStage: gap.stage,
           icpTargets: [gap.icp],
           painClusters: gap.painCluster ? [gap.painCluster] : [],
-          sources: draft.sources,
+          sources: allSources,
         }),
       });
 

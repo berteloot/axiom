@@ -157,6 +157,34 @@ export async function POST(request: NextRequest) {
       ? "video/mp4" // Webinars would be videos
       : "text/markdown"; // Most generated content is text-based
 
+    // Build outreach tip with source information
+    const reputableSources = sources.filter(s => 
+      s.sourceType === "consulting" || s.sourceType === "research" || s.sourceType === "industry_media"
+    );
+    
+    const sourceNames = reputableSources.slice(0, 3).map(s => s.title).join(", ");
+    const outreachTip = reputableSources.length > 0
+      ? `This ${assetType.replace(/_/g, " ")} addresses ${painClusters.join(", ") || "key business challenges"} for ${icpTargets.join(", ")}. It references credible sources including ${sourceNames}${reputableSources.length > 3 ? ` and ${reputableSources.length - 3} more` : ""}.`
+      : `This ${assetType.replace(/_/g, " ")} was created to address ${painClusters.join(", ") || "key business challenges"} for ${icpTargets.join(", ")}.`;
+
+    // Store sources as atomic snippets for reference
+    const atomicSnippets = sources.length > 0 
+      ? {
+          type: "generated_content",
+          sources: sources.map(s => ({
+            url: s.url,
+            title: s.title,
+            sourceType: s.sourceType,
+            citation: s.citation,
+          })),
+          metadata: {
+            assetType,
+            generatedAt: new Date().toISOString(),
+            reputableSourceCount: reputableSources.length,
+          }
+        }
+      : null;
+
     // Create the asset in the database
     const asset = await prisma.asset.create({
       data: {
@@ -170,15 +198,17 @@ export async function POST(request: NextRequest) {
         funnelStage: funnelStage as FunnelStage,
         icpTargets,
         painClusters,
-        outreachTip: `This ${assetType.replace(/_/g, " ")} was created to address ${painClusters.join(", ") || "key business challenges"} for ${icpTargets.join(", ")}.`,
+        outreachTip,
+        atomicSnippets,
         status: "ANALYZED", // Mark as analyzed since it's already complete content
         aiModel: "content-workflow",
         promptVersion: "v1",
         analyzedAt: new Date(),
+        contentQualityScore: reputableSources.length > 0 ? 85 : 70, // Higher score for source-backed content
       },
     });
 
-    console.log(`[Save Content] Created asset ${asset.id} for account ${accountId}`);
+    console.log(`[Save Content] Created asset ${asset.id} for account ${accountId} with ${sources.length} sources (${reputableSources.length} reputable)`);
 
     return NextResponse.json({
       success: true,
