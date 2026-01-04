@@ -154,11 +154,13 @@ export function CustomPrismaAdapter(): Adapter {
     },
 
     // Use (consume) verification token
+    // NOTE: Check server logs for user-agent and IP to identify if a bot/scanner consumed the token
     async useVerificationToken({ identifier, token }) {
       console.log("🔧 [Adapter] useVerificationToken called");
       console.log("🔧 [Adapter] Looking for identifier:", identifier);
       console.log("🔧 [Adapter] Looking for token (first 20 chars):", token?.substring(0, 20));
       console.log("🔧 [Adapter] Token length:", token?.length);
+      console.log("🔧 [Adapter] NOTE: Check server request logs for user-agent/IP to identify bot/scanner clicks");
       
       try {
         // First, let's see what tokens exist for this identifier

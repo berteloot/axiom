@@ -132,6 +132,12 @@ export async function POST(request: NextRequest) {
           <div style="text-align: center; margin: 30px 0;">
             <a href="${verificationUrl}" style="display: inline-block; padding: 12px 24px; background-color: #0070f3; color: white; text-decoration: none; border-radius: 6px; font-weight: bold;">Sign In</a>
           </div>
+          <p style="color: #666; font-size: 14px; margin-top: 20px;">
+            Or copy and paste this link into your browser:
+          </p>
+          <p style="color: #333; font-size: 12px; word-break: break-all; background: #f5f5f5; padding: 10px; border-radius: 4px;">
+            ${verificationUrl}
+          </p>
           <p style="color: #666; font-size: 14px;">
             If you didn't request this email, you can safely ignore it.
           </p>
@@ -140,6 +146,12 @@ export async function POST(request: NextRequest) {
           </p>
         </div>
       `,
+      text: `Sign in to Asset Organizer\n\nClick this link to sign in:\n${verificationUrl}\n\nThis link will expire in 24 hours.\n\nIf you didn't request this email, you can safely ignore it.`,
+      // CRITICAL: Disable click tracking to prevent SendGrid from consuming the token
+      trackingSettings: {
+        clickTracking: { enable: false, enableText: false },
+        openTracking: { enable: false },
+      },
     };
 
     if (SENDGRID_API_KEY) {
