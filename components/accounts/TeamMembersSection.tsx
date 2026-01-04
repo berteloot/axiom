@@ -32,6 +32,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Users, UserPlus, Loader2, Mail, Clock, CheckCircle2, Trash2, RefreshCw, Edit2, Send, AlertTriangle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertDialog,
   AlertDialogTrigger,
@@ -78,14 +79,24 @@ interface TeamMembersSectionProps {
   accountName: string;
 }
 
+interface InvitableAccount {
+  id: string;
+  name: string;
+  slug: string;
+  role: "OWNER" | "ADMIN";
+}
+
 export function TeamMembersSection({ accountId, accountName }: TeamMembersSectionProps) {
   const { data: session } = useSession();
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
   const [isEditMemberDialogOpen, setIsEditMemberDialogOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+  const [isLoadingAccounts, setIsLoadingAccounts] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"MEMBER" | "ADMIN">("MEMBER");
+  const [invitableAccounts, setInvitableAccounts] = useState<InvitableAccount[]>([]);
+  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([accountId]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
@@ -121,8 +132,31 @@ export function TeamMembersSection({ accountId, accountName }: TeamMembersSectio
   useEffect(() => {
     loadTeamMembers();
     loadInvitations();
+    loadInvitableAccounts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountId]);
+
+  // Reset selected accounts when dialog opens/closes
+  useEffect(() => {
+    if (isInviteDialogOpen) {
+      setSelectedAccountIds([accountId]);
+    }
+  }, [isInviteDialogOpen, accountId]);
+
+  const loadInvitableAccounts = async () => {
+    setIsLoadingAccounts(true);
+    try {
+      const response = await fetch("/api/invitations/accounts");
+      if (response.ok) {
+        const data = await response.json();
+        setInvitableAccounts(data.accounts || []);
+      }
+    } catch (error) {
+      console.error("Error loading invitable accounts:", error);
+    } finally {
+      setIsLoadingAccounts(false);
+    }
+  };
 
   const loadTeamMembers = async () => {
     setIsLoadingMembers(true);
@@ -164,20 +198,39 @@ export function TeamMembersSection({ accountId, accountName }: TeamMembersSectio
       return;
     }
 
+    if (selectedAccountIds.length === 0) {
+      setError("Please select at least one account");
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
     setSuccess(null);
 
     try {
-      const response = await fetch(`/api/accounts/${accountId}/invitations`, {
+      // Use bulk API if multiple accounts selected, single API if one account
+      const isBulk = selectedAccountIds.length > 1;
+      const apiUrl = isBulk 
+        ? "/api/invitations/bulk"
+        : `/api/accounts/${selectedAccountIds[0]}/invitations`;
+      
+      const body = isBulk
+        ? {
+            email: inviteEmail.trim(),
+            accountIds: selectedAccountIds,
+            role: inviteRole,
+          }
+        : {
+            email: inviteEmail.trim(),
+            role: inviteRole,
+          };
+
+      const response = await fetch(apiUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          email: inviteEmail.trim(),
-          role: inviteRole,
-        }),
+        body: JSON.stringify(body),
       });
 
       const data = await response.json();
@@ -188,9 +241,12 @@ export function TeamMembersSection({ accountId, accountName }: TeamMembersSectio
           console.log("📧 Copy this URL and share it with", inviteEmail, "if email wasn't received");
         }
         
-        setSuccess(`Invitation sent to ${inviteEmail}${data.inviteUrl ? "\n\nCheck browser console for invitation URL (dev mode)" : ""}`);
+        const accountCount = isBulk ? selectedAccountIds.length : 1;
+        const accountText = accountCount === 1 ? "account" : "accounts";
+        setSuccess(`Invitation sent to ${accountCount} ${accountText}${data.inviteUrl ? "\n\nCheck browser console for invitation URL (dev mode)" : ""}`);
         setInviteEmail("");
         setInviteRole("MEMBER");
+        setSelectedAccountIds([accountId]);
         await loadInvitations();
         setTimeout(() => {
           setIsInviteDialogOpen(false);
@@ -206,6 +262,22 @@ export function TeamMembersSection({ accountId, accountName }: TeamMembersSectio
       setIsLoading(false);
     }
   };
+
+  const handleAccountToggle = (accountIdToToggle: string) => {
+    setSelectedAccountIds((prev) => {
+      if (prev.includes(accountIdToToggle)) {
+        // Don't allow deselecting if it's the only selected account
+        if (prev.length === 1) {
+          return prev;
+        }
+        return prev.filter((id) => id !== accountIdToToggle);
+      } else {
+        return [...prev, accountIdToToggle];
+      }
+    });
+  };
+
+  const canInviteToMultipleAccounts = invitableAccounts.length > 1;
 
   const handleDeleteInvitation = async (invitationId: string) => {
     setIsDeletingInvitation(true);
@@ -430,7 +502,9 @@ export function TeamMembersSection({ accountId, accountName }: TeamMembersSectio
             <DialogHeader>
               <DialogTitle>Invite Team Member</DialogTitle>
               <DialogDescription>
-                Send an invitation to join {accountName}. They&apos;ll receive an email with a link to accept.
+                {canInviteToMultipleAccounts
+                  ? "Select which accounts to invite this member to. They'll receive an email with a link to accept."
+                  : `Send an invitation to join ${accountName}. They'll receive an email with a link to accept.`}
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleInvite}>
@@ -447,6 +521,50 @@ export function TeamMembersSection({ accountId, accountName }: TeamMembersSectio
                     disabled={isLoading}
                   />
                 </div>
+
+                {canInviteToMultipleAccounts && (
+                  <div className="space-y-3">
+                    <Label>Select Accounts</Label>
+                    <div className="border rounded-md p-3 space-y-2 max-h-48 overflow-y-auto">
+                      {isLoadingAccounts ? (
+                        <div className="flex items-center justify-center py-4">
+                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        </div>
+                      ) : (
+                        invitableAccounts.map((account) => {
+                          const isSelected = selectedAccountIds.includes(account.id);
+                          const isCurrentAccount = account.id === accountId;
+                          return (
+                            <div
+                              key={account.id}
+                              className="flex items-center space-x-2 py-1.5"
+                            >
+                              <Checkbox
+                                id={`account-${account.id}`}
+                                checked={isSelected}
+                                onCheckedChange={() => handleAccountToggle(account.id)}
+                                disabled={isLoading || (isSelected && selectedAccountIds.length === 1)}
+                              />
+                              <label
+                                htmlFor={`account-${account.id}`}
+                                className="flex-1 text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex items-center justify-between"
+                              >
+                                <span>{account.name}</span>
+                                <span className="text-xs text-muted-foreground ml-2">
+                                  {isCurrentAccount && "(current)"}
+                                </span>
+                              </label>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      At least one account must be selected. The member will be invited to all selected accounts.
+                    </p>
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <Label htmlFor="role">Role</Label>
                   <Select

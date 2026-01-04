@@ -6,6 +6,7 @@ import { isUserAdminOrOwner } from "@/lib/account-utils";
 import { randomBytes } from "crypto";
 import sgMail from "@sendgrid/mail";
 import { generateVerificationToken } from "@/lib/token-utils";
+import { inviteMemberSchema } from "@/lib/validations";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -126,21 +127,20 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { email, role = "MEMBER" } = body;
-
-    if (!email || typeof email !== "string" || !email.includes("@")) {
+    
+    // Validate request body
+    const validation = inviteMemberSchema.safeParse(body);
+    if (!validation.success) {
       return NextResponse.json(
-        { error: "Valid email address is required" },
+        { 
+          error: "Invalid request", 
+          details: validation.error.issues.map(issue => issue.message).join(", ")
+        },
         { status: 400 }
       );
     }
 
-    if (!["MEMBER", "ADMIN"].includes(role)) {
-      return NextResponse.json(
-        { error: "Invalid role. Must be MEMBER or ADMIN." },
-        { status: 400 }
-      );
-    }
+    const { email, role = "MEMBER" } = validation.data;
 
     // Check if user is already a member of this account
     const existingMember = await prisma.userAccount.findFirst({

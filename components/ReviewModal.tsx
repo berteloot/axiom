@@ -257,7 +257,6 @@ export function ReviewModal({
                 variant="destructive"
                 onClick={() => setShowDeleteDialog(true)}
                 disabled={saving || deleting}
-                className="flex items-center gap-2"
               >
                 <Trash2 className="h-4 w-4" />
                 Delete

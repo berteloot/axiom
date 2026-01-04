@@ -105,3 +105,29 @@ export const updateAssetSchema = z.object({
   lastReviewedAt: z.string().datetime().nullable().optional(),
   expiryDate: z.string().datetime().nullable().optional(),
 });
+
+/**
+ * Validation schema for invitation request
+ */
+export const inviteMemberSchema = z.object({
+  email: z.string()
+    .email("Valid email address is required")
+    .min(1, "Email is required"),
+  role: z.enum(["MEMBER", "ADMIN"])
+    .default("MEMBER")
+    .optional(),
+});
+
+/**
+ * Validation schema for bulk invitation request (multiple accounts)
+ */
+export const bulkInviteMemberSchema = z.object({
+  email: z.string()
+    .email("Valid email address is required")
+    .min(1, "Email is required"),
+  accountIds: z.array(z.string())
+    .min(1, "At least one account must be selected"),
+  role: z.enum(["MEMBER", "ADMIN"])
+    .default("MEMBER")
+    .optional(),
+});
