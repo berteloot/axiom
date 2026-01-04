@@ -6,10 +6,16 @@ import { z } from "zod";
 import { zodResponseFormat } from "openai/helpers/zod";
 import { FunnelStage } from "@/lib/types";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+const BodySchema = z.object({
+  assetIds: z.array(z.string().min(1)).min(2).max(4),
+});
 
 // Schema for sequence email response
 const EmailSchema = z.object({
@@ -48,6 +54,34 @@ function sortAssetsByStage(assets: any[]) {
 
 export async function POST(request: NextRequest) {
   try {
+    const accountId = await requireAccountId(request);
+    const body = await request.json();
+    const parsed = BodySchema.safeParse(body);
+
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Invalid request", details: parsed.error.flatten() },
+        { status: 400 }
+      );
+    }
+
+    const { assetIds } = parsed.data;
+
+    // Fetch the selected assets with their metadata
+    const assets = await prisma.asset.findMany({
+      where: {
+        id: { in: assetIds },
+        accountId,
+      },
+      select: {
+        id: true,
+        title: true,
+        funnelStage: true,
+        s3Url: true,
+        atomicSnippets: true,
+        contentQualityScore: true,
+      },
+    });
 
     if (assets.length !== assetIds.length) {
       return NextResponse.json(
@@ -79,22 +113,24 @@ export async function POST(request: NextRequest) {
         .map((s: any) => `- ${s.content}`)
         .join("\n");
 
-      return `**Asset ${index + 1} (${asset.funnelStage.replace("_", " - ")}):** ${asset.title}
+      const stageLabel = String(asset.funnelStage).split("_").join(" ");
+      return `**Asset ${index + 1} (${stageLabel}):** ${asset.title}
 ${snippetText ? `Key Points:\n${snippetText}` : ""}`;
     }).join("\n\n");
 
-    const systemPrompt = `You are an expert B2B marketing email copywriter. Your task is to create a 3-email nurture sequence that tells a cohesive story across assets.
+    const emailCount = sortedAssets.length;
+
+    const systemPrompt = `You are an expert B2B marketing email copywriter.
+Your task is to create a ${emailCount}-email nurture sequence that tells a cohesive story across the provided assets.
 
 ${brandVoiceText}
 
-Your emails should:
-1. Build on each other - each email references the previous one
-2. Use the atomic snippets as proof points
-3. Match the brand voice
-4. Be conversational but professional
-5. Focus on problem-solving progression (Awareness -> Consideration -> Decision)`;
+Rules:
+- Use ONLY the provided asset titles and atomic snippets as proof points. Do not invent statistics, quotes, customers, or outcomes.
+- Each email should build on the previous one and naturally bridge to the next asset.
+- Keep the tone professional and personal (not generic).
+- Include one clear CTA per email (reply, read, watch, or ask a question).`;
 
-    const emailCount = sortedAssets.length;
     const emailRequirements = sortedAssets.map((asset, index) => {
       if (index === 0) {
         return `- **Email ${index + 1}:** Introduce ${asset.title}. Focus on the problem it addresses. Make it compelling and relevant.`;
@@ -112,7 +148,7 @@ ${emailRequirements}
 
 **Constraints:**
 - Use the atomic snippets as key proof points in the copy
-- Each email should be 100-200 words
+- Each email should be 120-180 words
 - Subject lines should be compelling and action-oriented
 - Tone: ${brandVoiceText}
 - Make it feel personal, not generic
@@ -126,13 +162,18 @@ ${emailRequirements}
         { role: "user", content: userPrompt },
       ],
       response_format: zodResponseFormat(SequenceSchema, "sequence"),
-      temperature: 0.7,
+      temperature: 0.35,
+      max_tokens: 1200,
     });
 
     const result = completion.choices[0].message.parsed;
 
     if (!result) {
       throw new Error("AI failed to generate sequence");
+    }
+
+    if (!Array.isArray(result.emails) || result.emails.length !== emailCount) {
+      throw new Error(`AI returned ${result.emails?.length ?? 0} emails, expected ${emailCount}`);
     }
 
     return NextResponse.json({
@@ -143,7 +184,7 @@ ${emailRequirements}
           title: asset.title,
           funnelStage: asset.funnelStage,
           s3Url: asset.s3Url,
-          atomicSnippets: asset.atomicSnippets,
+          atomicSnippets: Array.isArray(asset.atomicSnippets) ? asset.atomicSnippets.slice(0, 5) : [],
         })),
         emails: result.emails,
       },

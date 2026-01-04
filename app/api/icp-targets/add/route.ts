@@ -4,6 +4,9 @@ import { prisma } from "@/lib/prisma"
 import { requireAccountId } from "@/lib/account-utils"
 import { mergeCustomTargets } from "@/lib/icp-targets"
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 const addCustomTargetSchema = z.object({
   targets: z.array(z.string()).min(1).max(10),
 })

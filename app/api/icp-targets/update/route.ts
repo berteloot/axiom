@@ -4,6 +4,9 @@ import { prisma } from "@/lib/prisma"
 import { requireAccountId } from "@/lib/account-utils"
 import { ALL_JOB_TITLES } from "@/lib/job-titles"
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 const updateTargetSchema = z.object({
   oldTarget: z.string().min(1),
   newTarget: z.string().min(1),

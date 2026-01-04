@@ -7,6 +7,9 @@ import { zodResponseFormat } from "openai/helpers/zod";
 import { searchTrendingTopics } from "@/lib/ai/website-scanner";
 import { FunnelStage } from "@/lib/types";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });

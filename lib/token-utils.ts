@@ -8,7 +8,9 @@ import { createHash, randomBytes } from "crypto";
  * The hash format is: SHA256(token + secret)
  */
 
-const NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "development-secret-key-change-this-in-production-12345678901234567890";
+// NEXTAUTH_SECRET is required for token hashing
+// Runtime validation is handled in instrumentation.ts
+const NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || "";
 
 /**
  * Hash a verification token the same way NextAuth does

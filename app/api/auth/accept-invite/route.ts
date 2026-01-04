@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 // GET /api/auth/accept-invite?token=xxx - Get invitation details
 export async function GET(request: NextRequest) {

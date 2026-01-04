@@ -5,6 +5,7 @@ import { detectProfileFromUrl } from "@/lib/ai/website-scanner";
 import { z } from "zod";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const analyzeWebsiteSchema = z.object({
   url: z.string().url("Invalid URL format"),

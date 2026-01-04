@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 // GET /api/auth/config - Diagnostic endpoint to check NextAuth configuration
 export async function GET(request: NextRequest) {

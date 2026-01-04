@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { processVideoFromS3, processVideoFromS3Portion } from "@/lib/ai/video-transcriber";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 /**
  * RENDER-SPECIFIC ARCHITECTURE
  * 

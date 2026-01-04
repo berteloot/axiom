@@ -5,6 +5,9 @@ import { requireAccountId } from "@/lib/account-utils"
 import { extractCustomTargets, mergeCustomTargets } from "@/lib/icp-targets"
 import { ALL_JOB_TITLES } from "@/lib/job-titles"
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 // Validation schemas
 const brandContextSchema = z.object({
   brandVoice: z.array(z.string()).min(1, "At least one brand voice attribute is required").max(10),

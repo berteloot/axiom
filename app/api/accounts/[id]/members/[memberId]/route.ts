@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { isUserAdminOrOwner } from "@/lib/account-utils";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 // PATCH /api/accounts/[id]/members/[memberId] - Update team member details
 export async function PATCH(

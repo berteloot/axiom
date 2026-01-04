@@ -10,6 +10,7 @@ if (SENDGRID_API_KEY) {
 }
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 // GET /api/test-email - Test SendGrid configuration
 export async function GET(request: NextRequest) {

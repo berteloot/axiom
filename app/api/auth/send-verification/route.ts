@@ -13,6 +13,7 @@ if (SENDGRID_API_KEY) {
 }
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 // Rate limiting: max 5 emails per hour per email address
 const MAX_EMAILS_PER_HOUR = 5;

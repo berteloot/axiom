@@ -5,6 +5,7 @@ import { extractProductLineFromText } from "@/lib/ai/website-scanner";
 import { z } from "zod";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const analyzeTextSchema = z.object({
   text: z.string().min(50, "Text must be at least 50 characters long"),

@@ -4,6 +4,9 @@ import { requireAccountId } from "@/lib/account-utils"
 import { getUnifiedICPTargets, extractCustomTargets } from "@/lib/icp-targets"
 import { ALL_JOB_TITLES } from "@/lib/job-titles"
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 /**
  * GET /api/icp-targets
  * Returns the unified list of ICP targets for the current account

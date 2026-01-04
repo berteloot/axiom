@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { isUserAdminOrOwner } from "@/lib/account-utils";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 // GET /api/accounts/[id]/members - List all members of an account
 export async function GET(

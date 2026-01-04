@@ -18,6 +18,7 @@ const updateSettingsSchema = z.object({
 });
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function PUT(
   request: NextRequest,

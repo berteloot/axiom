@@ -7,6 +7,7 @@ import sgMail from "@sendgrid/mail";
 import { generateVerificationToken } from "@/lib/token-utils";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 // Helper function to send login email via SendGrid - configured at runtime
 async function sendLoginEmail(

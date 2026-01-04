@@ -3,6 +3,9 @@ import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { requireAccountId } from "@/lib/account-utils"
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 // Validation schemas
 const productLineUpdateSchema = z.object({
   name: z.string().min(1, "Product line name is required").max(100).optional(),
