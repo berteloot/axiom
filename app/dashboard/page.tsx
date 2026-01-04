@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
+
+// Force dynamic rendering - this page uses useSearchParams and requires auth
+export const dynamic = 'force-dynamic';
 import { useSearchParams, useRouter } from "next/navigation";
 import { AssetTable } from "@/components/AssetTable";
 import { ReviewModal } from "@/components/ReviewModal";
