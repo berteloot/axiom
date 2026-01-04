@@ -91,6 +91,22 @@ const formatStage = (stage: string) => {
     .join(" ");
 };
 
+// Short format for stage names to fit in compact table
+const formatStageShort = (stage: string) => {
+  switch (stage) {
+    case "TOFU_AWARENESS":
+      return "TOFU";
+    case "MOFU_CONSIDERATION":
+      return "MOFU";
+    case "BOFU_DECISION":
+      return "BOFU";
+    case "RETENTION":
+      return "RETAIN";
+    default:
+      return stage;
+  }
+};
+
 const formatDate = (dateString: string | null | undefined): string => {
   if (!dateString) return "N/A";
   try {
@@ -205,7 +221,7 @@ export function AssetTable({
             <TableHeader>
               <TableRow>
                 {onSelectionChange && (
-                  <TableHead className="w-12">
+                  <TableHead className="w-10 px-2">
                     <Checkbox
                       checked={allSelectableSelected && assets.length > 0}
                       onCheckedChange={handleSelectAll}
@@ -213,11 +229,12 @@ export function AssetTable({
                     />
                   </TableHead>
                 )}
-                <TableHead className="min-w-[150px]">Title</TableHead>
-                <TableHead className="min-w-[120px]">ICP Targets</TableHead>
-                <TableHead className="min-w-[100px]">Stage</TableHead>
-                <TableHead className="min-w-[100px]">Status</TableHead>
-                <TableHead className="min-w-[120px]">Date</TableHead>
+                <TableHead className="min-w-[140px] max-w-[200px]">Title</TableHead>
+                <TableHead className="min-w-[100px] max-w-[150px]">Product Line</TableHead>
+                <TableHead className="min-w-[100px] max-w-[140px]">ICP Targets</TableHead>
+                <TableHead className="min-w-[80px] max-w-[100px]">Stage</TableHead>
+                <TableHead className="min-w-[70px] max-w-[90px]">Status</TableHead>
+                <TableHead className="min-w-[90px] max-w-[110px]">Date</TableHead>
                 <TableHead className="text-right min-w-[140px]">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -238,76 +255,84 @@ export function AssetTable({
                         />
                       </TableCell>
                     )}
-                    <TableCell className="font-medium min-w-[150px]">
-                      <div className="flex items-center gap-2">
+                    <TableCell className="font-medium min-w-[140px] max-w-[200px] px-2">
+                      <div className="flex items-center gap-1.5">
                         {getFileTypeIcon(asset.fileType)}
                         {asset.dominantColor && (
                           <div
-                            className="w-4 h-4 rounded-full border border-gray-300 dark:border-gray-600 flex-shrink-0"
+                            className="w-3 h-3 rounded-full border border-gray-300 dark:border-gray-600 flex-shrink-0"
                             style={{ backgroundColor: asset.dominantColor }}
                             title={`Dominant color: ${asset.dominantColor}`}
                             aria-label={`Dominant color: ${asset.dominantColor}`}
                           />
                         )}
-                        <span className="truncate max-w-[200px]" title={asset.title}>
+                        <span className="truncate" title={asset.title}>
                           {asset.title}
                         </span>
                       </div>
                     </TableCell>
-                  <TableCell className="min-w-[120px]">
-                    <div className="flex flex-wrap gap-1">
+                  <TableCell className="min-w-[100px] max-w-[150px] px-2">
+                    {asset.productLine ? (
+                      <Badge variant="secondary" className="text-xs truncate max-w-full" title={asset.productLine.name}>
+                        {asset.productLine.name}
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="min-w-[100px] max-w-[140px] px-2">
+                    <div className="flex flex-wrap gap-0.5">
                       {asset.icpTargets.length > 0 ? (
-                        asset.icpTargets.slice(0, 2).map((target, idx) => (
+                        asset.icpTargets.slice(0, 1).map((target, idx) => (
                           <Badge
                             key={idx}
                             variant="outline"
-                            className="text-xs"
+                            className="text-xs truncate max-w-[100px]"
+                            title={target}
                           >
                             {target}
                           </Badge>
                         ))
                       ) : (
-                        <span className="text-muted-foreground text-sm">
-                          No ICP targets
-                        </span>
+                        <span className="text-muted-foreground text-xs">—</span>
                       )}
-                      {asset.icpTargets.length > 2 && (
-                        <Badge variant="outline" className="text-xs">
-                          +{asset.icpTargets.length - 2}
+                      {asset.icpTargets.length > 1 && (
+                        <Badge variant="outline" className="text-xs" title={asset.icpTargets.slice(1).join(", ")}>
+                          +{asset.icpTargets.length - 1}
                         </Badge>
                       )}
                     </div>
                   </TableCell>
-                  <TableCell className="min-w-[100px]">
+                  <TableCell className="min-w-[80px] max-w-[100px] px-2">
                     <Badge
                       variant="outline"
-                      className={getStageColor(asset.funnelStage)}
+                      className={`text-xs ${getStageColor(asset.funnelStage)}`}
                     >
-                      {formatStage(asset.funnelStage)}
+                      {formatStageShort(asset.funnelStage)}
                     </Badge>
                   </TableCell>
-                  <TableCell className="min-w-[100px]">
+                  <TableCell className="min-w-[70px] max-w-[90px] px-2">
                     <Badge
                       variant="outline"
-                      className={getStatusColor(asset.status)}
+                      className={`text-xs ${getStatusColor(asset.status)}`}
                     >
                       {asset.status}
                     </Badge>
                   </TableCell>
-                  <TableCell className="min-w-[120px]">
-                    <div className="flex flex-col gap-0.5 text-sm">
+                  <TableCell className="min-w-[90px] max-w-[110px] px-2">
+                    <div className="flex flex-col gap-0.5 text-xs">
                       <span className="text-muted-foreground">
                         {formatDate(getPrimaryDate(asset))}
                       </span>
                       {asset.contentQualityScore !== null && asset.contentQualityScore !== undefined && (
                         <span className="text-xs text-muted-foreground">
-                          Quality: {asset.contentQualityScore}/100
+                          Q: {asset.contentQualityScore}
                         </span>
                       )}
                     </div>
                   </TableCell>
-                  <TableCell className="text-right min-w-[200px]">
-                    <div className="flex justify-end gap-2">
+                  <TableCell className="text-right min-w-[140px] px-2">
+                    <div className="flex justify-end gap-1">
                       {asset.status === "ERROR" && (
                         <Button
                           variant="outline"

@@ -66,6 +66,9 @@ function parseFiltersFromUrl(searchParams: URLSearchParams): Partial<AssetFilter
   
   const pain = searchParams.get("pain");
   if (pain) filters.painClusters = pain.split(",");
+
+  const productLine = searchParams.get("productLine");
+  if (productLine) filters.productLines = productLine.split(",");
   
   const color = searchParams.get("color");
   if (color) {
@@ -112,6 +115,7 @@ export default function DashboardClient() {
       icpTargets: urlFilters.icpTargets ?? [],
       statuses: urlFilters.statuses ?? [],
       painClusters: urlFilters.painClusters ?? [],
+      productLines: urlFilters.productLines ?? [],
       color: urlFilters.color ?? "",
       sortBy: urlFilters.sortBy ?? "createdAt",
       sortDirection: urlFilters.sortDirection ?? "desc",
@@ -131,6 +135,7 @@ export default function DashboardClient() {
         icpTargets: urlFilters.icpTargets ?? [],
         statuses: urlFilters.statuses ?? [],
         painClusters: urlFilters.painClusters ?? [],
+        productLines: urlFilters.productLines ?? [],
         color: urlFilters.color ?? "",
         sortBy: urlFilters.sortBy ?? "createdAt",
         sortDirection: urlFilters.sortDirection ?? "desc",

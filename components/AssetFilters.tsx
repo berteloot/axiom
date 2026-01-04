@@ -42,6 +42,7 @@ export interface AssetFiltersState {
   icpTargets: string[];
   statuses: AssetStatus[];
   painClusters: string[];
+  productLines: string[]; // Product/Service line IDs
   color: string; // Hex color code for filtering (e.g., "#FF5733")
   sortBy: SortField;
   sortDirection: SortDirection;
@@ -101,15 +102,22 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
   const filterOptions = useMemo(() => {
     const icpTargets = new Set<string>();
     const painClusters = new Set<string>();
+    const productLines = new Map<string, string>(); // id -> name
 
     assets.forEach((asset) => {
       asset.icpTargets.forEach((icp) => icpTargets.add(icp));
       asset.painClusters.forEach((cluster) => painClusters.add(cluster));
+      if (asset.productLine) {
+        productLines.set(asset.productLine.id, asset.productLine.name);
+      }
     });
 
     return {
       icpTargets: Array.from(icpTargets).sort(),
       painClusters: Array.from(painClusters).sort(),
+      productLines: Array.from(productLines.entries())
+        .map(([id, name]) => ({ id, name }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
     };
   }, [assets]);
 
@@ -124,6 +132,7 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
       icpTargets: [],
       statuses: [],
       painClusters: [],
+      productLines: [],
       color: "",
       sortBy: "createdAt",
       sortDirection: "desc",
@@ -135,6 +144,7 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
     filters.icpTargets.length +
     filters.statuses.length +
     filters.painClusters.length +
+    filters.productLines.length +
     (filters.search ? 1 : 0) +
     (filters.color ? 1 : 0);
 
@@ -224,7 +234,7 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
         </div>
 
         <CollapsibleContent className="space-y-4 mt-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
             {/* Funnel Stage Filter */}
             <div className="space-y-2">
               <label className="text-sm font-medium">Funnel Stage</label>
@@ -292,6 +302,27 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
                 placeholder="All clusters"
                 searchPlaceholder="Search clusters..."
                 emptyText="No clusters found"
+              />
+            </div>
+
+            {/* Product Lines Filter */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Product/Service Lines</label>
+              <MultiSelectCombobox
+                options={filterOptions.productLines.map((pl) => pl.name)}
+                value={filters.productLines.map((id) => {
+                  const pl = filterOptions.productLines.find((p) => p.id === id);
+                  return pl?.name || id;
+                })}
+                onChange={(selected) => {
+                  const selectedIds = selected
+                    .map((name) => filterOptions.productLines.find((pl) => pl.name === name)?.id)
+                    .filter((id): id is string => id !== undefined);
+                  updateFilters({ productLines: selectedIds });
+                }}
+                placeholder="All product lines"
+                searchPlaceholder="Search product lines..."
+                emptyText="No product lines found"
               />
             </div>
 
@@ -417,6 +448,26 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
               </button>
             </Badge>
           ))}
+          {filters.productLines.map((productLineId) => {
+            const productLine = filterOptions.productLines.find((pl) => pl.id === productLineId);
+            const displayName = productLine?.name || productLineId;
+            return (
+              <Badge key={productLineId} variant="secondary" className="gap-1">
+                Product: {displayName}
+                <button
+                  onClick={() =>
+                    updateFilters({
+                      productLines: filters.productLines.filter((id) => id !== productLineId),
+                    })
+                  }
+                  className="ml-1 hover:bg-destructive/20 rounded-full p-0.5"
+                  aria-label={`Remove ${displayName} filter`}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            );
+          })}
           {filters.color && (
             <Badge variant="secondary" className="gap-1">
               <div
@@ -476,6 +527,13 @@ export function applyAssetFilters(assets: Asset[], filters: AssetFiltersState): 
   if (filters.painClusters.length > 0) {
     filtered = filtered.filter((asset) =>
       asset.painClusters.some((cluster) => filters.painClusters.includes(cluster))
+    );
+  }
+
+  // Product Lines filter
+  if (filters.productLines.length > 0) {
+    filtered = filtered.filter((asset) =>
+      asset.productLine && filters.productLines.includes(asset.productLine.id)
     );
   }
 

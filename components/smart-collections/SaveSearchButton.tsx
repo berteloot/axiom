@@ -31,7 +31,8 @@ export function SaveSearchButton({ filters, disabled, onSaved }: SaveSearchButto
     filters.funnelStages.length > 0 ||
     filters.icpTargets.length > 0 ||
     filters.statuses.length > 0 ||
-    filters.painClusters.length > 0;
+    filters.painClusters.length > 0 ||
+    filters.productLines.length > 0;
 
   const handleSave = () => {
     if (!name.trim()) {
@@ -121,6 +122,9 @@ export function SaveSearchButton({ filters, disabled, onSaved }: SaveSearchButto
               )}
               {filters.painClusters.length > 0 && (
                 <li>• Pain: {filters.painClusters.length} cluster(s)</li>
+              )}
+              {filters.productLines.length > 0 && (
+                <li>• Product Lines: {filters.productLines.length} line(s)</li>
               )}
               <li>• Sort: {filters.sortBy} ({filters.sortDirection})</li>
             </ul>

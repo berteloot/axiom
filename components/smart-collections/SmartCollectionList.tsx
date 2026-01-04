@@ -94,6 +94,9 @@ export function SmartCollectionList({
     if (filters.painClusters.length > 0) {
       params.set("pain", filters.painClusters.join(","));
     }
+    if (filters.productLines && filters.productLines.length > 0) {
+      params.set("productLine", filters.productLines.join(","));
+    }
     if (filters.color) {
       // Encode the color (URL will encode # as %23)
       params.set("color", filters.color);
@@ -142,6 +145,9 @@ export function SmartCollectionList({
     }
     if (filters.painClusters.length > 0) {
       parts.push(`${filters.painClusters.length} cluster(s)`);
+    }
+    if (filters.productLines && filters.productLines.length > 0) {
+      parts.push(`${filters.productLines.length} product line(s)`);
     }
     
     return parts.length > 0 ? parts.join(", ") : "All assets";

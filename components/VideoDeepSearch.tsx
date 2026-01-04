@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Asset, TranscriptSegment } from "@/lib/types";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -83,7 +83,7 @@ export function VideoDeepSearch({ asset, segments, videoUrl }: VideoDeepSearchPr
   };
 
   // Highlight search matches in text
-  const highlightText = (text: string, query: string): JSX.Element => {
+  const highlightText = (text: string, query: string): React.ReactNode => {
     if (!query.trim()) return <>{text}</>;
 
     const regex = new RegExp(`(${query})`, 'gi');

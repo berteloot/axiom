@@ -14,6 +14,17 @@ export async function GET(request: NextRequest) {
       where: {
         accountId,
       },
+      include: {
+        productLine: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            valueProposition: true,
+            specificICP: true,
+          },
+        },
+      },
       orderBy: {
         createdAt: "desc",
       },

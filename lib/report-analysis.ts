@@ -28,7 +28,7 @@ export interface ReportData {
     total: number;
   };
   coverageHeatmap: {
-    personaCoverage: Record<string, Record<FunnelStage, boolean>>;
+    personaCoverage: Record<string, Record<FunnelStage, number>>;
     totalPersonas: number;
     totalGaps: number;
   };
@@ -248,29 +248,29 @@ function calculateInventoryBreakdown(assets: Asset[]) {
  * Calculate coverage heatmap showing which personas have content at which stages
  */
 function calculateCoverageHeatmap(assets: Asset[], personas: string[]) {
-  const personaCoverage: Record<string, Record<FunnelStage, boolean>> = {};
+  const personaCoverage: Record<string, Record<FunnelStage, number>> = {};
 
   personas.forEach(persona => {
     personaCoverage[persona] = {
-      TOFU_AWARENESS: false,
-      MOFU_CONSIDERATION: false,
-      BOFU_DECISION: false,
-      RETENTION: false,
+      TOFU_AWARENESS: 0,
+      MOFU_CONSIDERATION: 0,
+      BOFU_DECISION: 0,
+      RETENTION: 0,
     };
 
     STAGES.forEach(stage => {
-      const hasAssets = assets.some(
+      const count = assets.filter(
         asset => asset.icpTargets.includes(persona) && asset.funnelStage === stage
-      );
-      personaCoverage[persona][stage] = hasAssets;
+      ).length;
+      personaCoverage[persona][stage] = count;
     });
   });
 
   // Count total gaps
   let totalGaps = 0;
   Object.values(personaCoverage).forEach(stageCoverage => {
-    Object.values(stageCoverage).forEach(hasCoverage => {
-      if (!hasCoverage) totalGaps++;
+    Object.values(stageCoverage).forEach(count => {
+      if (count === 0) totalGaps++;
     });
   });
 

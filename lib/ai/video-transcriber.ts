@@ -1004,7 +1004,11 @@ export async function getTranscriptSegments(assetId: string): Promise<Transcript
       orderBy: { startTime: 'asc' },
     });
 
-    return segments;
+    // Convert Date to string for type compatibility
+    return segments.map(segment => ({
+      ...segment,
+      createdAt: segment.createdAt.toISOString(),
+    }));
   } catch (error) {
     console.error(`[VIDEO_TRANSCRIBER] Error fetching transcript segments for asset ${assetId}:`, error);
     throw error;

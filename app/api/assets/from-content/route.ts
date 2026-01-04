@@ -183,7 +183,7 @@ export async function POST(request: NextRequest) {
             reputableSourceCount: reputableSources.length,
           }
         }
-      : null;
+      : undefined;
 
     // Create the asset in the database
     const asset = await prisma.asset.create({
@@ -200,7 +200,7 @@ export async function POST(request: NextRequest) {
         painClusters,
         outreachTip,
         atomicSnippets,
-        status: "ANALYZED", // Mark as analyzed since it's already complete content
+        status: "PROCESSED", // Mark as processed since it's already complete content
         aiModel: "content-workflow",
         promptVersion: "v1",
         analyzedAt: new Date(),

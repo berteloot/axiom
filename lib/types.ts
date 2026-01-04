@@ -12,6 +12,14 @@ export type AssetStatus =
   | "APPROVED"
   | "ERROR";
 
+export interface ProductLine {
+  id: string;
+  name: string;
+  description: string;
+  valueProposition: string;
+  specificICP: string;
+}
+
 export interface Asset {
   id: string;
   createdAt: string;
@@ -37,6 +45,9 @@ export interface Asset {
   analyzedAt?: string | null;
   aiConfidence?: number | null;
   dominantColor?: string | null; // Dominant color hex code (e.g., "#FF5733")
+  // Product line relation
+  productLineId?: string | null;
+  productLine?: ProductLine | null; // Product/Service line this asset belongs to
 }
 
 export interface TranscriptSegment {
