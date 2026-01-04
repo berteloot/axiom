@@ -124,17 +124,28 @@ export function CustomPrismaAdapter(): Adapter {
     },
 
     // Create verification token
+    // Note: NextAuth v4 hashes tokens BEFORE passing them to this method
+    // So the token parameter is already hashed - we store it as-is
     async createVerificationToken({ identifier, expires, token }) {
       console.log("🔧 [Adapter] createVerificationToken for:", identifier);
+      console.log("🔧 [Adapter] Token (first 20 chars):", token?.substring(0, 20));
+      console.log("🔧 [Adapter] Token length:", token?.length);
+      console.log("🔧 [Adapter] Expires:", expires);
       try {
+        // Delete any existing tokens for this identifier first
+        await prisma.verificationToken.deleteMany({
+          where: { identifier },
+        });
+        
         const verificationToken = await prisma.verificationToken.create({
           data: {
             identifier,
-            token,
+            token, // Already hashed by NextAuth, store as-is
             expires,
           },
         });
         console.log("✅ [Adapter] Token created for:", identifier);
+        console.log("✅ [Adapter] Stored token (first 20):", verificationToken.token.substring(0, 20));
         return verificationToken;
       } catch (error) {
         console.error("❌ [Adapter] createVerificationToken error:", error);
@@ -146,7 +157,7 @@ export function CustomPrismaAdapter(): Adapter {
     async useVerificationToken({ identifier, token }) {
       console.log("🔧 [Adapter] useVerificationToken called");
       console.log("🔧 [Adapter] Looking for identifier:", identifier);
-      console.log("🔧 [Adapter] Looking for token:", token);
+      console.log("🔧 [Adapter] Looking for token (first 20 chars):", token?.substring(0, 20));
       console.log("🔧 [Adapter] Token length:", token?.length);
       
       try {
@@ -155,10 +166,41 @@ export function CustomPrismaAdapter(): Adapter {
           where: { identifier },
         });
         console.log("🔧 [Adapter] Existing tokens for this identifier:", existingTokens.length);
+        
+        if (existingTokens.length === 0) {
+          console.error("❌ [Adapter] No tokens found for identifier:", identifier);
+          return null;
+        }
+        
         existingTokens.forEach((t, i) => {
-          console.log(`🔧 [Adapter] Token ${i + 1}: ${t.token.substring(0, 10)}... (expires: ${t.expires})`);
+          const isExpired = new Date(t.expires) < new Date();
+          console.log(`🔧 [Adapter] Token ${i + 1}: ${t.token.substring(0, 20)}... (expires: ${t.expires}, expired: ${isExpired})`);
           console.log(`🔧 [Adapter] Token ${i + 1} matches: ${t.token === token}`);
+          console.log(`🔧 [Adapter] Token ${i + 1} stored length: ${t.token.length}, provided length: ${token?.length}`);
         });
+
+        // Check for expired tokens first
+        const now = new Date();
+        const validTokens = existingTokens.filter(t => new Date(t.expires) >= now);
+        if (validTokens.length === 0) {
+          console.error("❌ [Adapter] All tokens are expired");
+          // Clean up expired tokens
+          await prisma.verificationToken.deleteMany({
+            where: { identifier },
+          });
+          return null;
+        }
+
+        // Try to find and delete the matching token
+        const matchingToken = validTokens.find(t => t.token === token);
+        if (!matchingToken) {
+          console.error("❌ [Adapter] No matching token found");
+          console.error("❌ [Adapter] Expected token (first 20):", token?.substring(0, 20));
+          validTokens.forEach((t, i) => {
+            console.error(`❌ [Adapter] Available token ${i + 1} (first 20):`, t.token.substring(0, 20));
+          });
+          return null;
+        }
 
         const verificationToken = await prisma.verificationToken.delete({
           where: {
@@ -173,6 +215,7 @@ export function CustomPrismaAdapter(): Adapter {
       } catch (error: any) {
         console.error("❌ [Adapter] useVerificationToken error:", error.message);
         console.error("❌ [Adapter] Error code:", error.code);
+        console.error("❌ [Adapter] Error stack:", error.stack);
         // Token not found or already used
         return null;
       }
