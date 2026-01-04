@@ -7,6 +7,7 @@ import { Building2, Edit2, Trash2, X, Loader2 } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { AccountManagersSection } from "./AccountManagersSection";
 import { TeamMembersSection } from "./TeamMembersSection";
+import { getAccountColorScheme } from "@/lib/account-color-utils";
 
 interface AccountManager {
   id: string;
@@ -61,13 +62,16 @@ export function AccountItem({
   onDeleteManager,
 }: AccountItemProps) {
   const isEditingThisAccount = editingAccount?.id === account.id;
+  const colorScheme = getAccountColorScheme(account.id, account.name);
 
   return (
-    <div className="border rounded-lg p-4 space-y-4">
+    <div className={`border-2 ${colorScheme.border} rounded-lg p-4 space-y-4 ${colorScheme.bg} transition-colors`}>
       {/* Account Header */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
         <div className="flex items-start gap-3 flex-1 min-w-0">
-          <Building2 className="h-5 w-5 text-muted-foreground mt-1 shrink-0" />
+          <div className={`${colorScheme.accent} rounded-md p-1.5 shrink-0`}>
+            <Building2 className="h-4 w-4 text-white" />
+          </div>
           <div className="flex-1 min-w-0">
             {isEditingThisAccount ? (
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
@@ -187,10 +191,11 @@ export function AccountItem({
 
       {/* Team Members Section */}
       {(account.role === "OWNER" || account.role === "ADMIN") && (
-        <div className="border-t pt-4">
+        <div className={`border-t ${colorScheme.border} pt-4`}>
           <TeamMembersSection
             accountId={account.id}
             accountName={account.name}
+            colorScheme={colorScheme}
           />
         </div>
       )}

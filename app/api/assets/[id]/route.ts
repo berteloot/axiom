@@ -269,13 +269,17 @@ export async function DELETE(
 
     // Delete the file from S3 using stored s3Key, fallback to extracting from s3Url
     try {
-      const key = (asset as any).s3Key || extractKeyFromS3Url(asset.s3Url);
+      const key = asset.s3Key || extractKeyFromS3Url(asset.s3Url);
       if (key) {
         await deleteS3Object(key);
+        console.log(`Successfully deleted S3 object: ${key}`);
+      } else {
+        console.warn(`Could not determine S3 key for asset ${params.id}, skipping S3 deletion`);
       }
     } catch (s3Error) {
       console.error("Error deleting S3 object:", s3Error);
       // Continue with database deletion even if S3 deletion fails
+      // Log error but don't fail the request to prevent orphaned database records
     }
 
     // Delete the asset from database

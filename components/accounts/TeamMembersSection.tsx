@@ -77,6 +77,13 @@ interface Invitation {
 interface TeamMembersSectionProps {
   accountId: string;
   accountName: string;
+  colorScheme?: {
+    bg: string;
+    border: string;
+    text: string;
+    accent: string;
+    badge: string;
+  };
 }
 
 interface InvitableAccount {
@@ -86,7 +93,7 @@ interface InvitableAccount {
   role: "OWNER" | "ADMIN";
 }
 
-export function TeamMembersSection({ accountId, accountName }: TeamMembersSectionProps) {
+export function TeamMembersSection({ accountId, accountName, colorScheme }: TeamMembersSectionProps) {
   const { data: session } = useSession();
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
   const [isEditMemberDialogOpen, setIsEditMemberDialogOpen] = useState(false);
@@ -490,6 +497,11 @@ export function TeamMembersSection({ accountId, accountName }: TeamMembersSectio
         <div className="flex items-center gap-2">
           <Users className="h-4 w-4 text-muted-foreground" />
           <h3 className="text-sm font-medium">Team Members</h3>
+          {colorScheme && (
+            <Badge variant="outline" className={`${colorScheme.badge} border-0 text-xs font-medium`}>
+              {accountName}
+            </Badge>
+          )}
         </div>
         <Dialog open={isInviteDialogOpen} onOpenChange={setIsInviteDialogOpen}>
           <DialogTrigger asChild>
@@ -631,10 +643,10 @@ export function TeamMembersSection({ accountId, accountName }: TeamMembersSectio
           {teamMembers.length > 0 && (
             <div>
               <h4 className="text-xs font-medium text-muted-foreground mb-2">Current Members</h4>
-              <div className="border rounded-lg overflow-hidden">
+              <div className={`border ${colorScheme?.border || "border-border"} rounded-lg overflow-hidden`}>
                 <Table>
                   <TableHeader>
-                    <TableRow>
+                    <TableRow className={colorScheme ? `${colorScheme.bg} ${colorScheme.border}` : ""}>
                       <TableHead>Name</TableHead>
                       <TableHead>Email</TableHead>
                       <TableHead>Role</TableHead>
@@ -645,8 +657,14 @@ export function TeamMembersSection({ accountId, accountName }: TeamMembersSectio
                   <TableBody>
                     {teamMembers.map((member) => {
                       const isOwner = member.role === "OWNER";
+                      const rowClassName = colorScheme 
+                        ? `${colorScheme.bg} hover:opacity-80 border-l-4 ${colorScheme.border} transition-colors` 
+                        : "";
                       return (
-                        <TableRow key={member.id}>
+                        <TableRow 
+                          key={member.id}
+                          className={rowClassName}
+                        >
                           <TableCell className="font-medium">
                             {member.name || "—"}
                           </TableCell>
@@ -707,10 +725,10 @@ export function TeamMembersSection({ accountId, accountName }: TeamMembersSectio
           {pendingInvitations.length > 0 && (
             <div>
               <h4 className="text-xs font-medium text-muted-foreground mb-2">Pending Invitations</h4>
-              <div className="border rounded-lg overflow-hidden">
+              <div className={`border ${colorScheme?.border || "border-border"} rounded-lg overflow-hidden`}>
                 <Table>
                   <TableHeader>
-                    <TableRow>
+                    <TableRow className={colorScheme ? `${colorScheme.bg} border-b ${colorScheme.border}` : ""}>
                       <TableHead>Email</TableHead>
                       <TableHead>Role</TableHead>
                       <TableHead>Sent</TableHead>
@@ -725,8 +743,14 @@ export function TeamMembersSection({ accountId, accountName }: TeamMembersSectio
                       const isExpiring = expStatus.status === "expiring";
                       const isExpired = expStatus.status === "expired";
                       
+                      const rowClassName = colorScheme 
+                        ? `${colorScheme.bg} hover:opacity-80 border-l-4 ${colorScheme.border} transition-colors` 
+                        : "";
                       return (
-                        <TableRow key={invitation.id}>
+                        <TableRow 
+                          key={invitation.id}
+                          className={rowClassName}
+                        >
                           <TableCell className="font-medium">{invitation.email}</TableCell>
                           <TableCell>
                             <Badge variant="secondary">{invitation.role}</Badge>
