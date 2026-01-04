@@ -139,7 +139,6 @@ export async function processAssetAsync(
         atomicSnippets: analysis.atomicSnippets as any, // Prisma Json type
         contentQualityScore: analysis.contentQualityScore,
         expiryDate: expiryDate,
-        productLineId: analysis.matchedProductLineId || null, // Link to product line if identified
         dominantColor: dominantColor, // Store extracted dominant color
         status: "PROCESSED",
         // Traceability fields
@@ -149,6 +148,22 @@ export async function processAssetAsync(
         aiConfidence: analysis.contentQualityScore ? analysis.contentQualityScore / 100 : null, // Convert 0-100 to 0-1
       },
     });
+
+    // Update product line associations if matched
+    if (analysis.matchedProductLineId) {
+      // Delete existing associations
+      await prisma.assetProductLine.deleteMany({
+        where: { assetId },
+      });
+
+      // Create new association
+      await prisma.assetProductLine.create({
+        data: {
+          assetId,
+          productLineId: analysis.matchedProductLineId,
+        },
+      });
+    }
 
     console.log(`Successfully processed asset ${assetId}`);
   } catch (error) {

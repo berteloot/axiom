@@ -47,7 +47,7 @@ const SaveContentRequestSchema = z.object({
     sourceType: z.string(),
     citation: z.string().optional(),
   })).optional().default([]),
-  productLineId: z.string().optional(),
+  productLineIds: z.array(z.string()).optional(),
 });
 
 /**
@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
       icpTargets,
       painClusters,
       sources,
-      productLineId,
+      productLineIds,
     } = validationResult.data;
 
     // Check if S3 is configured
@@ -189,7 +189,6 @@ export async function POST(request: NextRequest) {
     const asset = await prisma.asset.create({
       data: {
         accountId,
-        productLineId: productLineId || null,
         title,
         s3Url,
         s3Key,
@@ -207,6 +206,16 @@ export async function POST(request: NextRequest) {
         contentQualityScore: reputableSources.length > 0 ? 85 : 70, // Higher score for source-backed content
       },
     });
+
+    // Create product line associations if provided
+    if (productLineIds && productLineIds.length > 0) {
+      await prisma.assetProductLine.createMany({
+        data: productLineIds.map(productLineId => ({
+          assetId: asset.id,
+          productLineId,
+        })),
+      });
+    }
 
     console.log(`[Save Content] Created asset ${asset.id} for account ${accountId} with ${sources.length} sources (${reputableSources.length} reputable)`);
 
