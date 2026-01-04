@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getUserId } from "@/lib/auth";
 import { randomBytes } from "crypto";
 import { generateVerificationToken } from "@/lib/token-utils";
 import { bulkInviteMemberSchema } from "@/lib/validations";
