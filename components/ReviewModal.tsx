@@ -218,7 +218,7 @@ export function ReviewModal({
               onExpiryDateChange={setExpiryDate}
             />
 
-            <div className="flex gap-2 pt-4">
+            <div className="flex items-center gap-2 pt-4">
               <Button
                 onClick={handleSave}
                 disabled={saving || deleting}
