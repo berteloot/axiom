@@ -11,7 +11,7 @@ const productLineSchema = z.object({
   name: z.string().min(1, "Product line name is required").max(100),
   description: z.string().max(1000).optional().default(""),
   valueProposition: z.string().max(1000).optional().default(""),
-  specificICP: z.string().max(1000).optional().default(""),
+  specificICP: z.array(z.string()).optional().default([]),
 })
 
 export async function GET(request: NextRequest) {
@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
         name: data.name.trim(),
         description: data.description || "",
         valueProposition: data.valueProposition || "",
-        specificICP: data.specificICP || "",
+        specificICP: data.specificICP || [],
       }
     })
 

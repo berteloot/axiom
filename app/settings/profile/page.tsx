@@ -172,7 +172,7 @@ export default function CompanyProfilePage() {
     setError(null)
     setSuccessMessage(null)
     try {
-      const response = await fetch(`/api/product-lines?id=${id}`, {
+      const response = await fetch(`/api/product-lines/${id}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -203,7 +203,7 @@ export default function CompanyProfilePage() {
     setError(null)
     setSuccessMessage(null)
     try {
-      const response = await fetch(`/api/product-lines?id=${id}`, {
+      const response = await fetch(`/api/product-lines/${id}`, {
         method: "DELETE",
       })
 

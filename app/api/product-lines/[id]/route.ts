@@ -11,7 +11,7 @@ const productLineUpdateSchema = z.object({
   name: z.string().min(1, "Product line name is required").max(100).optional(),
   description: z.string().max(1000).optional(),
   valueProposition: z.string().max(1000).optional(),
-  specificICP: z.string().max(1000).optional(),
+  specificICP: z.array(z.string()).optional(),
 })
 
 export async function PATCH(

@@ -8,23 +8,30 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { MultiSelectCombobox } from "@/components/ui/combobox"
+import { ALL_JOB_TITLES } from "@/lib/job-titles"
 import { Sparkles, Loader2 } from "lucide-react"
 
 const productLineSchema = z.object({
   name: z.string().min(1, "Product line name is required"),
   description: z.string().optional(),
   valueProposition: z.string().optional(),
-  specificICP: z.string().optional(),
+  specificICP: z.array(z.string()).optional(),
 })
 
-export type ProductLineFormData = z.infer<typeof productLineSchema>
+export type ProductLineFormData = {
+  name: string
+  description?: string
+  valueProposition?: string
+  specificICP?: string[]
+}
 
 interface ProductLineFormProps {
   initialData?: {
     name?: string
     description?: string
     valueProposition?: string
-    specificICP?: string
+    specificICP?: string[]
   }
   onSubmit: (data: ProductLineFormData) => Promise<void>
   onCancel?: () => void
@@ -43,7 +50,7 @@ export function ProductLineForm({
       name: initialData?.name || "",
       description: initialData?.description || "",
       valueProposition: initialData?.valueProposition || "",
-      specificICP: initialData?.specificICP || "",
+      specificICP: initialData?.specificICP || [],
     },
   })
 
@@ -54,6 +61,27 @@ export function ProductLineForm({
   const [isAnalyzingText, setIsAnalyzingText] = React.useState(false)
   const [analyzeTextError, setAnalyzeTextError] = React.useState<string | null>(null)
   const [pastedText, setPastedText] = React.useState("")
+  const [icpOptions, setIcpOptions] = React.useState<string[]>(ALL_JOB_TITLES)
+  const [isLoadingIcp, setIsLoadingIcp] = React.useState(true)
+
+  // Fetch unified ICP targets on mount
+  React.useEffect(() => {
+    const fetchIcpTargets = async () => {
+      setIsLoadingIcp(true)
+      try {
+        const response = await fetch("/api/icp-targets")
+        if (response.ok) {
+          const data = await response.json()
+          setIcpOptions(data.icpTargets || ALL_JOB_TITLES)
+        }
+      } catch (error) {
+        console.error("Error fetching ICP targets:", error)
+      } finally {
+        setIsLoadingIcp(false)
+      }
+    }
+    fetchIcpTargets()
+  }, [])
 
   const handleExtractFromText = async () => {
     if (!pastedText || pastedText.trim().length < 50) {
@@ -94,9 +122,8 @@ export function ProductLineForm({
         form.setValue("valueProposition", data.valueProposition)
       }
 
-      if (data.specificICP) {
-        form.setValue("specificICP", data.specificICP)
-      }
+      // specificICP from AI might be a string description - we'll skip auto-fill for this field
+      // since it now expects an array of ICP targets from the dropdown
 
       setAnalyzeTextError(null)
       setPastedText("") // Clear the textarea after successful extraction
@@ -220,14 +247,17 @@ export function ProductLineForm({
         <Label htmlFor="specificICP">
           Target Audience <span className="text-xs text-muted-foreground">(Optional)</span>
         </Label>
-        <Textarea
-          id="specificICP"
-          {...form.register("specificICP")}
-          placeholder="Who specifically buys THIS product? (role, company size, pain points)..."
-          rows={3}
+        <MultiSelectCombobox
+          options={icpOptions}
+          value={form.watch("specificICP") || []}
+          onChange={(selected) => form.setValue("specificICP", selected)}
+          placeholder={isLoadingIcp ? "Loading ICP targets..." : "Select target audience..."}
+          searchPlaceholder="Search ICP targets..."
+          emptyText="No ICP targets found"
+          disabled={isLoadingIcp || isLoading}
         />
         <p className="text-xs text-muted-foreground">
-          The ideal customer profile specific to this product line. You can add this later.
+          Select the ICP roles that this product line targets. Uses the same options as asset ICP targets.
         </p>
         {form.formState.errors.specificICP && (
           <p className="text-sm text-red-500">

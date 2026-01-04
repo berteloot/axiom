@@ -29,7 +29,7 @@ interface ProductLine {
   name: string
   description: string
   valueProposition: string
-  specificICP: string
+  specificICP: string[]
   createdAt: string
 }
 

@@ -62,7 +62,7 @@ async function migrateCompanyProfiles() {
           name: profile.productName,
           description: profile.productDescription,
           valueProposition: profile.valueProposition,
-          specificICP: profile.idealCustomerProfile,
+          specificICP: [], // Empty array - will need manual configuration after migration
         },
       });
 

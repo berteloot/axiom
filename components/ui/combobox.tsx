@@ -29,6 +29,7 @@ interface ComboboxProps {
   emptyText?: string
   creatable?: boolean
   createText?: string
+  disabled?: boolean
 }
 
 export function MultiSelectCombobox({
@@ -40,6 +41,7 @@ export function MultiSelectCombobox({
   emptyText = "No items found.",
   creatable = false,
   createText = "Create",
+  disabled = false,
 }: ComboboxProps) {
   const [open, setOpen] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState("")
@@ -106,7 +108,7 @@ export function MultiSelectCombobox({
     !exactMatch
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={disabled ? false : open} onOpenChange={disabled ? undefined : setOpen}>
       <PopoverTrigger asChild>
         <Button
           ref={buttonRef}
@@ -114,6 +116,7 @@ export function MultiSelectCombobox({
           role="combobox"
           aria-expanded={open}
           className="w-full justify-between"
+          disabled={disabled}
         >
           {value.length > 0
             ? `${value.length} selected`

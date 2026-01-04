@@ -17,7 +17,7 @@ export interface ProductLine {
   name: string;
   description: string;
   valueProposition: string;
-  specificICP: string;
+  specificICP: string[]; // Target ICP roles for this product line
 }
 
 export interface Asset {

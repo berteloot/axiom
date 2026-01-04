@@ -228,7 +228,7 @@ model ProductLine {
   name             String // e.g., "Cloud Services", "Consumer Electronics"
   description      String   @db.Text
   valueProposition String   @db.Text // Why buy THIS product?
-  specificICP      String   @db.Text // Who buys THIS product?
+  specificICP      String[] // Target ICP roles for THIS product (uses same options as asset ICP targets)
 
   brandContext BrandContext @relation(fields: [brandContextId], references: [id], onDelete: Cascade)
   assets       Asset[]
