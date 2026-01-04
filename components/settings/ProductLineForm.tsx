@@ -8,9 +8,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Badge } from "@/components/ui/badge"
 import { MultiSelectCombobox } from "@/components/ui/combobox"
 import { ALL_JOB_TITLES } from "@/lib/job-titles"
-import { Sparkles, Loader2 } from "lucide-react"
+import { Sparkles, Loader2, X } from "lucide-react"
 
 const productLineSchema = z.object({
   name: z.string().min(1, "Product line name is required"),
@@ -277,6 +278,35 @@ export function ProductLineForm({
           emptyText="No ICP targets found"
           disabled={isLoadingIcp || isLoading}
         />
+        {form.watch("specificICP") && form.watch("specificICP")!.length > 0 && (
+          <div className="mt-2 space-y-2">
+            <p className="text-xs text-muted-foreground font-medium">
+              {form.watch("specificICP")!.length} selected ICP target{form.watch("specificICP")!.length !== 1 ? "s" : ""}:
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {form.watch("specificICP")!.map((icp) => (
+                <Badge
+                  key={icp}
+                  variant="secondary"
+                  className="text-xs pr-1"
+                >
+                  {icp}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const current = form.watch("specificICP") || []
+                      form.setValue("specificICP", current.filter((item) => item !== icp))
+                    }}
+                    className="ml-1.5 rounded-full hover:bg-secondary-foreground/20 p-0.5"
+                    aria-label={`Remove ${icp}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
         <p className="text-xs text-muted-foreground">
           Select the ICP roles that this product line targets. Uses the same options as asset ICP targets.
         </p>
