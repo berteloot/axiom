@@ -25,23 +25,17 @@ if (SENDGRID_API_KEY) {
 const NEXTAUTH_URL = process.env.NEXTAUTH_URL || 
   (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
 
-// NEXTAUTH_SECRET is required - throw error in production if missing
+// NEXTAUTH_SECRET is required in production
+// Note: Runtime validation is handled in instrumentation.ts (server startup)
+// We only warn here to avoid breaking the build process
 const NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET;
-if (!NEXTAUTH_SECRET) {
-  if (process.env.NODE_ENV === "production") {
-    throw new Error(
-      "❌ CRITICAL: NEXTAUTH_SECRET environment variable is required in production. " +
-      "Set it in your environment variables or .env file. " +
-      "Generate a secure secret with: openssl rand -base64 32"
-    );
-  } else {
-    // In development, warn but allow (developer can use .env file)
-    console.warn(
-      "⚠️  WARNING: NEXTAUTH_SECRET environment variable is not set. " +
-      "Add it to your .env file for development. " +
-      "Generate with: openssl rand -base64 32"
-    );
-  }
+if (!NEXTAUTH_SECRET && process.env.NODE_ENV !== "production") {
+  // In development, warn but allow (developer can use .env file)
+  console.warn(
+    "⚠️  WARNING: NEXTAUTH_SECRET environment variable is not set. " +
+    "Add it to your .env file for development. " +
+    "Generate with: openssl rand -base64 32"
+  );
 }
 
 // Log configuration for debugging
