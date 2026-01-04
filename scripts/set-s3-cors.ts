@@ -63,10 +63,10 @@ async function setCorsConfiguration() {
             "http://localhost:3000",
             "http://localhost:3001",
             "https://localhost:3000",
-            // Add your production domain here when ready
-            // "https://yourdomain.com",
+            "https://axiom-ray0.onrender.com",
+            // Add additional production domains here if needed
           ],
-          AllowedMethods: ["GET", "PUT", "POST", "DELETE", "HEAD", "OPTIONS"],
+          AllowedMethods: ["GET", "PUT", "POST", "DELETE", "HEAD"],
           AllowedHeaders: [
             "*",
             "Content-Type",
@@ -114,8 +114,44 @@ async function setCorsConfiguration() {
     console.log("   4. Check that your bucket region matches AWS_REGION in .env");
   } catch (error: any) {
     console.error("❌ Error setting CORS configuration:", error.message);
-    if (error.name === "AccessDenied") {
-      console.error("\n💡 Make sure your AWS credentials have s3:PutBucketCors permission");
+    if (error.name === "AccessDenied" || error.message.includes("not authorized")) {
+      console.error("\n💡 Your IAM user doesn't have CORS permissions.");
+      console.error("\n📋 Manual CORS Configuration:");
+      console.error("Copy this JSON and paste it in AWS Console → S3 → assetorg → Permissions → CORS:");
+      console.error("\n" + JSON.stringify({
+        CORSRules: [
+          {
+            AllowedHeaders: [
+              "*",
+              "Content-Type",
+              "Content-MD5",
+              "x-amz-content-sha256",
+              "x-amz-date",
+              "x-amz-security-token",
+              "x-amz-user-agent",
+              "x-amz-acl",
+              "x-amz-checksum-crc32",
+              "x-amz-sdk-checksum-algorithm",
+            ],
+            AllowedMethods: ["GET", "PUT", "POST", "DELETE", "HEAD"],
+            AllowedOrigins: [
+              "http://localhost:3000",
+              "http://localhost:3001",
+              "https://localhost:3000",
+              "https://axiom-ray0.onrender.com",
+            ],
+            ExposeHeaders: [
+              "ETag",
+              "x-amz-server-side-encryption",
+              "x-amz-request-id",
+              "x-amz-id-2",
+            ],
+            MaxAgeSeconds: 3000,
+          },
+        ],
+      }, null, 2));
+      console.error("\n🔗 AWS Console Link:");
+      console.error(`https://s3.console.aws.amazon.com/s3/buckets/${BUCKET_NAME}?region=${process.env.AWS_REGION || "us-east-1"}&tab=permissions`);
     }
     process.exit(1);
   }

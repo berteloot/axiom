@@ -7,6 +7,7 @@ import { getAccountS3Prefix } from "@/lib/services/account-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60; // 1 minute should be plenty for generating a presigned URL
 
 export async function POST(request: NextRequest) {
   try {

@@ -16,8 +16,28 @@ export function useFileUpload(onSuccess?: () => void) {
       setUploadProgress({ status: "uploading", message: "Uploading file..." });
 
       const fileSize = file.size;
-      const isVideo = file.type.startsWith("video/");
+      
+      // Check if file is a video by MIME type or extension
+      // Some browsers don't set MIME type correctly, so we check extension as fallback
+      const isVideoByType = file.type.startsWith("video/");
+      const fileExtension = file.name.split(".").pop()?.toLowerCase() || "";
+      const videoExtensions = ["mp4", "mov", "avi", "webm", "mpeg", "mpg", "m4v"];
+      const isVideoByExtension = videoExtensions.includes(fileExtension);
+      const isVideo = isVideoByType || isVideoByExtension;
+      
       const usePresigned = isVideo || fileSize > PRESIGNED_THRESHOLD;
+      
+      // Debug logging
+      console.log("Upload decision:", {
+        fileName: file.name,
+        fileType: file.type,
+        fileExtension,
+        fileSize: `${(fileSize / 1024 / 1024).toFixed(2)} MB`,
+        isVideoByType,
+        isVideoByExtension,
+        isVideo,
+        usePresigned,
+      });
 
       let key: string;
       let fileName: string;
@@ -29,12 +49,27 @@ export function useFileUpload(onSuccess?: () => void) {
         console.log(`Using presigned URL for ${isVideo ? "video" : "large"} file: ${(fileSize / 1024 / 1024).toFixed(2)} MB`);
 
         // 1) Get presigned URL from backend
+        // Infer file type from extension if MIME type is missing or incorrect
+        let inferredFileType = file.type;
+        if (!inferredFileType || inferredFileType === "application/octet-stream") {
+          const mimeTypes: Record<string, string> = {
+            mp4: "video/mp4",
+            mov: "video/quicktime",
+            avi: "video/x-msvideo",
+            webm: "video/webm",
+            mpeg: "video/mpeg",
+            mpg: "video/mpeg",
+            m4v: "video/x-m4v",
+          };
+          inferredFileType = mimeTypes[fileExtension] || "application/octet-stream";
+        }
+        
         const presignedRes = await fetch("/api/upload/presigned", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             fileName: file.name,
-            fileType: file.type || "application/octet-stream",
+            fileType: inferredFileType,
           }),
         });
 
