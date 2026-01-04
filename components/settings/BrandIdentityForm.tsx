@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Badge } from "@/components/ui/badge"
 import { MultiSelectCombobox } from "@/components/ui/combobox"
 import { EditableBadge } from "@/components/ui/editable-badge"
 import { INDUSTRIES } from "@/lib/constants/industries"
@@ -92,21 +93,23 @@ function TagInput({
       {value.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {value.map((item) => (
-            <span
+            <Badge
               key={item}
-              className="inline-flex items-center gap-1 px-2 py-1 text-sm bg-secondary rounded-md"
+              variant="secondary"
+              className="text-sm flex items-center gap-1 pr-1"
             >
               {item}
               {!disabled && (
                 <button
                   type="button"
                   onClick={() => handleRemove(item)}
-                  className="hover:text-red-500"
+                  className="ml-0.5 hover:bg-secondary-foreground/20 rounded-full p-0.5"
+                  aria-label={`Remove ${item}`}
                 >
                   <X className="h-3 w-3" />
                 </button>
               )}
-            </span>
+            </Badge>
           ))}
         </div>
       )}
@@ -606,9 +609,10 @@ export function BrandIdentityForm({
               }
               
               return (
-                <span
+                <Badge
                   key={idx}
-                  className="inline-flex items-center gap-1 px-2 py-1 text-sm bg-secondary rounded-md"
+                  variant="secondary"
+                  className="text-sm flex items-center gap-1 pr-1"
                 >
                   {role}
                   <button
@@ -617,11 +621,12 @@ export function BrandIdentityForm({
                       const newRoles = form.watch("primaryICPRoles").filter((_, i) => i !== idx)
                       form.setValue("primaryICPRoles", newRoles)
                     }}
-                    className="hover:text-red-500"
+                    className="ml-0.5 hover:bg-secondary-foreground/20 rounded-full p-0.5"
+                    aria-label={`Remove ${role}`}
                   >
                     <X className="h-3 w-3" />
                   </button>
-                </span>
+                </Badge>
               );
             })}
           </div>
