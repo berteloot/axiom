@@ -69,7 +69,7 @@ export function Navigation() {
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2 min-w-0 flex-shrink-0">
             <Image 
-              src="/logo_Nytro_color.svg" 
+              src="/logo_Nytro_3d_edited.avif" 
               alt="AXIOM Logo" 
               width={40} 
               height={40} 
