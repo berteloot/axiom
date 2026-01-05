@@ -151,6 +151,10 @@ export function BrandIdentityForm({
     },
   })
 
+  // Watch form values for reactive badge display
+  const brandVoice = form.watch("brandVoice")
+  const targetIndustries = form.watch("targetIndustries")
+
   // Fetch unified ICP targets on mount
   React.useEffect(() => {
     const fetchIcpTargets = async () => {
@@ -641,11 +645,35 @@ export function BrandIdentityForm({
         <Label htmlFor="brandVoice">Brand Voice</Label>
         <MultiSelectCombobox
           options={[...BRAND_VOICES]}
-          value={form.watch("brandVoice")}
+          value={brandVoice}
           onChange={(value) => form.setValue("brandVoice", value)}
           placeholder="Select brand voice attributes..."
           searchPlaceholder="Search brand voices..."
         />
+        {brandVoice && brandVoice.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-2">
+            {brandVoice.map((voice, idx) => (
+              <Badge
+                key={idx}
+                variant="secondary"
+                className="text-sm flex items-center gap-1 pr-1"
+              >
+                {voice}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newVoices = brandVoice.filter((_, i) => i !== idx)
+                    form.setValue("brandVoice", newVoices)
+                  }}
+                  className="ml-0.5 hover:bg-secondary-foreground/20 rounded-full p-0.5"
+                  aria-label={`Remove ${voice}`}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            ))}
+          </div>
+        )}
         <p className="text-xs text-muted-foreground">
           How your company communicates
         </p>
@@ -659,11 +687,35 @@ export function BrandIdentityForm({
         <Label htmlFor="targetIndustries">Target Industries</Label>
         <MultiSelectCombobox
           options={[...INDUSTRIES]}
-          value={form.watch("targetIndustries")}
+          value={targetIndustries}
           onChange={(value) => form.setValue("targetIndustries", value)}
           placeholder="Select industries..."
           searchPlaceholder="Search industries..."
         />
+        {targetIndustries && targetIndustries.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-2">
+            {targetIndustries.map((industry, idx) => (
+              <Badge
+                key={idx}
+                variant="secondary"
+                className="text-sm flex items-center gap-1 pr-1"
+              >
+                {industry}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newIndustries = targetIndustries.filter((_, i) => i !== idx)
+                    form.setValue("targetIndustries", newIndustries)
+                  }}
+                  className="ml-0.5 hover:bg-secondary-foreground/20 rounded-full p-0.5"
+                  aria-label={`Remove ${industry}`}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            ))}
+          </div>
+        )}
         <p className="text-xs text-muted-foreground">
           Industries your company serves
         </p>
