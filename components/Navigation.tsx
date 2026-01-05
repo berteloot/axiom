@@ -71,9 +71,9 @@ export function Navigation() {
             <Image 
               src="/NYTRO.png" 
               alt="AXIOM Logo" 
-              width={40} 
+              width={87} 
               height={40} 
-              className="shrink-0 h-8 w-8 sm:h-10 sm:w-10"
+              className="shrink-0 h-8 sm:h-10 w-auto object-contain"
             />
             <span className="text-lg sm:text-xl font-semibold truncate font-roboto-condensed text-brand-orange">AXIOM</span>
           </Link>

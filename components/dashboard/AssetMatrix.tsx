@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ExternalLink, Copy, Check, Search, ArrowUpDown, Download, Linkedin, Eye } from "lucide-react";
 import { LinkedInPostGenerator } from "@/components/LinkedInPostGenerator";
 import { ReviewModal } from "@/components/ReviewModal";
+import { CreateContentWorkflow } from "@/components/content/CreateContentWorkflow";
 import { extractKeyFromS3Url } from "@/lib/s3";
 import { Input } from "@/components/ui/input";
 
@@ -65,6 +66,12 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
   const [isLinkedInModalOpen, setIsLinkedInModalOpen] = useState(false);
   const [selectedAssetForReview, setSelectedAssetForReview] = useState<Asset | null>(null);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [isContentWorkflowOpen, setIsContentWorkflowOpen] = useState(false);
+  const [selectedGap, setSelectedGap] = useState<{
+    icp: string;
+    stage: FunnelStage;
+    painCluster?: string;
+  } | null>(null);
 
   // Extract unique row keys based on view mode
   const rowKeys = useMemo(() => {
@@ -239,9 +246,58 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
     window.URL.revokeObjectURL(url);
   };
 
-  const handleCellClick = (rowKey: string, stage: FunnelStage) => {
+  const handleCellClick = async (rowKey: string, stage: FunnelStage) => {
     const cellAssets = matrixData[rowKey]?.[stage] || [];
-    setSelectedCell({ rowKey, stage, assets: cellAssets });
+    
+    // If cell is empty, open content creation workflow
+    if (cellAssets.length === 0) {
+      let gap: { icp: string; stage: FunnelStage; painCluster?: string };
+      
+      if (viewBy === "icp") {
+        // When viewing by ICP, rowKey is the ICP
+        gap = {
+          icp: rowKey,
+          stage,
+        };
+      } else {
+        // When viewing by pain cluster, rowKey is the pain cluster
+        // We need to get a default ICP from brand context
+        try {
+          const response = await fetch("/api/brand-context");
+          if (response.ok) {
+            const data = await response.json();
+            const brandContext = data.brandContext;
+            const firstICP = brandContext?.primaryICPRoles?.[0] || "CTO"; // Fallback to CTO
+            gap = {
+              icp: firstICP,
+              stage,
+              painCluster: rowKey,
+            };
+          } else {
+            // Fallback if brand context fetch fails
+            gap = {
+              icp: "CTO", // Default fallback
+              stage,
+              painCluster: rowKey,
+            };
+          }
+        } catch (error) {
+          console.error("Error fetching brand context:", error);
+          // Fallback if fetch fails
+          gap = {
+            icp: "CTO", // Default fallback
+            stage,
+            painCluster: rowKey,
+          };
+        }
+      }
+      
+      setSelectedGap(gap);
+      setIsContentWorkflowOpen(true);
+    } else {
+      // If cell has assets, show them in the sheet
+      setSelectedCell({ rowKey, stage, assets: cellAssets });
+    }
   };
 
   const handleOpenFile = async (asset: Asset) => {
@@ -695,6 +751,17 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
           onApprove={handleApprove}
         />
       )}
+
+      <CreateContentWorkflow
+        open={isContentWorkflowOpen}
+        onOpenChange={(open) => {
+          setIsContentWorkflowOpen(open);
+          if (!open) {
+            setSelectedGap(null);
+          }
+        }}
+        initialGap={selectedGap || undefined}
+      />
     </div>
   );
 }
