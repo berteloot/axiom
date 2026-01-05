@@ -4,6 +4,7 @@ import { requireAccountId } from "@/lib/account-utils";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { z } from "zod";
 import { FunnelStage } from "@/lib/types";
+import { standardizeICPTargets } from "@/lib/icp-targets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -185,6 +186,9 @@ export async function POST(request: NextRequest) {
         }
       : undefined;
 
+    // Standardize ICP targets before saving
+    const standardizedIcpTargets = standardizeICPTargets(icpTargets);
+
     // Create the asset in the database
     const asset = await prisma.asset.create({
       data: {
@@ -195,7 +199,7 @@ export async function POST(request: NextRequest) {
         fileType,
         extractedText: fullContent,
         funnelStage: funnelStage as FunnelStage,
-        icpTargets,
+        icpTargets: standardizedIcpTargets,
         painClusters,
         outreachTip,
         atomicSnippets,

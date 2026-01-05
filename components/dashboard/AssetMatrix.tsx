@@ -13,8 +13,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ExternalLink, Copy, Check, Search, ArrowUpDown, Download, Linkedin } from "lucide-react";
+import { ExternalLink, Copy, Check, Search, ArrowUpDown, Download, Linkedin, Eye } from "lucide-react";
 import { LinkedInPostGenerator } from "@/components/LinkedInPostGenerator";
+import { ReviewModal } from "@/components/ReviewModal";
 import { extractKeyFromS3Url } from "@/lib/s3";
 import { Input } from "@/components/ui/input";
 
@@ -62,6 +63,8 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
   const [sortBy, setSortBy] = useState<"name" | "total" | null>(null);
   const [selectedAssetForPost, setSelectedAssetForPost] = useState<Asset | null>(null);
   const [isLinkedInModalOpen, setIsLinkedInModalOpen] = useState(false);
+  const [selectedAssetForReview, setSelectedAssetForReview] = useState<Asset | null>(null);
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
 
   // Extract unique row keys based on view mode
   const rowKeys = useMemo(() => {
@@ -269,6 +272,17 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
     } catch (error) {
       console.error("Failed to copy:", error);
     }
+  };
+
+  const handleReview = (asset: Asset) => {
+    setSelectedAssetForReview(asset);
+    setIsReviewModalOpen(true);
+  };
+
+  const handleApprove = () => {
+    setIsReviewModalOpen(false);
+    setSelectedAssetForReview(null);
+    // Note: Asset refresh will be handled by parent component if needed
   };
 
   return (
@@ -633,6 +647,16 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
                             </>
                           )}
                         </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleReview(asset)}
+                          disabled={asset.status === "PROCESSING"}
+                          className="flex-1"
+                        >
+                          <Eye className="h-4 w-4 mr-2" />
+                          Review
+                        </Button>
                       </div>
                     </div>
                   </CardContent>
@@ -657,6 +681,18 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
             setIsLinkedInModalOpen(open);
             if (!open) setSelectedAssetForPost(null);
           }}
+        />
+      )}
+
+      {selectedAssetForReview && (
+        <ReviewModal
+          asset={selectedAssetForReview}
+          open={isReviewModalOpen}
+          onOpenChange={(open) => {
+            setIsReviewModalOpen(open);
+            if (!open) setSelectedAssetForReview(null);
+          }}
+          onApprove={handleApprove}
         />
       )}
     </div>

@@ -7,6 +7,52 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+function normalizeTitleCase(str: string): string {
+  const acronyms = new Set([
+    "CEO","CTO","CFO","CMO","COO","CIO","CISO","CPO","CDO",
+    "VP","SVP","EVP","IT","HR","PR","ROI","KPI","AI","ML",
+    "US","UK","EU","B2B","B2C","SaaS","API","UI","UX","QA"
+  ]);
+
+  return str
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(word => {
+      const upper = word.toUpperCase();
+      if (acronyms.has(upper)) return upper;
+      if (word.length <= 4 && word === upper && /^[A-Z]+$/.test(word)) return word;
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(" ");
+}
+
+function dedupeStrings(items: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of items) {
+    const cleaned = (item ?? "").trim();
+    if (!cleaned) continue;
+    const key = cleaned.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(cleaned);
+  }
+  return out;
+}
+
+function dedupeSnippets<T extends { type: string; content: string }>(snippets: T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const s of snippets) {
+    const key = `${String(s.type).toLowerCase()}::${String(s.content).trim().toLowerCase()}`;
+    if (!s.content || !String(s.content).trim()) continue;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(s);
+  }
+  return out;
+}
+
 // ============================================================================
 // IMAGE ANALYSIS SPECIFIC PROMPT
 // ============================================================================
@@ -139,6 +185,9 @@ export async function analyzeImage(
   additionalContext?: string
 ): Promise<ImageAnalysisResult> {
   try {
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error("OPENAI_API_KEY is not configured");
+    }
     // Get a presigned URL for OpenAI to access the image
     const key = extractKeyFromS3Url(s3Url);
     const imageUrl = key ? await getPresignedDownloadUrl(key, 3600) : s3Url;
@@ -166,12 +215,13 @@ IMPORTANT:
           role: "user", 
           content: [
             { type: "text", text: userPrompt },
-            { type: "image_url", image_url: { url: imageUrl } }
+            { type: "image_url", image_url: { url: imageUrl, detail: "high" } }
           ]
         },
       ],
       response_format: zodResponseFormat(ImageAnalysisSchema, "image_analysis"),
       temperature: 0.1, // Keep it very low for accurate OCR
+      max_tokens: 1800,
     });
 
     const result = completion.choices[0].message.parsed;
@@ -180,7 +230,22 @@ IMPORTANT:
       throw new Error("AI failed to generate structured image analysis");
     }
 
-    return result;
+    const normalized: ImageAnalysisResult = {
+      ...result,
+      extractedText: (result.extractedText || "").trim(),
+      visualSummary: (result.visualSummary || "").trim().slice(0, 500),
+      topics: dedupeStrings((result.topics || []).map(t => normalizeTitleCase(String(t).trim()))).slice(0, 5),
+      snippets: dedupeSnippets((result.snippets || []).map(s => ({
+        ...s,
+        content: String(s.content || "").trim().slice(0, 280),
+        context: String(s.context || "").trim(),
+        visualElement: s.visualElement ? String(s.visualElement).trim() : null,
+        confidenceScore: Math.max(1, Math.min(100, Number(s.confidenceScore) || 1)),
+      }))).slice(0, 10),
+      readabilityScore: Math.max(1, Math.min(100, Number(result.readabilityScore) || 1)),
+    };
+
+    return normalized;
 
   } catch (error) {
     console.error("Error analyzing image:", error);

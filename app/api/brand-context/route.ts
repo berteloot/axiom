@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { requireAccountId } from "@/lib/account-utils"
-import { extractCustomTargets, mergeCustomTargets } from "@/lib/icp-targets"
+import { extractCustomTargets, mergeCustomTargets, standardizeICPTargets } from "@/lib/icp-targets"
 import { ALL_JOB_TITLES } from "@/lib/job-titles"
 
 export const runtime = "nodejs";
@@ -113,6 +113,9 @@ export async function POST(request: NextRequest) {
     const providedCustom = data.customICPTargets || []
     const mergedCustomTargets = mergeCustomTargets(providedCustom, customFromPrimary)
     
+    // Standardize all ICP-related arrays
+    const standardizedPrimaryICPRoles = standardizeICPTargets(data.primaryICPRoles || [])
+    
     // Create brand context
     console.log("[Brand Context POST] Creating brand context for account:", accountId)
     const brandContext = await prisma.brandContext.create({
@@ -125,7 +128,7 @@ export async function POST(request: NextRequest) {
         valueProposition: data.valueProposition || null,
         painClusters: data.painClusters || [],
         keyDifferentiators: data.keyDifferentiators || [],
-        primaryICPRoles: data.primaryICPRoles || [],
+        primaryICPRoles: standardizedPrimaryICPRoles,
         useCases: data.useCases || [],
         roiClaims: data.roiClaims || [],
         customICPTargets: mergedCustomTargets,
@@ -194,15 +197,16 @@ export async function PATCH(request: NextRequest) {
     // If primaryICPRoles is being updated, extract custom targets and merge into customICPTargets
     let updatedCustomTargets = existing.customICPTargets || []
     if (data.primaryICPRoles !== undefined) {
-      const customFromPrimary = extractCustomTargets(data.primaryICPRoles, ALL_JOB_TITLES)
+      const standardizedPrimary = standardizeICPTargets(data.primaryICPRoles)
+      const customFromPrimary = extractCustomTargets(standardizedPrimary, ALL_JOB_TITLES)
       if (customFromPrimary.length > 0) {
         updatedCustomTargets = mergeCustomTargets(updatedCustomTargets, customFromPrimary)
       }
     }
     
-    // If customICPTargets is explicitly provided, use that; otherwise use the merged version
+    // If customICPTargets is explicitly provided, standardize it; otherwise use the merged version
     const finalCustomTargets = data.customICPTargets !== undefined 
-      ? data.customICPTargets 
+      ? standardizeICPTargets(data.customICPTargets)
       : updatedCustomTargets
     
     // Update brand context with only provided fields
@@ -216,7 +220,7 @@ export async function PATCH(request: NextRequest) {
         ...(data.valueProposition !== undefined && { valueProposition: data.valueProposition }),
         ...(data.painClusters !== undefined && { painClusters: data.painClusters }),
         ...(data.keyDifferentiators !== undefined && { keyDifferentiators: data.keyDifferentiators }),
-        ...(data.primaryICPRoles !== undefined && { primaryICPRoles: data.primaryICPRoles }),
+        ...(data.primaryICPRoles !== undefined && { primaryICPRoles: standardizeICPTargets(data.primaryICPRoles) }),
         ...(data.useCases !== undefined && { useCases: data.useCases }),
         ...(data.roiClaims !== undefined && { roiClaims: data.roiClaims }),
         customICPTargets: finalCustomTargets, // Always update to ensure sync

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { extractKeyFromS3Url, deleteS3Object } from "@/lib/s3";
 import { requireAccountId } from "@/lib/account-utils";
 import { updateAssetSchema } from "@/lib/validations";
+import { standardizeICPTargets } from "@/lib/icp-targets";
 
 // Ensure this route runs in Node.js runtime (required for Prisma)
 export const runtime = "nodejs";
@@ -142,6 +143,11 @@ export async function PATCH(
       }
     }
 
+    // Standardize ICP targets if provided
+    const standardizedIcpTargets = icpTargets !== undefined 
+      ? standardizeICPTargets(icpTargets)
+      : undefined;
+
     // Update asset fields
     const asset = await prisma.asset.update({
       where: { id: params.id },
@@ -149,7 +155,7 @@ export async function PATCH(
         ...(title !== undefined && { title }),
         ...(extractedText !== undefined && { extractedText }),
         ...(funnelStage !== undefined && { funnelStage }),
-        ...(icpTargets !== undefined && { icpTargets }),
+        ...(standardizedIcpTargets !== undefined && { icpTargets: standardizedIcpTargets }),
         ...(painClusters !== undefined && { painClusters }),
         ...(outreachTip !== undefined && { outreachTip }),
         ...(status !== undefined && { status }),

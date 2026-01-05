@@ -3,6 +3,7 @@ import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { requireAccountId } from "@/lib/account-utils"
 import { ALL_JOB_TITLES } from "@/lib/job-titles"
+import { standardizeJobTitle, standardizeICPTargets } from "@/lib/icp-targets"
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,9 +36,13 @@ export async function PATCH(request: NextRequest) {
     
     const { oldTarget, newTarget } = validation.data
     
+    // Standardize both targets
+    const standardizedOldTarget = standardizeJobTitle(oldTarget)
+    const standardizedNewTarget = standardizeJobTitle(newTarget)
+    
     // Validate that oldTarget is a custom target (not in standard list)
     const isStandard = ALL_JOB_TITLES.some(
-      title => title.toLowerCase() === oldTarget.toLowerCase()
+      title => title.toLowerCase() === standardizedOldTarget.toLowerCase()
     )
     
     if (isStandard) {
@@ -70,12 +75,12 @@ export async function PATCH(request: NextRequest) {
       ...brandContext.primaryICPRoles
     ]
     const targetExists = allTargets.some(
-      t => t.toLowerCase() === newTarget.toLowerCase()
+      t => t.toLowerCase() === standardizedNewTarget.toLowerCase()
     )
     
-    if (targetExists && newTarget.toLowerCase() !== oldTarget.toLowerCase()) {
+    if (targetExists && standardizedNewTarget.toLowerCase() !== standardizedOldTarget.toLowerCase()) {
       return NextResponse.json(
-        { error: `ICP target "${newTarget}" already exists` },
+        { error: `ICP target "${standardizedNewTarget}" already exists` },
         { status: 400 }
       )
     }
@@ -83,13 +88,17 @@ export async function PATCH(request: NextRequest) {
     // Update in a transaction
     await prisma.$transaction(async (tx) => {
       // 1. Update customICPTargets array
-      const updatedCustom = brandContext.customICPTargets.map(
-        t => t.toLowerCase() === oldTarget.toLowerCase() ? newTarget : t
+      const updatedCustom = standardizeICPTargets(
+        brandContext.customICPTargets.map(
+          t => t.toLowerCase() === standardizedOldTarget.toLowerCase() ? standardizedNewTarget : t
+        )
       )
       
       // 2. Update primaryICPRoles if present
-      const updatedPrimary = brandContext.primaryICPRoles.map(
-        t => t.toLowerCase() === oldTarget.toLowerCase() ? newTarget : t
+      const updatedPrimary = standardizeICPTargets(
+        brandContext.primaryICPRoles.map(
+          t => t.toLowerCase() === standardizedOldTarget.toLowerCase() ? standardizedNewTarget : t
+        )
       )
       
       // 3. Update brand context
@@ -109,12 +118,14 @@ export async function PATCH(request: NextRequest) {
       
       for (const asset of assets) {
         const hasOldTarget = asset.icpTargets.some(
-          t => t.toLowerCase() === oldTarget.toLowerCase()
+          t => t.toLowerCase() === standardizedOldTarget.toLowerCase()
         )
         
         if (hasOldTarget) {
-          const updatedTargets = asset.icpTargets.map(
-            t => t.toLowerCase() === oldTarget.toLowerCase() ? newTarget : t
+          const updatedTargets = standardizeICPTargets(
+            asset.icpTargets.map(
+              t => t.toLowerCase() === standardizedOldTarget.toLowerCase() ? standardizedNewTarget : t
+            )
           )
           
           await tx.asset.update({
@@ -127,7 +138,7 @@ export async function PATCH(request: NextRequest) {
     
     return NextResponse.json({ 
       success: true,
-      message: `ICP target "${oldTarget}" has been renamed to "${newTarget}" across all assets and settings.`
+      message: `ICP target "${standardizedOldTarget}" has been renamed to "${standardizedNewTarget}" across all assets and settings.`
     })
   } catch (error) {
     console.error("[ICP Targets Update] Error:", error)

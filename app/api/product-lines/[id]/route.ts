@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { requireAccountId } from "@/lib/account-utils"
+import { standardizeICPTargets } from "@/lib/icp-targets"
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -74,6 +75,11 @@ export async function PATCH(
       }
     }
 
+    // Standardize ICP targets if provided
+    const standardizedICP = data.specificICP !== undefined 
+      ? standardizeICPTargets(data.specificICP)
+      : undefined;
+
     // Update the product line (only provided fields)
     const updatedProductLine = await prisma.productLine.update({
       where: { id: productLineId },
@@ -81,7 +87,7 @@ export async function PATCH(
         ...(data.name !== undefined && { name: data.name.trim() }),
         ...(data.description !== undefined && { description: data.description }),
         ...(data.valueProposition !== undefined && { valueProposition: data.valueProposition }),
-        ...(data.specificICP !== undefined && { specificICP: data.specificICP }),
+        ...(standardizedICP !== undefined && { specificICP: standardizedICP }),
       }
     })
 

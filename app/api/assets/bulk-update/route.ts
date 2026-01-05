@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { requireAccountId } from "@/lib/account-utils"
 import { z } from "zod"
+import { standardizeICPTargets } from "@/lib/icp-targets"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -79,7 +80,7 @@ export async function PATCH(request: NextRequest) {
     } = {}
 
     if (icpTargets !== undefined) {
-      updateData.icpTargets = icpTargets
+      updateData.icpTargets = standardizeICPTargets(icpTargets)
     }
     if (funnelStage !== undefined) {
       updateData.funnelStage = funnelStage

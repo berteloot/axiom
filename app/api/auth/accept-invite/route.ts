@@ -161,50 +161,113 @@ export async function POST(request: NextRequest) {
     console.log(`[Accept Invite] Starting acceptance for user ${userId}`);
     console.log(`[Accept Invite] Target account: ${invitation.account.name} (${invitation.accountId})`);
 
-    // Accept the invitation in a transaction
-    await prisma.$transaction(async (tx) => {
-      // Add user to the account
-      console.log(`[Accept Invite] Creating userAccount...`);
-      await tx.userAccount.create({
-        data: {
-          userId,
-          accountId: invitation.accountId,
-          role: invitation.role,
+    // Find all pending invitations for this invitation's email
+    // This handles the case where bulk invitations were sent - accept all at once
+    // Use the invitation email (the email they were invited to) to find all related invitations
+    const invitationEmail = invitation.email;
+    const allPendingInvitations = await prisma.invitation.findMany({
+      where: {
+        email: invitationEmail,
+        status: "PENDING",
+        expiresAt: {
+          gt: new Date(), // Not expired
         }
-      });
+      },
+      include: {
+        account: true,
+      }
+    });
 
-      // Mark invitation as accepted
-      console.log(`[Accept Invite] Marking invitation as accepted...`);
-      await tx.invitation.update({
-        where: { id: invitation.id },
-        data: {
-          status: "ACCEPTED",
-          acceptedById: userId,
-          acceptedAt: new Date(),
+    console.log(`[Accept Invite] Found ${allPendingInvitations.length} pending invitation(s) for ${invitationEmail}`);
+
+    // Accept all pending invitations in a transaction
+    const acceptedAccounts = await prisma.$transaction(async (tx) => {
+      const accepted = [];
+
+      for (const inv of allPendingInvitations) {
+        // Check if user is already a member of this account
+        const existingMembership = await tx.userAccount.findUnique({
+          where: {
+            userId_accountId: {
+              userId,
+              accountId: inv.accountId,
+            }
+          }
+        });
+
+        if (existingMembership) {
+          console.log(`[Accept Invite] User already member of ${inv.account.name}, skipping`);
+          // Mark invitation as accepted even if already a member
+          await tx.invitation.update({
+            where: { id: inv.id },
+            data: {
+              status: "ACCEPTED",
+              acceptedById: userId,
+              acceptedAt: new Date(),
+            }
+          });
+          continue;
         }
-      });
+
+        // Add user to the account
+        console.log(`[Accept Invite] Creating userAccount for ${inv.account.name}...`);
+        await tx.userAccount.create({
+          data: {
+            userId,
+            accountId: inv.accountId,
+            role: inv.role,
+          }
+        });
+
+        // Mark invitation as accepted
+        await tx.invitation.update({
+          where: { id: inv.id },
+          data: {
+            status: "ACCEPTED",
+            acceptedById: userId,
+            acceptedAt: new Date(),
+          }
+        });
+
+        accepted.push({
+          id: inv.account.id,
+          name: inv.account.name,
+          slug: inv.account.slug,
+          role: inv.role,
+        });
+      }
+
+      return accepted;
     });
 
     // Update session OUTSIDE transaction to ensure it commits
-    // This is critical: switch user to the invited account
+    // This is critical: switch user to the invited account (use the first one, or the one from the token)
+    const targetAccountId = acceptedAccounts.length > 0 
+      ? acceptedAccounts[0].id 
+      : invitation.accountId;
+    
     console.log(`[Accept Invite] Updating session to invited account...`);
     const updatedSession = await prisma.session.upsert({
       where: { userId },
       create: {
         userId,
-        accountId: invitation.accountId,
+        accountId: targetAccountId,
       },
       update: {
-        accountId: invitation.accountId,
+        accountId: targetAccountId,
       }
     });
     
     console.log(`[Accept Invite] ✅ Session updated to: ${updatedSession.accountId}`);
-    console.log(`[Accept Invite] ✅ User ${userId} joined account ${invitation.account.name} (${invitation.accountId}) as ${invitation.role}`);
+    console.log(`[Accept Invite] ✅ User ${userId} joined ${acceptedAccounts.length} account(s)`);
+    acceptedAccounts.forEach(acc => {
+      console.log(`[Accept Invite]   - ${acc.name} (${acc.id}) as ${acc.role}`);
+    });
 
     return NextResponse.json({
       success: true,
-      account: {
+      accounts: acceptedAccounts,
+      account: acceptedAccounts.length > 0 ? acceptedAccounts[0] : {
         id: invitation.account.id,
         name: invitation.account.name,
         slug: invitation.account.slug,

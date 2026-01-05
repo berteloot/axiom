@@ -28,9 +28,10 @@ export interface ReportData {
     total: number;
   };
   coverageHeatmap: {
+    // Count of assets for each persona at each funnel stage
     personaCoverage: Record<string, Record<FunnelStage, number>>;
     totalPersonas: number;
-    totalGaps: number;
+    totalGaps: number; // number of persona-stage cells with 0 assets
   };
   gapAnalysis: {
     criticalGaps: Gap[];
@@ -64,6 +65,20 @@ const STAGE_DISPLAY: Record<FunnelStage, string> = {
   BOFU_DECISION: "BOFU",
   RETENTION: "RETENTION",
 };
+
+function inferClientName(brandContext?: BrandContext): string | undefined {
+  const url = brandContext?.websiteUrl;
+  if (!url) return undefined;
+
+  try {
+    const hostname = new URL(url.startsWith("http") ? url : `https://${url}`).hostname;
+    return hostname.replace(/^www\./, "");
+  } catch {
+    // If websiteUrl is not a valid URL, fall back to raw string trimmed
+    const trimmed = url.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+}
 
 /**
  * Generate comprehensive report data for the Client Asset Strategy Report
@@ -109,7 +124,7 @@ export function generateReportData(assets: Asset[], brandContext?: BrandContext)
     strategicWins,
     recommendations,
     generatedAt,
-    clientName: brandContext?.valueProposition ? 'Client' : undefined, // Placeholder for client name
+    clientName: inferClientName(brandContext),
   };
 }
 
@@ -233,8 +248,9 @@ function calculateInventoryBreakdown(assets: Asset[]) {
   assets.forEach(asset => {
     byStage[asset.funnelStage]++;
 
-    const fileType = asset.fileType || 'Unknown';
-    byAssetType[fileType] = (byAssetType[fileType] || 0) + 1;
+    // Prefer logical assetType (from AI classification) when available; fall back to fileType.
+    const assetTypeLabel = (asset as any).assetType || asset.fileType || 'Unknown';
+    byAssetType[assetTypeLabel] = (byAssetType[assetTypeLabel] || 0) + 1;
   });
 
   return {
@@ -266,7 +282,7 @@ function calculateCoverageHeatmap(assets: Asset[], personas: string[]) {
     });
   });
 
-  // Count total gaps
+  // Count total gaps (cells with 0 assets)
   let totalGaps = 0;
   Object.values(personaCoverage).forEach(stageCoverage => {
     Object.values(stageCoverage).forEach(count => {

@@ -3,6 +3,7 @@ import { analyzeAsset } from "@/lib/ai";
 import { extractTextFromS3 } from "@/lib/text-extraction";
 import { analyzeVideo, isAnalyzableMedia, videoAnalysisToText } from "@/lib/ai/video-analyzer";
 import { extractDominantColor } from "@/lib/color-utils";
+import { standardizeICPTargets } from "@/lib/icp-targets";
 
 /**
  * Process asset asynchronously:
@@ -128,12 +129,15 @@ export async function processAssetAsync(
       ? new Date(analysis.suggestedExpiryDate)
       : null;
 
+    // Standardize ICP targets from AI analysis
+    const standardizedIcpTargets = standardizeICPTargets(analysis.icpTargets);
+
     // Update asset with analysis results and traceability fields
     await prisma.asset.update({
       where: { id: assetId },
       data: {
         funnelStage: analysis.funnelStage,
-        icpTargets: analysis.icpTargets,
+        icpTargets: standardizedIcpTargets,
         painClusters: analysis.painClusters,
         outreachTip: analysis.outreachTip,
         atomicSnippets: analysis.atomicSnippets as any, // Prisma Json type

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
 import { requireAccountId } from "@/lib/account-utils"
+import { standardizeICPTargets } from "@/lib/icp-targets"
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -102,6 +103,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Standardize ICP targets before saving
+    const standardizedICP = standardizeICPTargets(data.specificICP || []);
+
     // Create the product line
     const productLine = await prisma.productLine.create({
       data: {
@@ -109,7 +113,7 @@ export async function POST(request: NextRequest) {
         name: data.name.trim(),
         description: data.description || "",
         valueProposition: data.valueProposition || "",
-        specificICP: data.specificICP || [],
+        specificICP: standardizedICP,
       }
     })
 
