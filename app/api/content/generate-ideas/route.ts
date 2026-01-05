@@ -196,6 +196,13 @@ EXISTING CONTENT CONTEXT:
 `
       : "";
 
+    // Calculate date cutoff (8 months ago from today) for system prompt
+    const today = new Date();
+    const eightMonthsAgo = new Date(today);
+    eightMonthsAgo.setMonth(today.getMonth() - 8);
+    const cutoffDateStr = eightMonthsAgo.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    const todayStr = today.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
     const systemPrompt = `You are a Senior B2B Content Strategist analyzing content gaps with strategic context.
 
 Your goal is to generate 3-5 high-quality content ideas that:
@@ -205,8 +212,11 @@ Your goal is to generate 3-5 high-quality content ideas that:
 4. Align with the brand voice and leverage brand differentiators
 5. Reference value proposition and use cases where relevant
 6. Follow B2B content best practices (specific, data-driven, problem-focused)
+7. **Ensure all content references are current** - No dates older than ${cutoffDateStr} (8 months before today: ${todayStr})
 
 🔴 CRITICAL: Every content idea MUST solve the pain cluster(s). The pain cluster is the core problem your organization solves - the content must demonstrate HOW to solve it.
+
+🔴 DATE REQUIREMENT: All content ideas must reference current/recent information only. No dates older than ${cutoffDateStr} should be mentioned.
 
 B2B CONTENT BEST PRACTICES:
 - Focus on strategic problems, not surface symptoms
@@ -253,7 +263,7 @@ ${existingAssetsText}`;
 
     // Build user prompt with safe fallbacks
     const primaryPainClusterDisplay = gap.painCluster || primaryPainCluster || "the identified pain cluster";
-    
+
     const userPrompt = `Generate 3-5 content ideas for this gap:
 
 GAP: ${gap.icp} - ${gap.stage}
@@ -268,6 +278,13 @@ ${brandContext.painClusters.length > 0
 - Demonstrate HOW to solve it (using our value proposition: ${brandContext.valueProposition || "Not specified"})
 - Reference our differentiators: ${brandContext.keyDifferentiators.join(", ") || "Not specified"}
 - Show how our use cases address it: ${brandContext.useCases.join(", ") || "Not specified"}
+
+🔴 DATE REQUIREMENT (CRITICAL):
+- Today's date: ${todayStr}
+- NO content should reference dates older than ${cutoffDateStr} (8 months before today)
+- All statistics, studies, reports, or examples must be from ${cutoffDateStr} or later
+- If referencing historical data, frame it in terms of recent trends or current context
+- Ensure all content ideas are timely and reference current/recent information only
 
 ${trendingData && trendingData.trendingTopics.length > 0
   ? `TRENDING TOPICS TO INCORPORATE:

@@ -93,6 +93,13 @@ Use these trending topics naturally within the content structure. Show how they 
 `
       : "";
 
+    // Calculate date cutoff (8 months ago from today) for system prompt
+    const today = new Date();
+    const eightMonthsAgo = new Date(today);
+    eightMonthsAgo.setMonth(today.getMonth() - 8);
+    const cutoffDateStr = eightMonthsAgo.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    const todayStr = today.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
     const systemPrompt = `You are a Senior B2B Content Strategist creating a detailed content brief.
 
 Your goal is to create a comprehensive content brief that:
@@ -103,8 +110,11 @@ Your goal is to create a comprehensive content brief that:
 5. Provides clear structure and guidance
 6. Ensures brand voice consistency
 7. Follows B2B content best practices
+8. **Ensures all content references are current** - No dates older than ${cutoffDateStr} (8 months before today: ${todayStr})
 
 🔴 CRITICAL: The content brief must demonstrate HOW the content solves the pain cluster(s) using the organization's value proposition, differentiators, and use cases.
+
+🔴 DATE REQUIREMENT: All content brief recommendations must reference current/recent information only. No dates older than ${cutoffDateStr} should be mentioned.
 
 B2B CONTENT BEST PRACTICES:
 - Problem-first structure (agitate pain, then present solution)
@@ -121,6 +131,13 @@ AVOID AI WRITING TRAPS:
 
 ${brandContextText}`;
 
+    // Calculate date cutoff (8 months ago from today)
+    const today = new Date();
+    const eightMonthsAgo = new Date(today);
+    eightMonthsAgo.setMonth(today.getMonth() - 8);
+    const cutoffDateStr = eightMonthsAgo.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    const todayStr = today.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
     const userPrompt = `Create a comprehensive content brief for this selected idea:
 
 SELECTED IDEA:
@@ -136,6 +153,13 @@ ${trendingTopicsText}
 REQUIREMENTS:
 
 🔴 CRITICAL: This content MUST solve the pain cluster(s). Every section must demonstrate HOW the content solves it.
+
+🔴 DATE REQUIREMENT (CRITICAL):
+- Today's date: ${todayStr}
+- NO content should reference dates older than ${cutoffDateStr} (8 months before today)
+- All statistics, studies, reports, or examples must be from ${cutoffDateStr} or later
+- If referencing historical data, frame it in terms of recent trends or current context
+- Ensure all content is timely and references current/recent information only
 
 1. **Strategic Positioning**
    - Explain why this content matters for ${gap.icp} at ${gap.stage} stage

@@ -356,6 +356,13 @@ You have NO reputable sources. This means:
 - **Mark ALL specific claims for fact-checking** in factCheckNotes
 `;
 
+    // Calculate date cutoff (8 months ago from today) for system prompt
+    const today = new Date();
+    const eightMonthsAgo = new Date(today);
+    eightMonthsAgo.setMonth(today.getMonth() - 8);
+    const cutoffDateStr = eightMonthsAgo.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    const todayStr = today.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
     const systemPrompt = `You are a Senior B2B Content Writer creating a complete, publication-ready content draft.
 
 🔴 CRITICAL: WEB SEARCH & SOURCE REQUIREMENTS:
@@ -365,6 +372,14 @@ You have NO reputable sources. This means:
 - Source URLs are essential for credibility and fact-checking
 - If sources are provided, you MUST use them and cite them properly
 - Never create content without proper source attribution
+
+🔴 CRITICAL: DATE REQUIREMENT (NO EXCEPTIONS):
+- Today's date: ${todayStr}
+- NO content should reference dates older than ${cutoffDateStr} (8 months before today)
+- All statistics, studies, reports, examples, or data points must be from ${cutoffDateStr} or later
+- If source content contains dates older than ${cutoffDateStr}, DO NOT reference those specific dates
+- Frame historical data in terms of recent trends or current context
+- Ensure all content is timely and references current/recent information only
 
 🔴 CRITICAL FACT-CHECKING RULES (MANDATORY - NO EXCEPTIONS):
 1. **NEVER make up facts, statistics, or numbers** - ONLY use data that appears in the source content extracts provided below
@@ -540,6 +555,15 @@ This is a ${idea.assetType} targeting ${brief.contentStructure.totalEstimatedWor
 ${formatSpecificInstructions}
 
 REQUIREMENTS:
+
+🔴 DATE REQUIREMENT (CRITICAL - NO EXCEPTIONS):
+- Today's date: ${todayStr}
+- NO content should reference dates older than ${cutoffDateStr} (8 months before today)
+- All statistics, studies, reports, examples, or data points must be from ${cutoffDateStr} or later
+- If you see dates in source content that are older than ${cutoffDateStr}, DO NOT reference those specific dates
+- If referencing historical data, frame it in terms of recent trends or current context (e.g., "Over the past year" instead of "In 2023")
+- Ensure all content is timely and references current/recent information only
+- When citing sources, verify the publication date is within the acceptable range
 
 1. **Content Structure**: Follow the brief's recommended sections exactly
    ${brief.contentStructure.recommendedSections.map((section, idx) => `
