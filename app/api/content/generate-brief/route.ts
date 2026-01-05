@@ -131,13 +131,6 @@ AVOID AI WRITING TRAPS:
 
 ${brandContextText}`;
 
-    // Calculate date cutoff (8 months ago from today)
-    const today = new Date();
-    const eightMonthsAgo = new Date(today);
-    eightMonthsAgo.setMonth(today.getMonth() - 8);
-    const cutoffDateStr = eightMonthsAgo.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-    const todayStr = today.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-
     const userPrompt = `Create a comprehensive content brief for this selected idea:
 
 SELECTED IDEA:
