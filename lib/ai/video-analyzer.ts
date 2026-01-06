@@ -1,12 +1,14 @@
 import OpenAI from "openai";
 import { z } from "zod";
 import { zodResponseFormat } from "openai/helpers/zod";
-import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { extractKeyFromS3Url } from "../s3";
 import ffmpeg from "fluent-ffmpeg";
 import { tmpdir } from "os";
 import { join } from "path";
-import { writeFile, readFile, unlink } from "fs/promises";
+import { readFile, unlink } from "fs/promises";
+import { createWriteStream } from "fs";
+import { pipeline } from "stream/promises";
 import { randomUUID } from "crypto";
 import { processVideo } from "./video-transcriber";
 import { prisma } from "../prisma";
@@ -78,6 +80,9 @@ const MAX_WHISPER_FILE_SIZE = 25 * 1024 * 1024;
 
 // Maximum file size we'll attempt to process (500MB) - larger files should use dedicated media processing
 const MAX_PROCESSABLE_SIZE = 500 * 1024 * 1024;
+
+// Maximum file size for streaming download (450MB) - prevents disk space issues
+const MAX_STREAMING_SIZE = 450 * 1024 * 1024;
 
 // Supported video formats (check with startsWith for broader compatibility)
 const SUPPORTED_VIDEO_TYPES = [
@@ -609,10 +614,12 @@ export async function analyzeVideo(
   additionalContext?: string,
   assetId?: string
 ): Promise<VideoAnalysisResult> {
+  const tempFilePath = join(tmpdir(), `analyze-${randomUUID()}.mp4`);
+  
   try {
     console.log(`[VIDEO] Starting video analysis for: ${fileName} (${fileType})`);
     
-    // 1. Download video from S3
+    // 1. Stream video from S3 to disk (memory-safe)
     const key = extractKeyFromS3Url(s3Url);
     if (!key) {
       throw new Error("Could not extract key from S3 URL");
@@ -621,6 +628,26 @@ export async function analyzeVideo(
     if (!BUCKET_NAME) {
       throw new Error("AWS_S3_BUCKET_NAME is not configured");
     }
+
+    // Check file size first
+    const headCommand = new HeadObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: key,
+    });
+
+    const headResponse = await s3Client.send(headCommand);
+    const fileSize = headResponse.ContentLength || 0;
+
+    if (fileSize > MAX_STREAMING_SIZE) {
+      throw new Error(
+        `File too large (${Math.round(fileSize / 1024 / 1024)}MB) for current server memory tier. ` +
+        `Maximum size is ${Math.round(MAX_STREAMING_SIZE / 1024 / 1024)}MB. Please compress the video first.`
+      );
+    }
+
+    console.log(`[STREAM] Streaming ${Math.round(fileSize / 1024 / 1024)}MB file from S3 to ${tempFilePath}`);
+
+    // Stream download to disk
     const command = new GetObjectCommand({
       Bucket: BUCKET_NAME,
       Key: key,
@@ -632,16 +659,18 @@ export async function analyzeVideo(
       throw new Error("Empty file body from S3");
     }
 
-    // Convert stream to buffer
-    const chunks: Uint8Array[] = [];
-    const stream = response.Body as any;
-    
-    for await (const chunk of stream) {
-      chunks.push(chunk);
-    }
-    
-    const fileBuffer = Buffer.concat(chunks);
-    console.log(`[VIDEO] Downloaded: ${Math.round(fileBuffer.length / 1024 / 1024)}MB`);
+    // Stream directly to disk, bypassing RAM
+    const writeStream = createWriteStream(tempFilePath);
+    await pipeline(
+      response.Body as NodeJS.ReadableStream,
+      writeStream
+    );
+
+    console.log(`[STREAM] Download complete: ${tempFilePath}`);
+
+    // Read file into buffer for transcription (we'll optimize this later if needed)
+    const fileBuffer = await readFile(tempFilePath);
+    console.log(`[VIDEO] File loaded: ${Math.round(fileBuffer.length / 1024 / 1024)}MB`);
 
     // 2. Transcribe with Whisper (extracts audio automatically for large videos)
     const transcript = await transcribeWithWhisper(fileBuffer, fileName, fileType);
@@ -683,6 +712,14 @@ export async function analyzeVideo(
   } catch (error) {
     console.error("Error analyzing video:", error);
     throw error;
+  } finally {
+    // Always cleanup temp file
+    try {
+      await unlink(tempFilePath);
+      console.log(`[STREAM] Cleaned up temp file: ${tempFilePath}`);
+    } catch (cleanupError) {
+      console.warn(`[STREAM] Failed to cleanup temp file ${tempFilePath}:`, cleanupError);
+    }
   }
 }
 

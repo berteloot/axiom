@@ -1,12 +1,14 @@
 import OpenAI from "openai";
-import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { extractKeyFromS3Url } from "../s3";
 import { prisma } from "../prisma";
 import { TranscriptSegment } from "../types";
 import ffmpeg from "fluent-ffmpeg";
 import { tmpdir } from "os";
 import { join } from "path";
-import { writeFile, readFile, unlink } from "fs/promises";
+import { writeFile, readFile, unlink, createWriteStream } from "fs/promises";
+import { createWriteStream as createWriteStreamSync } from "fs";
+import { pipeline } from "stream/promises";
 import { randomUUID } from "crypto";
 
 const openai = new OpenAI({
@@ -28,6 +30,9 @@ const MAX_WHISPER_FILE_SIZE = 25 * 1024 * 1024;
 
 // Maximum file size we'll attempt to process (500MB) - larger files should use dedicated media processing
 const MAX_PROCESSABLE_SIZE = 500 * 1024 * 1024;
+
+// Maximum file size for streaming download (450MB) - prevents disk space issues
+const MAX_STREAMING_SIZE = 450 * 1024 * 1024;
 
 // ============================================================================
 // FFMPEG SETUP (for audio extraction)
@@ -51,6 +56,59 @@ function setFfmpegPath() {
 // Set ffmpeg path when module loads (but only on server side)
 if (typeof window === 'undefined') {
   setFfmpegPath();
+}
+
+// ============================================================================
+// STREAMING S3 DOWNLOAD (Memory-Safe)
+// ============================================================================
+
+/**
+ * Stream S3 download directly to disk to avoid memory issues
+ * @param s3Key - S3 object key
+ * @param tempFilePath - Path to temporary file (will be created)
+ * @returns Path to the downloaded file
+ */
+async function streamS3ToDisk(s3Key: string, tempFilePath: string): Promise<string> {
+  // First, check file size using HeadObjectCommand
+  const headCommand = new HeadObjectCommand({
+    Bucket: BUCKET_NAME,
+    Key: s3Key,
+  });
+
+  const headResponse = await s3Client.send(headCommand);
+  const fileSize = headResponse.ContentLength || 0;
+
+  if (fileSize > MAX_STREAMING_SIZE) {
+    throw new Error(
+      `File too large (${Math.round(fileSize / 1024 / 1024)}MB) for current server memory tier. ` +
+      `Maximum size is ${Math.round(MAX_STREAMING_SIZE / 1024 / 1024)}MB. Please compress the video first.`
+    );
+  }
+
+  console.log(`[STREAM] Streaming ${Math.round(fileSize / 1024 / 1024)}MB file from S3 to ${tempFilePath}`);
+
+  // Download using streaming (memory-safe)
+  const command = new GetObjectCommand({
+    Bucket: BUCKET_NAME,
+    Key: s3Key,
+  });
+
+  const response = await s3Client.send(command);
+
+  if (!response.Body) {
+    throw new Error("Empty file body from S3");
+  }
+
+  // Stream directly to disk, bypassing RAM
+  const writeStream = createWriteStreamSync(tempFilePath);
+  await pipeline(
+    response.Body as NodeJS.ReadableStream,
+    writeStream
+  );
+
+  console.log(`[STREAM] Download complete: ${tempFilePath}`);
+
+  return tempFilePath;
 }
 
 // ============================================================================
@@ -873,6 +931,8 @@ export async function processVideoFromS3Portion(
   fileType: string,
   durationSeconds: number
 ): Promise<void> {
+  const tempFilePath = join(tmpdir(), `${assetId}-portion-${randomUUID()}.mp4`);
+  
   try {
     console.log(`[VIDEO_TRANSCRIBER] Processing first ${durationSeconds} seconds from S3 for asset ${assetId}`);
 
@@ -881,27 +941,12 @@ export async function processVideoFromS3Portion(
       throw new Error("Could not extract key from S3 URL");
     }
 
-    const command = new GetObjectCommand({
-      Bucket: BUCKET_NAME,
-      Key: key,
-    });
+    // Stream download to disk (memory-safe)
+    await streamS3ToDisk(key, tempFilePath);
 
-    const response = await s3Client.send(command);
-
-    if (!response.Body) {
-      throw new Error("Empty file body from S3");
-    }
-
-    // Convert stream to buffer
-    const chunks: Uint8Array[] = [];
-    const stream = response.Body as any;
-
-    for await (const chunk of stream) {
-      chunks.push(chunk);
-    }
-
-    const fileBuffer = Buffer.concat(chunks);
-    console.log(`[VIDEO_TRANSCRIBER] Downloaded: ${Math.round(fileBuffer.length / 1024 / 1024)}MB`);
+    // Read file into buffer for processing
+    const fileBuffer = await readFile(tempFilePath);
+    console.log(`[VIDEO_TRANSCRIBER] File loaded: ${Math.round(fileBuffer.length / 1024 / 1024)}MB`);
 
     // Extract audio from first portion only
     await extractAudioFromPortion(assetId, fileBuffer, fileName, durationSeconds);
@@ -909,6 +954,14 @@ export async function processVideoFromS3Portion(
   } catch (error) {
     console.error(`[VIDEO_TRANSCRIBER] Error processing video portion from S3 for asset ${assetId}:`, error);
     throw error;
+  } finally {
+    // Always cleanup temp file
+    try {
+      await unlink(tempFilePath);
+      console.log(`[STREAM] Cleaned up temp file: ${tempFilePath}`);
+    } catch (cleanupError) {
+      console.warn(`[STREAM] Failed to cleanup temp file ${tempFilePath}:`, cleanupError);
+    }
   }
 }
 
@@ -922,6 +975,8 @@ export async function processVideoFromS3(
   fileName: string,
   fileType: string
 ): Promise<void> {
+  const tempFilePath = join(tmpdir(), `${assetId}-${randomUUID()}.mp4`);
+  
   try {
     console.log(`[VIDEO_TRANSCRIBER] Starting processing for asset ${assetId}`);
 
@@ -942,27 +997,12 @@ export async function processVideoFromS3(
       throw new Error("Could not extract key from S3 URL");
     }
 
-    const command = new GetObjectCommand({
-      Bucket: BUCKET_NAME,
-      Key: key,
-    });
+    // Stream download to disk (memory-safe)
+    await streamS3ToDisk(key, tempFilePath);
 
-    const response = await s3Client.send(command);
-
-    if (!response.Body) {
-      throw new Error("Empty file body from S3");
-    }
-
-    // Convert stream to buffer
-    const chunks: Uint8Array[] = [];
-    const stream = response.Body as any;
-
-    for await (const chunk of stream) {
-      chunks.push(chunk);
-    }
-
-    const fileBuffer = Buffer.concat(chunks);
-    console.log(`[VIDEO_TRANSCRIBER] Downloaded: ${Math.round(fileBuffer.length / 1024 / 1024)}MB`);
+    // Read file into buffer for processing (we'll optimize this later if needed)
+    const fileBuffer = await readFile(tempFilePath);
+    console.log(`[VIDEO_TRANSCRIBER] File loaded: ${Math.round(fileBuffer.length / 1024 / 1024)}MB`);
 
     // Process the video
     await processVideo(assetId, fileBuffer, fileName, fileType);
@@ -970,6 +1010,14 @@ export async function processVideoFromS3(
   } catch (error) {
     console.error(`[VIDEO_TRANSCRIBER] Error downloading/processing video from S3 for asset ${assetId}:`, error);
     throw error;
+  } finally {
+    // Always cleanup temp file
+    try {
+      await unlink(tempFilePath);
+      console.log(`[STREAM] Cleaned up temp file: ${tempFilePath}`);
+    } catch (cleanupError) {
+      console.warn(`[STREAM] Failed to cleanup temp file ${tempFilePath}:`, cleanupError);
+    }
   }
 }
 
