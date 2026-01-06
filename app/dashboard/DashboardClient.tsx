@@ -111,6 +111,15 @@ export default function DashboardClient() {
   const [activeTab, setActiveTab] = useState<string>("strategy");
   const [brandContext, setBrandContext] = useState<BrandContext | null>(null);
   
+  // Check if we should switch to library view (e.g., after saving content)
+  useEffect(() => {
+    const switchToLibrary = sessionStorage.getItem('switch-to-library-view');
+    if (switchToLibrary === 'true') {
+      setActiveTab("library");
+      sessionStorage.removeItem('switch-to-library-view');
+    }
+  }, []);
+  
   // Initialize filters from URL params
   const initialFilters = useMemo((): AssetFiltersState => {
     const urlFilters = parseFiltersFromUrl(searchParams);

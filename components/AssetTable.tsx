@@ -335,15 +335,16 @@ export function AssetTable({
                       {asset.icpTargets.length > 1 && (
                         <Popover>
                           <PopoverTrigger asChild>
-                            <Badge 
-                              variant="outline" 
-                              className="text-xs cursor-pointer hover:bg-accent transition-colors"
+                            <button
+                              type="button"
+                              className="inline-flex items-center rounded-full border border-input bg-background px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 cursor-pointer hover:bg-accent"
                               title={`Click to see all ${asset.icpTargets.length} ICP targets`}
+                              onClick={(e) => e.stopPropagation()}
                             >
                               +{asset.icpTargets.length - 1}
-                            </Badge>
+                            </button>
                           </PopoverTrigger>
-                          <PopoverContent className="w-auto p-3" align="start">
+                          <PopoverContent className="w-auto p-3" align="start" onClick={(e) => e.stopPropagation()}>
                             <div className="space-y-2">
                               <div className="text-sm font-semibold mb-2">
                                 All ICP Targets ({asset.icpTargets.length})

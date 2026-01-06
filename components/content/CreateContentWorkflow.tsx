@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   Dialog,
   DialogContent,
@@ -1427,6 +1428,7 @@ function CompleteStep({
     isReputable?: boolean;
   }>;
 }) {
+  const router = useRouter();
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -1482,6 +1484,15 @@ function CompleteStep({
       const result = await response.json();
       setSaveSuccess(true);
       console.log("Asset saved successfully:", result);
+      
+      // Set flag to switch to library view on dashboard
+      sessionStorage.setItem('switch-to-library-view', 'true');
+      
+      // Navigate to dashboard after a brief delay to show success message
+      setTimeout(() => {
+        onClose();
+        router.push("/dashboard");
+      }, 1500);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Failed to save to asset library");
     } finally {
