@@ -26,7 +26,6 @@ import { extractCustomTargets, isCustomTarget } from "@/lib/icp-targets";
 import { Info, X, Package } from "lucide-react";
 import { Asset, FunnelStage, ProductLine } from "@/lib/types";
 import { AssetTypeSelector } from "@/components/assets/AssetTypeSelector";
-import { normalizeAssetType } from "@/lib/constants/asset-types";
 
 interface ReviewFormProps {
   asset: Asset;
