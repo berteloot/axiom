@@ -64,17 +64,52 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Trigger async re-analysis for each asset
-    // Don't await - let them process in the background
-    const reanalysisPromises = analyzableAssets.map(asset =>
-      processAssetAsync(asset.id, asset.s3Url, asset.fileType).catch((error) => {
-        console.error(`Error re-analyzing asset ${asset.id}:`, error)
-        // Don't throw - we want to continue processing other assets
-      })
+    // Process assets with concurrency limit to prevent memory exhaustion
+    // Videos are memory-intensive, so we process them sequentially
+    // Text/images can be processed in parallel (max 3 at a time)
+    const MAX_CONCURRENT = 3
+    
+    // Separate videos from other assets
+    const videoAssets = analyzableAssets.filter(asset => 
+      asset.fileType.startsWith("video/") || asset.fileType.startsWith("audio/")
+    )
+    const otherAssets = analyzableAssets.filter(asset => 
+      !asset.fileType.startsWith("video/") && !asset.fileType.startsWith("audio/")
     )
 
-    // Start all re-analyses (fire and forget)
-    Promise.all(reanalysisPromises).catch((error) => {
+    // Process videos sequentially (one at a time) to avoid memory issues
+    const processVideosSequentially = async () => {
+      for (const asset of videoAssets) {
+        try {
+          console.log(`[BULK] Processing video asset ${asset.id} (${videoAssets.indexOf(asset) + 1}/${videoAssets.length})`)
+          await processAssetAsync(asset.id, asset.s3Url, asset.fileType)
+        } catch (error) {
+          console.error(`Error re-analyzing video asset ${asset.id}:`, error)
+          // Continue with next video
+        }
+      }
+    }
+
+    // Process other assets with concurrency limit
+    const processOthersWithLimit = async () => {
+      for (let i = 0; i < otherAssets.length; i += MAX_CONCURRENT) {
+        const batch = otherAssets.slice(i, i + MAX_CONCURRENT)
+        await Promise.all(
+          batch.map(asset =>
+            processAssetAsync(asset.id, asset.s3Url, asset.fileType).catch((error) => {
+              console.error(`Error re-analyzing asset ${asset.id}:`, error)
+              // Don't throw - we want to continue processing other assets
+            })
+          )
+        )
+      }
+    }
+
+    // Start processing (fire and forget)
+    Promise.all([
+      processVideosSequentially(),
+      processOthersWithLimit()
+    ]).catch((error) => {
       console.error("Error in bulk re-analysis:", error)
     })
 
