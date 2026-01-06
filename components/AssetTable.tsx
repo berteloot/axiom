@@ -18,6 +18,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Asset, AssetStatus } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
 import { LinkedInPostGenerator } from "@/components/LinkedInPostGenerator";
@@ -328,9 +333,35 @@ export function AssetTable({
                         <span className="text-muted-foreground text-xs">—</span>
                       )}
                       {asset.icpTargets.length > 1 && (
-                        <Badge variant="outline" className="text-xs" title={asset.icpTargets.slice(1).join(", ")}>
-                          +{asset.icpTargets.length - 1}
-                        </Badge>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Badge 
+                              variant="outline" 
+                              className="text-xs cursor-pointer hover:bg-accent transition-colors"
+                              title={`Click to see all ${asset.icpTargets.length} ICP targets`}
+                            >
+                              +{asset.icpTargets.length - 1}
+                            </Badge>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-3" align="start">
+                            <div className="space-y-2">
+                              <div className="text-sm font-semibold mb-2">
+                                All ICP Targets ({asset.icpTargets.length})
+                              </div>
+                              <div className="flex flex-wrap gap-1.5">
+                                {asset.icpTargets.map((target, idx) => (
+                                  <Badge
+                                    key={idx}
+                                    variant="outline"
+                                    className="text-xs"
+                                  >
+                                    {target}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
+                          </PopoverContent>
+                        </Popover>
                       )}
                     </div>
                   </TableCell>
