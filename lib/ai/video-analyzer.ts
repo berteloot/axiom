@@ -6,7 +6,7 @@ import { extractKeyFromS3Url } from "../s3";
 import ffmpeg from "fluent-ffmpeg";
 import { tmpdir } from "os";
 import { join } from "path";
-import { readFile, unlink } from "fs/promises";
+import { readFile, unlink, writeFile } from "fs/promises";
 import { createWriteStream } from "fs";
 import { pipeline } from "stream/promises";
 import { randomUUID } from "crypto";

@@ -3,13 +3,11 @@
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ASSET_TYPES_GROUPED } from "@/lib/constants/asset-types";
+import { ASSET_TYPE_VALUES } from "@/lib/constants/asset-types";
 
 interface AssetTypeSelectorProps {
   value: string | null | undefined;
@@ -19,7 +17,7 @@ interface AssetTypeSelectorProps {
 
 /**
  * Reusable component for selecting marketing asset types
- * Displays grouped options by category (Proof & Validation, Thought Leadership, etc.)
+ * Displays all asset types in alphabetical order
  */
 export function AssetTypeSelector({
   value,
@@ -36,15 +34,10 @@ export function AssetTypeSelector({
         <SelectValue placeholder="Select asset type..." />
       </SelectTrigger>
       <SelectContent>
-        {ASSET_TYPES_GROUPED.map((group) => (
-          <SelectGroup key={group.label}>
-            <SelectLabel>{group.label}</SelectLabel>
-            {group.options.map((option) => (
-              <SelectItem key={option} value={option}>
-                {option}
-              </SelectItem>
-            ))}
-          </SelectGroup>
+        {ASSET_TYPE_VALUES.map((option) => (
+          <SelectItem key={option} value={option}>
+            {option}
+          </SelectItem>
         ))}
       </SelectContent>
     </Select>

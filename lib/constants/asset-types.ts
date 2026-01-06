@@ -79,10 +79,11 @@ export const ASSET_TYPES_GROUPED: AssetTypeGroup[] = [
 
 /**
  * Flat array of all asset type values for validation
+ * Sorted alphabetically for consistent UI display
  */
 export const ASSET_TYPE_VALUES: string[] = ASSET_TYPES_GROUPED.flatMap(
   (group) => group.options
-);
+).sort((a, b) => a.localeCompare(b));
 
 /**
  * Map legacy AI enum values to new taxonomy

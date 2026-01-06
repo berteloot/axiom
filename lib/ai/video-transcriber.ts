@@ -6,8 +6,8 @@ import { TranscriptSegment } from "../types";
 import ffmpeg from "fluent-ffmpeg";
 import { tmpdir } from "os";
 import { join } from "path";
-import { writeFile, readFile, unlink, createWriteStream } from "fs/promises";
-import { createWriteStream as createWriteStreamSync } from "fs";
+import { writeFile, readFile, unlink } from "fs/promises";
+import { createWriteStream } from "fs";
 import { pipeline } from "stream/promises";
 import { randomUUID } from "crypto";
 
@@ -100,7 +100,7 @@ async function streamS3ToDisk(s3Key: string, tempFilePath: string): Promise<stri
   }
 
   // Stream directly to disk, bypassing RAM
-  const writeStream = createWriteStreamSync(tempFilePath);
+  const writeStream = createWriteStream(tempFilePath);
   await pipeline(
     response.Body as NodeJS.ReadableStream,
     writeStream
