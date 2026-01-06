@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { MultiSelectCombobox } from "@/components/ui/combobox";
 import { Asset, FunnelStage, AssetStatus } from "@/lib/types";
+import { ASSET_TYPE_VALUES } from "@/lib/constants/asset-types";
 import {
   Search,
   X,
@@ -43,6 +44,7 @@ export interface AssetFiltersState {
   statuses: AssetStatus[];
   painClusters: string[];
   productLines: string[]; // Product/Service line IDs
+  assetTypes: string[]; // Asset types (e.g., "Case Study", "Whitepaper")
   color: string; // Hex color code for filtering (e.g., "#FF5733")
   sortBy: SortField;
   sortDirection: SortDirection;
@@ -135,6 +137,7 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
       statuses: [],
       painClusters: [],
       productLines: [],
+      assetTypes: [],
       color: "",
       sortBy: "createdAt",
       sortDirection: "desc",
@@ -147,6 +150,7 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
     filters.statuses.length +
     filters.painClusters.length +
     filters.productLines.length +
+    filters.assetTypes.length +
     (filters.search ? 1 : 0) +
     (filters.color ? 1 : 0);
 
@@ -328,6 +332,19 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
               />
             </div>
 
+            {/* Asset Type Filter */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Asset Type</label>
+              <MultiSelectCombobox
+                options={ASSET_TYPE_VALUES}
+                value={filters.assetTypes}
+                onChange={(selected) => updateFilters({ assetTypes: selected })}
+                placeholder="All types"
+                searchPlaceholder="Search asset types..."
+                emptyText="No types found"
+              />
+            </div>
+
             {/* Color Filter */}
             <div className="space-y-2">
               <label className="text-sm font-medium">Dominant Color</label>
@@ -470,6 +487,22 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
               </Badge>
             );
           })}
+          {filters.assetTypes.map((assetType) => (
+            <Badge key={assetType} variant="secondary" className="gap-1">
+              Type: {assetType}
+              <button
+                onClick={() =>
+                  updateFilters({
+                    assetTypes: filters.assetTypes.filter((t) => t !== assetType),
+                  })
+                }
+                className="ml-1 hover:bg-destructive/20 rounded-full p-0.5"
+                aria-label={`Remove ${assetType} filter`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          ))}
           {filters.color && (
             <Badge variant="secondary" className="gap-1">
               <div
@@ -536,6 +569,13 @@ export function applyAssetFilters(assets: Asset[], filters: AssetFiltersState): 
   if (filters.productLines.length > 0) {
     filtered = filtered.filter((asset) =>
       asset.productLines && asset.productLines.some((pl) => filters.productLines.includes(pl.id))
+    );
+  }
+
+  // Asset Type filter
+  if (filters.assetTypes.length > 0) {
+    filtered = filtered.filter((asset) =>
+      asset.assetType && filters.assetTypes.includes(asset.assetType)
     );
   }
 

@@ -71,6 +71,9 @@ function parseFiltersFromUrl(searchParams: URLSearchParams): Partial<AssetFilter
   const productLine = searchParams.get("productLine");
   if (productLine) filters.productLines = productLine.split(",");
   
+  const assetType = searchParams.get("assetType");
+  if (assetType) filters.assetTypes = assetType.split(",");
+  
   const color = searchParams.get("color");
   if (color) {
     // Decode the color (URL encodes # as %23)
@@ -118,6 +121,7 @@ export default function DashboardClient() {
       statuses: urlFilters.statuses ?? [],
       painClusters: urlFilters.painClusters ?? [],
       productLines: urlFilters.productLines ?? [],
+      assetTypes: urlFilters.assetTypes ?? [],
       color: urlFilters.color ?? "",
       sortBy: urlFilters.sortBy ?? "createdAt",
       sortDirection: urlFilters.sortDirection ?? "desc",
@@ -138,6 +142,7 @@ export default function DashboardClient() {
         statuses: urlFilters.statuses ?? [],
         painClusters: urlFilters.painClusters ?? [],
         productLines: urlFilters.productLines ?? [],
+        assetTypes: urlFilters.assetTypes ?? [],
         color: urlFilters.color ?? "",
         sortBy: urlFilters.sortBy ?? "createdAt",
         sortDirection: urlFilters.sortDirection ?? "desc",
