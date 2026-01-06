@@ -83,6 +83,13 @@ export async function POST(request: NextRequest) {
         try {
           console.log(`[BULK] Processing video asset ${asset.id} (${videoAssets.indexOf(asset) + 1}/${videoAssets.length})`)
           await processAssetAsync(asset.id, asset.s3Url, asset.fileType)
+          
+          // Add a small delay between videos to allow garbage collection
+          // This helps prevent memory accumulation when processing multiple large videos
+          if (videoAssets.indexOf(asset) < videoAssets.length - 1) {
+            console.log(`[BULK] Waiting 2 seconds before processing next video to allow memory cleanup...`)
+            await new Promise(resolve => setTimeout(resolve, 2000))
+          }
         } catch (error) {
           console.error(`Error re-analyzing video asset ${asset.id}:`, error)
           // Continue with next video

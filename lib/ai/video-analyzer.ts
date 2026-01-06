@@ -8,7 +8,8 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { writeFile, readFile, unlink } from "fs/promises";
 import { randomUUID } from "crypto";
-import { processVideoFromS3 } from "./video-transcriber";
+import { processVideo } from "./video-transcriber";
+import { prisma } from "../prisma";
 
 // ============================================================================
 // FFMPEG SETUP (for audio extraction)
@@ -651,10 +652,21 @@ export async function analyzeVideo(
 
     // 3. Process video for deep search (save transcript segments with timestamps)
     // Only save segments if assetId is provided
+    // IMPORTANT: Reuse the already-downloaded buffer to avoid duplicate download and memory issues
     if (assetId) {
       try {
-        await processVideoFromS3(assetId, s3Url, fileName, fileType);
-        console.log(`[VIDEO] Saved transcript segments for deep search: asset ${assetId}`);
+        // Check if segments already exist - skip if they do
+        const existingSegments = await prisma.transcriptSegment.count({
+          where: { assetId },
+        });
+
+        if (existingSegments === 0) {
+          // Reuse the buffer we already downloaded instead of downloading again
+          await processVideo(assetId, fileBuffer, fileName, fileType);
+          console.log(`[VIDEO] Saved transcript segments for deep search: asset ${assetId}`);
+        } else {
+          console.log(`[VIDEO] Segments already exist for asset ${assetId} (${existingSegments} segments). Skipping.`);
+        }
       } catch (segmentError) {
         console.warn(`[VIDEO] Failed to save transcript segments:`, segmentError);
         // Don't fail the entire analysis if segment saving fails
