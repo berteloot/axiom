@@ -26,23 +26,24 @@ import { useState } from "react";
 import { VideoCompressionGuide } from "@/components/VideoCompressionGuide";
 
 // Helper to get file type icon
+// All icons use consistent size (w-5 h-5 = 20px) for better visibility
 const getFileTypeIcon = (fileType: string) => {
   if (fileType.startsWith("image/")) {
-    return <Image className="w-4 h-4 text-purple-500" />;
+    return <Image className="w-5 h-5 text-purple-500 flex-shrink-0" />;
   }
   if (fileType.startsWith("video/")) {
-    return <Video className="w-4 h-4 text-red-500" />;
+    return <Video className="w-5 h-5 text-red-500 flex-shrink-0" />;
   }
   if (fileType.startsWith("audio/")) {
-    return <Music className="w-4 h-4 text-orange-500" />;
+    return <Music className="w-5 h-5 text-orange-500 flex-shrink-0" />;
   }
   if (fileType === "application/pdf" || fileType.includes("word") || fileType === "text/plain") {
-    return <FileText className="w-4 h-4 text-blue-500" />;
+    return <FileText className="w-5 h-5 text-blue-500 flex-shrink-0" />;
   }
   if (fileType.includes("excel") || fileType.includes("spreadsheet") || fileType === "text/csv") {
-    return <FileSpreadsheet className="w-4 h-4 text-green-500" />;
+    return <FileSpreadsheet className="w-5 h-5 text-green-500 flex-shrink-0" />;
   }
-  return <File className="w-4 h-4 text-gray-500" />;
+  return <File className="w-5 h-5 text-gray-500 flex-shrink-0" />;
 };
 
 interface AssetTableProps {
