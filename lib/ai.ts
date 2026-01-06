@@ -26,7 +26,7 @@ const SnippetSchema = z.object({
     .describe("One sentence explaining where this fits or why it matters. (e.g. 'Use this when objection handling about price')."),
     
   pageLocation: z.number().nullable()
-    .describe("The page number where this was found (ONLY if the input text contains explicit page markers like 'PAGE 1', 'PAGE 2', etc. Otherwise set to null)."),
+    .describe("The page number where this snippet was found. IMPORTANT: Only set a number if the input text contains explicit page markers (e.g., 'PAGE 1', 'PAGE 2', '[PAGE_BREAK_2]'). If the text extractor did not inject page markers, this MUST be null. Do not guess or hallucinate page numbers."),
     
   confidenceScore: z.number().min(1).max(100)
     .describe("How strong/useful is this snippet? 100 = Perfect for a slide deck."),
@@ -102,7 +102,7 @@ const BaseAnalysisSchema = z.object({
     "MOFU_CONSIDERATION", 
     "BOFU_DECISION", 
     "RETENTION"
-  ]),
+  ]).describe("The buyer's journey stage. WATERFALL PRIORITY RULE: Check in order - (1) If contains specific ROI stats, customer testimonials, or pricing → BOFU (even if mentions pain points). (2) If explains how product works, features, or compares solutions → MOFU. (3) If only discusses problems/trends without solution details → TOFU. Asset Type Anchor: Case Study → BOFU, Sales Deck → MOFU/BOFU (never TOFU)."),
 
   icpTargets: z.array(z.string())
     .max(5)
@@ -131,7 +131,13 @@ const BaseAnalysisSchema = z.object({
     
   suggestedExpiryDate: z.string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be ISO date format (YYYY-MM-DD)")
-    .describe("ISO Date string (YYYY-MM-DD format only). When will this content likely become outdated? Consider asset type (News = 6 months, Evergreen = 2 years)."),
+    .refine((date) => {
+      const parsed = Date.parse(date);
+      return !isNaN(parsed) && parsed > 0;
+    }, {
+      message: "Invalid date: must be a valid calendar date (e.g., '2026-02-30' is invalid)",
+    })
+    .describe("ISO Date string (YYYY-MM-DD format only). When will this content likely become outdated? Consider asset type (News = 6 months, Evergreen = 2 years). Must be a valid calendar date."),
 });
 
 // Function to create dynamic schema based on available product lines
@@ -178,10 +184,29 @@ STRATEGY GUIDELINES:
    - Prioritize C-level and VP roles when relevant
    - Examples: ✅ "CFO", "VP of Engineering", "Chief Marketing Officer" | ❌ "Enterprise", "SMB", "Startups", "Managers", "Leaders"
 
-3. **Funnel Stage**:
-   - Awareness: "Why change?" (Trends, Educational)
-   - Consideration: "Why us?" (Comparisons, Solution Briefs)
-   - Decision: "Why now?" (ROI, Case Studies)
+3. **Funnel Stage** (STRICT WATERFALL LOGIC):
+   Determine the funnel stage by checking these conditions in order. Stop at the first match.
+   
+   **PRIORITY 1: BOFU (Decision) - "The Proof"**
+   - **Signals:** Contains specific ROI metrics (e.g., "saved 30%", "$X cost reduction"), customer testimonials/quotes, pricing information, or legal/contract terms.
+   - **Asset Types:** Case Studies, Pricing Sheets, ROI Calculators, Contracts, Customer Success Stories.
+   - **CRITICAL RULE:** Even if the asset mentions "Pain Points" or problems, the presence of ROI/Proof/Testimonials makes it BOFU. A Case Study that describes customer pain is STILL BOFU because it proves the solution works.
+   
+   **PRIORITY 2: MOFU (Consideration) - "The Solution"**
+   - **Signals:** Explains *how* the product/solution solves the problem. Mentions specific features, use cases, implementation details, or compares us vs. competitors (competitive differentiation).
+   - **Asset Types:** Whitepapers, Solution Briefs, Webinar Recordings, Product Demos, Technical Documentation.
+   - **Logic:** If it moves beyond "why this problem is bad" to "how we fix it" or "what makes us different," it is MOFU.
+   
+   **PRIORITY 3: TOFU (Awareness) - "The Problem"**
+   - **Signals:** Focuses on market trends, definitions ("What is X?"), or agitating pain clusters without pitching the specific product/solution deeply.
+   - **Asset Types:** Blog Posts, Infographics, Trend Reports, Checklists, Educational Content.
+   - **Logic:** Default to TOFU only if no Solution or Proof signals are present. Pure educational/problem-focused content without solution details.
+   
+   **ASSET TYPE HARD ANCHORS:**
+   - **Case Study** → MUST be BOFU (it's proof of success, always Decision stage)
+   - **Sales Deck** → MUST be MOFU or BOFU (active selling, never TOFU)
+   - **Whitepaper** → Typically MOFU (deep technical consideration)
+   - **Infographic** → Typically TOFU (high-level visual awareness)
 
 4. **Outreach**: Write the hook as if you are a rep sending a personal note to a prospect.
 
@@ -289,7 +314,7 @@ RULES:
 1. matchedProductLineId: MUST use exact ID from productLines[].id above. NO hallucination.
 2. painClusters: Prefer exact terms from painClusters[] when relevant, else infer (2-5 words, Title Case).
 3. icpTargets: PRIORITY 1 = primaryICPRoles[], PRIORITY 2 = productLines[].targetAudience, PRIORITY 3 = infer new.
-4. funnelStage: ROI claims → BOFU, use cases → MOFU, pain clusters → TOFU.
+4. funnelStage: Use WATERFALL LOGIC (see system prompt). Check BOFU signals first (ROI/testimonials), then MOFU (solution/features), then TOFU (problem only). Case Studies → BOFU always.
 5. snippets: Prioritize ROI_STAT matching roiClaims[], COMPETITIVE_WEDGE matching keyDifferentiators[].
 `;
     } 
@@ -315,7 +340,7 @@ ${brandContextJson}
 RULES:
 1. painClusters: Prefer exact terms from painClusters[] when relevant, else infer (2-5 words, Title Case).
 2. icpTargets: PRIORITY 1 = primaryICPRoles[], PRIORITY 2 = infer new (specific job titles only).
-3. funnelStage: ROI claims → BOFU, use cases → MOFU, pain clusters → TOFU.
+3. funnelStage: Use WATERFALL LOGIC (see system prompt). Check BOFU signals first (ROI/testimonials), then MOFU (solution/features), then TOFU (problem only). Case Studies → BOFU always.
 4. snippets: Prioritize ROI_STAT matching roiClaims[], COMPETITIVE_WEDGE matching keyDifferentiators[].
 `;
     } 
@@ -396,15 +421,8 @@ INSTRUCTIONS:
 
     if (!result) throw new Error("AI failed to generate structured analysis");
 
-    // Validate suggestedExpiryDate format (Zod regex already ensures YYYY-MM-DD, but double-check it's a valid date)
-    let validatedExpiryDate: string | null = result.suggestedExpiryDate;
-    if (validatedExpiryDate) {
-      const dateObj = new Date(validatedExpiryDate);
-      if (isNaN(dateObj.getTime())) {
-        console.warn(`Invalid suggestedExpiryDate: ${validatedExpiryDate}. Setting to null.`);
-        validatedExpiryDate = null;
-      }
-    }
+    // Note: suggestedExpiryDate is now validated by Zod's .refine() - no manual validation needed
+    // If the AI generates an invalid date, Zod will reject it and force a retry
 
     // Normalize and validate outputs
     const normalized: AnalysisResult = {
@@ -433,8 +451,8 @@ INSTRUCTIONS:
       contentGaps: result.contentGaps 
         ? dedupeArray(result.contentGaps.map(gap => gap.trim())).slice(0, 5)
         : null,
-      // Return validated ISO date string (asset-processor will convert to Date for Prisma)
-      suggestedExpiryDate: validatedExpiryDate || result.suggestedExpiryDate,
+      // Date is already validated by Zod - use as-is (asset-processor will convert to Date for Prisma)
+      suggestedExpiryDate: result.suggestedExpiryDate,
     };
 
     return normalized;

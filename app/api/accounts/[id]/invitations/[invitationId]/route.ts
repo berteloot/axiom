@@ -237,7 +237,7 @@ export async function PATCH(
     expiresAt.setDate(expiresAt.getDate() + 7);
     
     const loginExpires = new Date();
-    loginExpires.setHours(loginExpires.getHours() + 24);
+    loginExpires.setDate(loginExpires.getDate() + 7); // Match invitation expiry (7 days instead of 24 hours)
     
     console.log("[Resend] Generated tokens:");
     console.log("[Resend] Raw token (for URL):", loginTokenRaw);

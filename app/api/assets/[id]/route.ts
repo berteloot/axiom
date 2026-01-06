@@ -93,6 +93,7 @@ export async function PATCH(
 
     const {
       title,
+      assetType,
       extractedText,
       funnelStage,
       icpTargets,
@@ -153,6 +154,7 @@ export async function PATCH(
       where: { id: params.id },
       data: {
         ...(title !== undefined && { title }),
+        ...(assetType !== undefined && { assetType }),
         ...(extractedText !== undefined && { extractedText }),
         ...(funnelStage !== undefined && { funnelStage }),
         ...(standardizedIcpTargets !== undefined && { icpTargets: standardizedIcpTargets }),

@@ -37,15 +37,8 @@ function AcceptInviteForm() {
         return;
       }
 
-      const session = await getSession();
-
-      if (!session) {
-        // Redirect to sign in with callback to this page
-        router.push(`/auth/signin?callbackUrl=${encodeURIComponent(window.location.href)}`);
-        return;
-      }
-
-      // Fetch actual invitation details from the server
+      // First, check if the invitation is valid (doesn't require session)
+      // This allows us to show invitation details even if login token expired
       try {
         const response = await fetch(`/api/auth/accept-invite?token=${encodeURIComponent(token)}`);
         const data = await response.json();
@@ -57,6 +50,18 @@ function AcceptInviteForm() {
             account: { name: data.account.name },
             invitedBy: { name: data.invitedBy.name || "Someone" }
           });
+
+          // Now check if user has a session
+          const session = await getSession();
+
+          if (!session) {
+            // If no session, redirect to sign in with callback to this page
+            // This handles the case where the login token expired but invitation is still valid
+            router.push(`/auth/signin?callbackUrl=${encodeURIComponent(window.location.href)}`);
+            return;
+          }
+
+          // User has session and invitation is valid, ready to accept
         } else {
           setError(data.error || "Invalid invitation");
         }

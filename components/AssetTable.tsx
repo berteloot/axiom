@@ -230,6 +230,7 @@ export function AssetTable({
                   </TableHead>
                 )}
                 <TableHead className="w-[200px] px-4">Title</TableHead>
+                <TableHead className="w-[120px] px-4">Type</TableHead>
                 <TableHead className="w-[150px] px-4">Product Line</TableHead>
                 <TableHead className="w-[140px] px-4">ICP Targets</TableHead>
                 <TableHead className="w-[100px] px-4">Stage</TableHead>
@@ -271,6 +272,17 @@ export function AssetTable({
                         </span>
                       </div>
                     </TableCell>
+                  <TableCell className="w-[120px] px-4">
+                    {asset.assetType ? (
+                      <Badge variant="secondary" className="text-xs">
+                        {asset.assetType}
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">
+                        {asset.fileType.split("/").pop()?.toUpperCase() || "FILE"}
+                      </span>
+                    )}
+                  </TableCell>
                   <TableCell className="w-[150px] px-4">
                     {asset.productLines && asset.productLines.length > 0 ? (
                       <div className="flex flex-wrap gap-0.5">

@@ -59,10 +59,18 @@ export async function extractTextFromS3(
         const { text, totalPages } = await extractText(uint8Array);
         
         // unpdf returns text as an array of strings (one per page)
+        // Inject page markers so AI can detect page numbers in snippets
         let finalText: string;
         if (Array.isArray(text)) {
-          finalText = text.join('\n\n'); // Join pages with double newline
+          // Inject [PAGE_BREAK_N] markers between pages for AI page detection
+          finalText = text
+            .map((pageText, index) => {
+              const pageNum = index + 1;
+              return `[PAGE_BREAK_${pageNum}]\n${pageText}`;
+            })
+            .join('\n\n');
         } else {
+          // Single page or non-array response - no page markers needed
           finalText = text;
         }
         

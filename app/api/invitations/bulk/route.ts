@@ -202,7 +202,7 @@ export async function POST(request: NextRequest) {
     // Generate tokens for login
     const { raw: loginTokenRaw, hashed: loginTokenHashed } = generateVerificationToken();
     const loginExpires = new Date();
-    loginExpires.setHours(loginExpires.getHours() + 24);
+    loginExpires.setDate(loginExpires.getDate() + 7); // Match invitation expiry (7 days instead of 24 hours)
 
     // Create invitations for each account
     const invitations = [];

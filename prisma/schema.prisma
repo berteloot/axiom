@@ -267,6 +267,7 @@ model Asset {
   s3Url               String
   s3Key               String // S3 object key (source of truth for S3 location)
   fileType            String
+  assetType           String? // Marketing asset type (e.g., "Case Study", "Whitepaper") - distinct from technical fileType
   extractedText       String?     @db.Text
   funnelStage         FunnelStage
   icpTargets          String[]

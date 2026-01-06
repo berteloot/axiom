@@ -688,6 +688,36 @@ export default function DashboardClient() {
         onOpenChange={setIsBulkEditModalOpen}
         selectedCount={selectedAssetIds.length}
         onSave={handleBulkEdit}
+        onReanalyze={async () => {
+          try {
+            const response = await fetch("/api/assets/bulk-reanalyze", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                assetIds: selectedAssetIds,
+              }),
+            });
+
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}))
+              throw new Error(errorData.error || "Failed to re-analyze assets")
+            }
+
+            const data = await response.json()
+            // Show success message
+            alert(data.message || `Re-analysis queued for ${data.queuedCount || selectedAssetIds.length} asset(s)`)
+            
+            // Refresh assets to show updated status
+            await fetchAssets()
+            // Clear selection
+            setSelectedAssetIds([])
+          } catch (error) {
+            console.error("Error bulk re-analyzing assets:", error)
+            throw error
+          }
+        }}
       />
 
       <SequenceModal

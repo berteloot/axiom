@@ -42,6 +42,7 @@ export function ReviewModal({
 }: ReviewModalProps) {
   const [formData, setFormData] = useState({
     title: asset.title,
+    assetType: asset.assetType || null,
     funnelStage: asset.funnelStage,
     icpTargets: asset.icpTargets,
     painClusters: asset.painClusters.join(", "),
@@ -68,6 +69,7 @@ export function ReviewModal({
     if (open) {
       setFormData({
         title: asset.title,
+        assetType: asset.assetType || null,
         funnelStage: asset.funnelStage,
         icpTargets: asset.icpTargets,
         painClusters: asset.painClusters.join(", "),
@@ -102,6 +104,7 @@ export function ReviewModal({
         },
         body: JSON.stringify({
           title: formData.title,
+          assetType: formData.assetType,
           funnelStage: formData.funnelStage,
           icpTargets: formData.icpTargets,
           painClusters: painClusters,

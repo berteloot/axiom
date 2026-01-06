@@ -183,7 +183,7 @@ export async function POST(
     expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiry for invitation
     
     const loginExpires = new Date();
-    loginExpires.setHours(loginExpires.getHours() + 24); // 24 hours for login token
+    loginExpires.setDate(loginExpires.getDate() + 7); // Match invitation expiry (7 days instead of 24 hours)
     
     console.log("[Invitation] Generated tokens:");
     console.log("[Invitation] Raw token (for URL):", loginTokenRaw);

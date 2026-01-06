@@ -197,6 +197,7 @@ export async function POST(request: NextRequest) {
         s3Url,
         s3Key,
         fileType,
+        assetType: assetType, // Save the marketing asset type
         extractedText: fullContent,
         funnelStage: funnelStage as FunnelStage,
         icpTargets: standardizedIcpTargets,

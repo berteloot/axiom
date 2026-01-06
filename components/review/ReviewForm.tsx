@@ -25,11 +25,14 @@ import { ALL_JOB_TITLES } from "@/lib/job-titles";
 import { extractCustomTargets, isCustomTarget } from "@/lib/icp-targets";
 import { Info, X, Package } from "lucide-react";
 import { Asset, FunnelStage, ProductLine } from "@/lib/types";
+import { AssetTypeSelector } from "@/components/assets/AssetTypeSelector";
+import { normalizeAssetType } from "@/lib/constants/asset-types";
 
 interface ReviewFormProps {
   asset: Asset;
   formData: {
     title: string;
+    assetType: string | null;
     funnelStage: FunnelStage;
     icpTargets: string[];
     painClusters: string;
@@ -162,6 +165,17 @@ export function ReviewForm({
           value={formData.title}
           onChange={(e) => onFormDataChange({ title: e.target.value })}
         />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="assetType">Asset Type</Label>
+        <AssetTypeSelector
+          value={formData.assetType}
+          onChange={(value) => onFormDataChange({ assetType: value || null })}
+        />
+        <p className="text-xs text-muted-foreground">
+          The marketing asset type (e.g., "Case Study", "Whitepaper"). This is distinct from the technical file type.
+        </p>
       </div>
 
       <div className="space-y-2">

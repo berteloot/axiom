@@ -4,6 +4,7 @@ import { extractTextFromS3 } from "@/lib/text-extraction";
 import { analyzeVideo, isAnalyzableMedia, videoAnalysisToText } from "@/lib/ai/video-analyzer";
 import { extractDominantColor } from "@/lib/color-utils";
 import { standardizeICPTargets } from "@/lib/icp-targets";
+import { normalizeAssetType } from "@/lib/constants/asset-types";
 
 /**
  * Process asset asynchronously:
@@ -132,10 +133,14 @@ export async function processAssetAsync(
     // Standardize ICP targets from AI analysis
     const standardizedIcpTargets = standardizeICPTargets(analysis.icpTargets);
 
+    // Normalize asset type from AI analysis (convert legacy format to new taxonomy)
+    const normalizedAssetType = normalizeAssetType(analysis.assetType);
+
     // Update asset with analysis results and traceability fields
     await prisma.asset.update({
       where: { id: assetId },
       data: {
+        assetType: normalizedAssetType, // Save AI-detected asset type
         funnelStage: analysis.funnelStage,
         icpTargets: standardizedIcpTargets,
         painClusters: analysis.painClusters,
@@ -147,7 +152,7 @@ export async function processAssetAsync(
         status: "PROCESSED",
         // Traceability fields
         aiModel: "gpt-4o-2024-08-06", // Model used for analysis
-        promptVersion: "2.0", // Updated version with multi-product support
+        promptVersion: "3.0", // Waterfall logic + multi-product support
         analyzedAt: new Date(), // When AI analysis was performed
         aiConfidence: analysis.contentQualityScore ? analysis.contentQualityScore / 100 : null, // Convert 0-100 to 0-1
       },

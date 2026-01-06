@@ -20,8 +20,9 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { ALL_JOB_TITLES } from "@/lib/job-titles"
-import { Loader2, Package, Users, X } from "lucide-react"
+import { Loader2, Package, Users, X, Sparkles } from "lucide-react"
 import { FunnelStage } from "@/lib/types"
+import { Checkbox } from "@/components/ui/checkbox"
 
 interface ProductLine {
   id: string
@@ -37,6 +38,7 @@ interface BulkEditModalProps {
     icpTargets?: string[]
     funnelStage?: FunnelStage
   }) => Promise<void>
+  onReanalyze?: () => Promise<void>
 }
 
 export function BulkEditModal({
@@ -44,6 +46,7 @@ export function BulkEditModal({
   onOpenChange,
   selectedCount,
   onSave,
+  onReanalyze,
 }: BulkEditModalProps) {
   const [productLines, setProductLines] = React.useState<ProductLine[]>([])
   const [isLoadingProductLines, setIsLoadingProductLines] = React.useState(true)
@@ -52,6 +55,7 @@ export function BulkEditModal({
   const [icpOptions, setIcpOptions] = React.useState<string[]>(ALL_JOB_TITLES)
   const [isLoadingIcp, setIsLoadingIcp] = React.useState(true)
   const [selectedFunnelStage, setSelectedFunnelStage] = React.useState<FunnelStage | undefined>(undefined)
+  const [shouldReanalyze, setShouldReanalyze] = React.useState(false)
   const [isSaving, setIsSaving] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
@@ -97,18 +101,20 @@ export function BulkEditModal({
       setSelectedProductLineIds([])
       setSelectedIcpTargets([])
       setSelectedFunnelStage(undefined)
+      setShouldReanalyze(false)
       setError(null)
     }
   }, [open])
 
   const handleSave = async () => {
-    // Check if at least one field is being updated
-    if (
-      selectedProductLineIds.length === 0 &&
-      selectedIcpTargets.length === 0 &&
-      selectedFunnelStage === undefined
-    ) {
-      setError("Please select at least one field to update")
+    // Check if at least one action is being performed
+    const hasFieldUpdates = 
+      selectedProductLineIds.length > 0 ||
+      selectedIcpTargets.length > 0 ||
+      selectedFunnelStage !== undefined
+
+    if (!hasFieldUpdates && !shouldReanalyze) {
+      setError("Please select at least one action to perform")
       return
     }
 
@@ -116,23 +122,32 @@ export function BulkEditModal({
     setError(null)
 
     try {
-      const updates: {
-        productLineIds?: string[]
-        icpTargets?: string[]
-        funnelStage?: FunnelStage
-      } = {}
+      // Handle field updates if any
+      if (hasFieldUpdates) {
+        const updates: {
+          productLineIds?: string[]
+          icpTargets?: string[]
+          funnelStage?: FunnelStage
+        } = {}
 
-      if (selectedProductLineIds.length > 0) {
-        updates.productLineIds = selectedProductLineIds
-      }
-      if (selectedIcpTargets.length > 0) {
-        updates.icpTargets = selectedIcpTargets
-      }
-      if (selectedFunnelStage !== undefined) {
-        updates.funnelStage = selectedFunnelStage
+        if (selectedProductLineIds.length > 0) {
+          updates.productLineIds = selectedProductLineIds
+        }
+        if (selectedIcpTargets.length > 0) {
+          updates.icpTargets = selectedIcpTargets
+        }
+        if (selectedFunnelStage !== undefined) {
+          updates.funnelStage = selectedFunnelStage
+        }
+
+        await onSave(updates)
       }
 
-      await onSave(updates)
+      // Handle re-analysis if requested
+      if (shouldReanalyze && onReanalyze) {
+        await onReanalyze()
+      }
+
       onOpenChange(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update assets")
@@ -144,7 +159,8 @@ export function BulkEditModal({
   const hasChanges =
     selectedProductLineIds.length > 0 ||
     selectedIcpTargets.length > 0 ||
-    selectedFunnelStage !== undefined
+    selectedFunnelStage !== undefined ||
+    shouldReanalyze
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -299,6 +315,31 @@ export function BulkEditModal({
             <p className="text-xs text-muted-foreground">
               Set the funnel stage for all selected assets.
             </p>
+          </div>
+
+          {/* Re-analyze Option */}
+          <div className="space-y-2 border-t pt-4">
+            <div className="flex items-start space-x-3">
+              <Checkbox
+                id="reanalyze"
+                checked={shouldReanalyze}
+                onCheckedChange={(checked) => setShouldReanalyze(checked === true)}
+                disabled={isSaving}
+                className="mt-1"
+              />
+              <div className="space-y-1 flex-1">
+                <Label
+                  htmlFor="reanalyze"
+                  className="flex items-center gap-2 cursor-pointer"
+                >
+                  <Sparkles className="h-4 w-4 text-muted-foreground" />
+                  Re-analyze with AI
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Trigger AI re-analysis for all selected assets. This will update funnel stage, ICP targets, pain clusters, and other AI-generated fields using the latest analysis logic. Assets will be processed in the background.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 

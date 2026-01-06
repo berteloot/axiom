@@ -81,6 +81,7 @@ export const processAssetSchema = z.object({
  */
 export const updateAssetSchema = z.object({
   title: z.string().min(1).max(500).optional(),
+  assetType: z.string().nullable().optional(),
   extractedText: z.string().optional(),
   funnelStage: z.enum([
     "TOFU_AWARENESS",

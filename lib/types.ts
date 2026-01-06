@@ -28,6 +28,7 @@ export interface Asset {
   s3Url: string;
   s3Key?: string; // S3 object key (source of truth for S3 location)
   fileType: string;
+  assetType?: string | null; // Marketing asset type (e.g., "Case Study", "Whitepaper") - distinct from technical fileType
   extractedText: string | null;
   funnelStage: FunnelStage;
   icpTargets: string[];
