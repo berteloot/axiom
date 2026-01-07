@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAccount } from "@/lib/account-context";
+import { useSession } from "next-auth/react";
 
 interface BillingGuardProps {
   children: React.ReactNode;
@@ -10,6 +11,7 @@ interface BillingGuardProps {
 
 export function BillingGuard({ children }: BillingGuardProps) {
   const { currentAccount, isTrialExpired, isSubscriptionExpired, isLoading } = useAccount();
+  const { data: session, status: sessionStatus } = useSession();
   const router = useRouter();
   const pathname = usePathname();
   const [mounted, setMounted] = useState(false);
@@ -28,27 +30,37 @@ export function BillingGuard({ children }: BillingGuardProps) {
     if (!mounted) return;
 
     // Don't redirect while loading or if already on billing/auth pages
-    if (isLoading || pathname.startsWith("/billing") || isAuthPage) {
+    if (sessionStatus === "loading" || isLoading || pathname.startsWith("/billing") || isAuthPage) {
       return;
     }
 
-    // Redirect to billing if trial or subscription is expired
-    if (isTrialExpired) {
-      router.push("/billing?reason=trial_expired");
+    // First check: If user is not authenticated, redirect to sign in
+    if (sessionStatus === "unauthenticated") {
+      const callbackUrl = encodeURIComponent(pathname || "/dashboard");
+      router.push(`/auth/signin?callbackUrl=${callbackUrl}`);
       return;
     }
 
-    if (isSubscriptionExpired) {
-      router.push("/billing?reason=subscription_expired");
-      return;
-    }
+    // Only check account-related redirects if user is authenticated
+    if (sessionStatus === "authenticated") {
+      // Redirect to billing if trial or subscription is expired
+      if (isTrialExpired) {
+        router.push("/billing?reason=trial_expired");
+        return;
+      }
 
-    // Redirect to account selection if no account is selected
-    if (!currentAccount) {
-      router.push("/auth/select-account");
-      return;
+      if (isSubscriptionExpired) {
+        router.push("/billing?reason=subscription_expired");
+        return;
+      }
+
+      // Redirect to account selection if no account is selected (but user is authenticated)
+      if (!currentAccount && !isLoading) {
+        router.push("/auth/select-account");
+        return;
+      }
     }
-  }, [currentAccount, isTrialExpired, isSubscriptionExpired, isLoading, router, pathname, isAuthPage, mounted]);
+  }, [currentAccount, isTrialExpired, isSubscriptionExpired, isLoading, router, pathname, isAuthPage, mounted, sessionStatus]);
 
   // On initial render (server or before mount), always render children
   // to prevent hydration mismatch. Redirects will happen in useEffect.
@@ -61,8 +73,8 @@ export function BillingGuard({ children }: BillingGuardProps) {
     return <>{children}</>;
   }
 
-  // Show loading state while checking account status
-  if (isLoading) {
+  // Show loading state while checking authentication or account status
+  if (sessionStatus === "loading" || isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-gray-900"></div>

@@ -194,7 +194,7 @@ Jina AI is used for website scanning features. It's optional but recommended:
 - **Region**: Match your database region (e.g., `Oregon`)
 - **Branch**: `main` (or your default branch)
 - **Runtime**: `Node`
-- **Build Command**: `npm install && npx prisma generate && npm run build`
+- **Build Command**: `npm ci && npx prisma generate && npm run build`
 - **Start Command**: `npm start`
 - **Plan**: Start with `Starter` (Free tier)
 
@@ -228,6 +228,10 @@ EMAIL_FROM=noreply@yourdomain.com
 
 # Jina AI Configuration (Optional)
 JINA_API_KEY=<From Step 6>
+
+# DataForSEO Configuration (Optional - for keyword research)
+DATAFORSEO_LOGIN=<Your DataForSEO login>
+DATAFORSEO_PASSWORD=<Your DataForSEO password>
 ```
 
 **To set environment variables:**
@@ -259,7 +263,7 @@ JINA_API_KEY=<From Step 6>
 
 ## 🔄 Step 8: Run Database Migrations
 
-After the service is deployed, run migrations:
+**⚠️ CRITICAL:** Database migrations must be run **after** the first deployment. The build process does NOT run migrations automatically.
 
 ### Option 1: Using Render Shell (Recommended)
 
@@ -269,6 +273,7 @@ After the service is deployed, run migrations:
    ```bash
    npx prisma migrate deploy
    ```
+4. Verify migrations completed successfully (check output for "Applied migration...")
 
 ### Option 2: From Local Machine
 
@@ -330,8 +335,13 @@ Before going to production:
 **Error: Prisma Client not generated**
 ```bash
 # Solution: Build command should include prisma generate
-Build Command: npm install && npx prisma generate && npm run build
+Build Command: npm ci && npx prisma generate && npm run build
 ```
+
+**Error: Build timeout**
+- Free tier has build time limits (~15 minutes)
+- Consider upgrading to Starter plan if builds consistently timeout
+- Optimize by using `npm ci` instead of `npm install` (faster)
 
 **Error: Module not found**
 - Check `package.json` dependencies

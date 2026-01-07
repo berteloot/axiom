@@ -34,8 +34,13 @@ import {
   Download,
   FileDown,
   ExternalLink,
+  Search,
+  FileCheck,
+  FileEdit,
 } from "lucide-react";
 import { FunnelStage } from "@/lib/types";
+import { useAccount } from "@/lib/account-context";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const STAGE_DISPLAY: Record<FunnelStage, string> = {
   TOFU_AWARENESS: "TOFU",
@@ -77,6 +82,7 @@ interface ContentIdeasResponse {
     isReputable?: boolean;
   }>;
   ideas: ContentIdea[];
+  _apiWarnings?: Array<{ type: string; message: string; api: string }>; // Admin-only
 }
 
 interface ContentBrief {
@@ -106,6 +112,13 @@ interface ContentBrief {
     engagementIndicators: string[];
   };
   contentGapsToAddress: string[];
+  seoStrategy: {
+    primaryKeyword: string;
+    secondaryKeywords: string[];
+    targetSearchIntent: string;
+    implementationNotes: string;
+  };
+  _apiWarnings?: Array<{ type: string; message: string; api: string }>; // Admin-only
 }
 
 interface ContentDraft {
@@ -120,6 +133,11 @@ interface ContentDraft {
   factCheckNotes: string[];
   wordCount: number;
   estimatedReadTime: number;
+  // For non-blog-post content types
+  isRecommendation?: boolean;
+  assetType?: string;
+  recommendations?: string;
+  message?: string;
 }
 
 type WorkflowStep = "gap-selection" | "trending-discovery" | "idea-generation" | "idea-selection" | "brief-review" | "draft-generation" | "draft-review" | "complete";
@@ -158,6 +176,7 @@ export function CreateContentWorkflow({
       setContentBrief(null);
       setContentDraft(null);
       setError(null);
+      setApiWarnings([]); // Reset API warnings
       setIsDiscoveringTrends(false);
       setIsGeneratingIdeas(false);
       setIsGeneratingBrief(false);
@@ -178,6 +197,11 @@ export function CreateContentWorkflow({
   const [isGeneratingDraft, setIsGeneratingDraft] = useState(false);
   const [contentDraft, setContentDraft] = useState<ContentDraft | null>(null);
   const [error, setError] = useState<string | null>(null);
+  
+  // Get current account for admin check
+  const { currentAccount } = useAccount();
+  const isAdmin = currentAccount?.role === "OWNER" || currentAccount?.role === "ADMIN";
+  const [apiWarnings, setApiWarnings] = useState<Array<{ type: string; message: string; api: string }>>([]);
 
   const handleGapSelect = (gap: Gap) => {
     setSelectedGap(gap);
@@ -213,6 +237,12 @@ export function CreateContentWorkflow({
         sources: data.trendingSources || [],
       });
       setContentIdeas(data);
+      
+      // Collect API warnings for admin display
+      if (isAdmin && (data as any)._apiWarnings) {
+        setApiWarnings((data as any)._apiWarnings);
+      }
+      
       setCurrentStep("idea-generation");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to discover trending topics");
@@ -279,8 +309,14 @@ export function CreateContentWorkflow({
         throw new Error(errorData.error || "Failed to generate content brief");
       }
 
-      const brief: ContentBrief = await response.json();
-      setContentBrief(brief);
+      const briefResponse = await response.json();
+      setContentBrief(briefResponse);
+      
+      // Collect API warnings for admin display
+      if (isAdmin && briefResponse._apiWarnings) {
+        setApiWarnings(prev => [...prev, ...briefResponse._apiWarnings]);
+      }
+      
       setCurrentStep("brief-review");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to generate content brief");
@@ -296,6 +332,13 @@ export function CreateContentWorkflow({
     setIsGeneratingDraft(true);
     setError(null);
 
+    // Log sources being sent to draft generation
+    const sourcesToSend = contentIdeas?.trendingSources?.filter((s: any) => s.isReputable) || [];
+    console.log(`[Content Workflow] Generating draft with ${sourcesToSend.length} reputable sources`);
+    if (sourcesToSend.length === 0) {
+      console.warn(`[Content Workflow] WARNING: No sources found! Available sources:`, contentIdeas?.trendingSources?.length || 0);
+    }
+
     try {
       const response = await fetch("/api/content/generate-draft", {
         method: "POST",
@@ -304,7 +347,7 @@ export function CreateContentWorkflow({
           brief: contentBrief,
           idea: selectedIdea,
           gap: selectedGap,
-          trendingSources: contentIdeas?.trendingSources?.filter((s: any) => s.isReputable) || [],
+          trendingSources: sourcesToSend,
         }),
       });
 
@@ -316,6 +359,11 @@ export function CreateContentWorkflow({
       const draft: ContentDraft = await response.json();
       setContentDraft(draft);
       setCurrentStep("draft-review");
+      
+      // If it's a recommendation (not a full draft), log it
+      if (draft.isRecommendation) {
+        console.log(`[Content Workflow] Received recommendations for ${draft.assetType} instead of full draft`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to generate content draft");
     } finally {
@@ -460,7 +508,7 @@ ${ideasText}
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto overflow-x-hidden w-[95vw] sm:w-[90vw] md:w-[85vw] lg:max-w-6xl xl:max-w-6xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-primary" />
@@ -609,6 +657,8 @@ ${ideasText}
             <BriefReviewStep
               brief={contentBrief}
               idea={selectedIdea}
+              isAdmin={isAdmin}
+              apiWarnings={apiWarnings}
               onGenerateDraft={() => {
                 setCurrentStep("draft-generation");
                 handleGenerateDraft();
@@ -884,6 +934,38 @@ function IdeaGenerationStep({
   );
 }
 
+/**
+ * Determine production capability for an asset type
+ */
+function getProductionCapability(assetType: string): {
+  capability: "full" | "outline";
+  label: string;
+  icon: React.ReactNode;
+  color: string;
+  description: string;
+} {
+  const normalizedType = assetType.replace(/_/g, " ").toLowerCase();
+  const isBlogPost = normalizedType === "blog post" || assetType === "Blog_Post";
+
+  if (isBlogPost) {
+    return {
+      capability: "full",
+      label: "Fully Producible",
+      icon: <FileCheck className="h-3.5 w-3.5" />,
+      color: "bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700",
+      description: "Complete content will be generated",
+    };
+  } else {
+    return {
+      capability: "outline",
+      label: "Outline & Recommendations",
+      icon: <FileEdit className="h-3.5 w-3.5" />,
+      color: "bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-700",
+      description: "Strategic recommendations and structure provided",
+    };
+  }
+}
+
 function IdeaSelectionStep({
   ideas,
   trendingTopics,
@@ -918,12 +1000,27 @@ function IdeaSelectionStep({
           Review the generated ideas below and <strong className="text-foreground">click on one</strong> to start creating your content.
         </p>
         <div className="bg-muted/50 rounded-md p-3 mb-4">
-          <p className="text-xs font-medium mb-1">What happens when you click:</p>
+          <p className="text-xs font-medium mb-2">What happens when you click:</p>
           <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
             <li>We&apos;ll create a detailed content brief (30-45 seconds)</li>
             <li>You&apos;ll review the brief and approve it</li>
-            <li>We&apos;ll generate the complete draft with source citations (30-60 seconds)</li>
+            <li>
+              <strong className="text-foreground">Blog Posts:</strong> Complete draft with source citations will be generated (30-60 seconds)
+            </li>
+            <li>
+              <strong className="text-foreground">Other Content Types:</strong> Strategic recommendations and structure outline will be provided
+            </li>
           </ol>
+          <div className="mt-3 pt-3 border-t border-border/50 flex flex-wrap gap-2">
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-700 border border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700">
+              <FileCheck className="h-3 w-3" />
+              Fully Producible
+            </span>
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-700 border border-amber-300 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-700">
+              <FileEdit className="h-3 w-3" />
+              Outline & Recommendations
+            </span>
+          </div>
         </div>
       </div>
 
@@ -1042,18 +1139,29 @@ function IdeaSelectionStep({
             >
               <CardHeader>
                 <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <CardTitle className="text-base">{idea.title}</CardTitle>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <CardTitle className="text-base break-words">{idea.title}</CardTitle>
                       {isSelected && (
-                        <CheckCircle2 className="h-5 w-5 text-primary animate-in zoom-in" />
+                        <CheckCircle2 className="h-5 w-5 text-primary animate-in zoom-in flex-shrink-0" />
                       )}
                     </div>
-                    <CardDescription className="mt-1">
-                      {idea.assetType.replace(/_/g, " ")}
-                    </CardDescription>
+                    <div className="flex flex-wrap items-center gap-2 mt-1">
+                      <CardDescription className="m-0 break-words">
+                        {idea.assetType.replace(/_/g, " ")}
+                      </CardDescription>
+                      {(() => {
+                        const capability = getProductionCapability(idea.assetType);
+                        return (
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium border ${capability.color} flex-shrink-0`}>
+                            {capability.icon}
+                            {capability.label}
+                          </span>
+                        );
+                      })()}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-shrink-0">
                     {isSelected && isGeneratingBrief && (
                       <Loader2 className="h-4 w-4 animate-spin text-primary" />
                     )}
@@ -1065,32 +1173,47 @@ function IdeaSelectionStep({
                           ? "secondary"
                           : "outline"
                       }
+                      className="whitespace-nowrap"
                     >
                       {idea.priority}
                     </Badge>
                   </div>
                 </div>
               </CardHeader>
-            <CardContent className="space-y-2">
-              <div>
+            <CardContent className="space-y-2 w-full overflow-hidden">
+              {(() => {
+                const capability = getProductionCapability(idea.assetType);
+                return (
+                  <div className={`rounded-md p-2.5 mb-2 border ${capability.color} bg-opacity-50 w-full`}>
+                    <div className="flex items-start gap-2 w-full">
+                      <div className="flex-shrink-0">{capability.icon}</div>
+                      <div className="flex-1 min-w-0 overflow-hidden">
+                        <p className="text-xs font-semibold mb-0.5 break-words">{capability.label}</p>
+                        <p className="text-xs opacity-90 break-words">{capability.description}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+              <div className="w-full overflow-hidden">
                 <p className="text-xs font-medium text-muted-foreground mb-1">
                   Strategic Rationale
                 </p>
-                <p className="text-sm">{idea.strategicRationale}</p>
+                <p className="text-sm break-words overflow-wrap-anywhere">{idea.strategicRationale}</p>
               </div>
               {idea.trendingAngle && (
-                <div>
+                <div className="w-full overflow-hidden">
                   <p className="text-xs font-medium text-muted-foreground mb-1">
                     Trending Angle
                   </p>
-                  <p className="text-sm">{idea.trendingAngle}</p>
+                  <p className="text-sm break-words overflow-wrap-anywhere">{idea.trendingAngle}</p>
                 </div>
               )}
-              <div>
+              <div className="w-full overflow-hidden">
                 <p className="text-xs font-medium text-muted-foreground mb-1">
                   Key Message
                 </p>
-                <p className="text-sm">{idea.keyMessage}</p>
+                <p className="text-sm break-words overflow-wrap-anywhere">{idea.keyMessage}</p>
               </div>
             </CardContent>
           </Card>
@@ -1131,11 +1254,15 @@ function BriefReviewStep({
   idea,
   onGenerateDraft,
   isGeneratingDraft,
+  isAdmin,
+  apiWarnings,
 }: {
   brief: ContentBrief;
   idea: ContentIdea;
   onGenerateDraft: () => void;
   isGeneratingDraft: boolean;
+  isAdmin: boolean;
+  apiWarnings: Array<{ type: string; message: string; api: string }>;
 }) {
   return (
     <div className="space-y-4">
@@ -1144,35 +1271,146 @@ function BriefReviewStep({
         <p className="text-sm text-muted-foreground mb-2">
           Review the strategic brief with section-by-section guidance. This ensures the content aligns with your strategy.
         </p>
-        <p className="text-xs text-muted-foreground mb-4">
-          <strong>Next step:</strong> Click &quot;Generate Draft&quot; to create the complete, publication-ready content with source citations.
-        </p>
+        <div className="text-xs text-muted-foreground mb-4 space-y-2">
+          {(() => {
+            const capability = getProductionCapability(idea.assetType);
+            return capability.capability === "full" ? (
+              <p className="break-words">
+                <strong>Next step:</strong> Click &quot;Generate Draft&quot; to create the complete, publication-ready content with source citations.
+              </p>
+            ) : (
+              <p className="break-words">
+                <strong>Next step:</strong> Click &quot;Generate Draft&quot; to receive strategic recommendations and an outline for this {idea.assetType.replace("_", " ")}. Full content production requires team collaboration and real data.
+              </p>
+            );
+          })()}
+        </div>
       </div>
+
+      {/* Admin-only API Warnings */}
+      {isAdmin && apiWarnings.length > 0 && (
+        <Alert variant="default" className="border-yellow-500/50 bg-yellow-500/5">
+          <AlertCircle className="h-4 w-4 text-yellow-600" />
+          <AlertTitle className="text-sm font-semibold text-yellow-900 dark:text-yellow-100">
+            API Status (Admin Only)
+          </AlertTitle>
+          <AlertDescription className="text-xs text-yellow-800 dark:text-yellow-200 mt-2 space-y-1">
+            {apiWarnings.map((warning, idx) => (
+              <div key={idx} className="flex items-start gap-2">
+                <Badge variant="outline" className="text-xs shrink-0">
+                  {warning.api}
+                </Badge>
+                <span>{warning.message}</span>
+              </div>
+            ))}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* SEO Strategy Card - Prominently displayed at the top */}
+      <Card className="border-primary/20 bg-primary/5">
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Search className="h-4 w-4 text-primary" />
+            SEO Strategy
+          </CardTitle>
+          <CardDescription>
+            Data-backed keyword strategy based on funnel stage and search intent
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <Badge variant="default" className="font-semibold">
+                Primary Keyword
+              </Badge>
+              <span className="text-sm font-medium">{brief.seoStrategy.primaryKeyword}</span>
+            </div>
+            {brief.seoStrategy.secondaryKeywords && brief.seoStrategy.secondaryKeywords.length > 0 && (
+              <div className="flex items-center gap-2 mb-2">
+                <Badge variant="secondary" className="text-xs">
+                  Secondary
+                </Badge>
+                <div className="flex flex-wrap gap-1">
+                  {brief.seoStrategy.secondaryKeywords.map((keyword, idx) => (
+                    <Badge key={idx} variant="outline" className="text-xs">
+                      {keyword}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="mt-3 space-y-2 text-sm">
+              <div>
+                <span className="font-medium">Search Intent:</span>{" "}
+                <Badge variant="outline" className="ml-1">
+                  {brief.seoStrategy.targetSearchIntent}
+                </Badge>
+              </div>
+              <div className="bg-muted/50 rounded-md p-3 mt-2">
+                <p className="text-xs font-medium mb-1">Implementation Notes:</p>
+                <p className="text-xs text-muted-foreground">
+                  {brief.seoStrategy.implementationNotes}
+                </p>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">{idea.title}</CardTitle>
-          <CardDescription>{idea.assetType.replace("_", " ")}</CardDescription>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <CardTitle className="text-base break-words">{idea.title}</CardTitle>
+              <div className="flex flex-wrap items-center gap-2 mt-1">
+                <CardDescription className="m-0 break-words">{idea.assetType.replace("_", " ")}</CardDescription>
+                {(() => {
+                  const capability = getProductionCapability(idea.assetType);
+                  return (
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium border ${capability.color} flex-shrink-0`}>
+                      {capability.icon}
+                      {capability.label}
+                    </span>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
         </CardHeader>
-        <CardContent className="space-y-6">
-          <div>
+        <CardContent className="space-y-6 w-full overflow-hidden">
+          {(() => {
+            const capability = getProductionCapability(idea.assetType);
+            return (
+              <div className={`rounded-md p-3 border ${capability.color} bg-opacity-50 w-full`}>
+                <div className="flex items-start gap-2 w-full">
+                  <div className="flex-shrink-0">{capability.icon}</div>
+                  <div className="flex-1 min-w-0 overflow-hidden">
+                    <p className="text-sm font-semibold mb-1 break-words">{capability.label}</p>
+                    <p className="text-xs opacity-90 break-words overflow-wrap-anywhere">{capability.description}</p>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+          <div className="w-full overflow-hidden">
             <h4 className="text-sm font-semibold mb-2">Strategic Positioning</h4>
-            <div className="space-y-2 text-sm">
-              <p>
+            <div className="space-y-2 text-sm w-full">
+              <p className="break-words overflow-wrap-anywhere">
                 <span className="font-medium">Why this matters:</span>{" "}
                 {brief.strategicPositioning.whyThisMatters}
               </p>
-              <p>
+              <p className="break-words overflow-wrap-anywhere">
                 <span className="font-medium">Pain cluster address:</span>{" "}
                 {brief.strategicPositioning.painClusterAddress}
               </p>
               {brief.strategicPositioning.trendingTopicsIntegration && (
-                <p>
+                <p className="break-words overflow-wrap-anywhere">
                   <span className="font-medium">Trending topics:</span>{" "}
                   {brief.strategicPositioning.trendingTopicsIntegration}
                 </p>
               )}
-              <p>
+              <p className="break-words overflow-wrap-anywhere">
                 <span className="font-medium">Differentiation:</span>{" "}
                 {brief.strategicPositioning.differentiation}
               </p>
@@ -1189,7 +1427,7 @@ function BriefReviewStep({
                   <p className="font-medium text-sm mb-2">{section.title}</p>
                   <ul className="text-sm space-y-1 list-disc list-inside text-muted-foreground">
                     {section.keyMessages.map((msg, msgIdx) => (
-                      <li key={msgIdx}>{msg}</li>
+                      <li key={msgIdx} className="break-words">{msg}</li>
                     ))}
                   </ul>
                 </div>
@@ -1205,11 +1443,11 @@ function BriefReviewStep({
           <div>
             <h4 className="text-sm font-semibold mb-2">Success Metrics</h4>
             <div className="space-y-2 text-sm">
-              <p>
+              <p className="break-words">
                 <span className="font-medium">What makes this successful:</span>{" "}
                 {brief.successMetrics.whatMakesThisSuccessful}
               </p>
-              <p>
+              <p className="break-words">
                 <span className="font-medium">How to use in sales:</span>{" "}
                 {brief.successMetrics.howToUseInSales}
               </p>
@@ -1271,6 +1509,78 @@ function DraftReviewStep({
   onExportDOCX: () => void;
   onComplete: () => void;
 }) {
+  // Handle recommendation responses (non-blog-post content types)
+  if (draft.isRecommendation) {
+    const handleCopyRecommendations = async () => {
+      try {
+        await navigator.clipboard.writeText(draft.recommendations || "");
+        // You could add a toast notification here
+      } catch (err) {
+        console.error("Failed to copy recommendations:", err);
+      }
+    };
+
+    return (
+      <div className="space-y-4">
+        <div>
+          <h3 className="text-lg font-semibold mb-2">Strategic Recommendations</h3>
+          <p className="text-sm text-muted-foreground mb-4">
+            {draft.message || `For ${draft.assetType?.replace(/_/g, " ") || "this content type"}, we provide strategic recommendations and guidance rather than fully generated content.`}
+          </p>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <CardTitle className="text-base break-words">{draft.title}</CardTitle>
+                <CardDescription className="mt-1 break-words">
+                  {draft.assetType?.replace(/_/g, " ") || idea.assetType.replace("_", " ")} • Recommendations & Guidance
+                </CardDescription>
+              </div>
+              <div className="flex gap-2 flex-shrink-0">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleCopyRecommendations}
+                  title="Copy recommendations to clipboard"
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="prose prose-sm max-w-none">
+              <div className="whitespace-pre-wrap text-sm leading-relaxed break-words">
+                {draft.recommendations || "No recommendations available."}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800">
+          <CardHeader>
+            <CardTitle className="text-sm font-semibold">Next Steps</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              Use these recommendations along with your content brief to plan and produce this {draft.assetType?.replace(/_/g, " ") || "content"} with your team. 
+              The brief contains the strategic positioning, structure, and SEO strategy you'll need.
+            </p>
+          </CardContent>
+        </Card>
+
+        <div className="flex justify-end gap-2 pt-4">
+          <Button onClick={onComplete} variant="default">
+            Complete
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Regular blog post draft
   return (
     <div className="space-y-4">
       <div>
@@ -1282,44 +1592,44 @@ function DraftReviewStep({
 
       <Card>
         <CardHeader>
-          <div className="flex items-start justify-between">
-            <div>
-              <CardTitle className="text-base">{draft.title}</CardTitle>
-              <CardDescription className="mt-1">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <CardTitle className="text-base break-words">{draft.title}</CardTitle>
+              <CardDescription className="mt-1 break-words">
                 {idea.assetType.replace("_", " ")} • {draft.wordCount} words • ~{draft.estimatedReadTime} min read
               </CardDescription>
             </div>
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={onCopy}
-                title="Copy to clipboard"
-              >
-                <Copy className="h-4 w-4" />
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={onExportPDF}
-                title="Export as PDF"
-              >
-                <FileDown className="h-4 w-4" />
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={onExportDOCX}
-                title="Export as document"
-              >
-                <Download className="h-4 w-4" />
-              </Button>
+              <div className="flex gap-2 flex-shrink-0">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={onCopy}
+                  title="Copy to clipboard"
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={onExportPDF}
+                  title="Export as PDF"
+                >
+                  <FileDown className="h-4 w-4" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={onExportDOCX}
+                  title="Export as document"
+                >
+                  <Download className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
-          </div>
-        </CardHeader>
+          </CardHeader>
         <CardContent className="space-y-6">
-          <div className="border rounded-lg p-4 bg-muted/30 max-h-[400px] overflow-y-auto">
-            <pre className="whitespace-pre-wrap text-sm font-sans">{draft.content}</pre>
+          <div className="border rounded-lg p-4 bg-muted/30 max-h-[400px] overflow-y-auto overflow-x-hidden">
+            <pre className="whitespace-pre-wrap text-sm font-sans break-words">{draft.content}</pre>
           </div>
 
           {draft.sources.length > 0 && (

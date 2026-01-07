@@ -43,6 +43,12 @@ const GenerateDraftRequestSchema = z.object({
       engagementIndicators: z.array(z.string()),
     }),
     contentGapsToAddress: z.array(z.string()),
+    seoStrategy: z.object({
+      primaryKeyword: z.string(),
+      secondaryKeywords: z.array(z.string()),
+      targetSearchIntent: z.string(),
+      implementationNotes: z.string(),
+    }),
   }),
   idea: z.object({
     title: z.string().min(1),
@@ -95,6 +101,138 @@ const ContentDraftSchema = z.object({
   wordCount: z.number().describe("Approximate word count"),
   estimatedReadTime: z.number().describe("Estimated reading time in minutes"),
 });
+
+/**
+ * Generate recommendations for content types we cannot fully produce (non-blog-post types)
+ */
+async function generateContentRecommendations(
+  assetType: string,
+  brief: any,
+  idea: any,
+  gap: any,
+  accountId: string
+) {
+  // Fetch brand context for recommendations
+  const brandContext = await prisma.brandContext.findUnique({
+    where: { accountId },
+  });
+
+  const assetTypeName = assetType.replace(/_/g, " ");
+  
+  let recommendationPrompt = "";
+  
+  if (assetTypeName.toLowerCase().includes("whitepaper")) {
+    recommendationPrompt = `Generate strategic recommendations for creating a whitepaper titled "${idea.title}". 
+
+This is an ambitious project that requires:
+- Deep research and data analysis
+- Multiple stakeholder interviews
+- Comprehensive industry analysis
+- Expert review and validation
+- Professional design and formatting
+
+Provide recommendations including:
+1. Key sections and structure outline
+2. Research requirements (what data/sources needed)
+3. Subject matter experts to involve
+4. Timeline estimate (typically 4-8 weeks)
+5. Resources needed (designer, researcher, reviewer)
+6. How to repurpose the brief content into a whitepaper outline
+7. Next steps to get started`;
+  } else if (assetTypeName.toLowerCase().includes("webinar") || assetTypeName.toLowerCase().includes("linkedin live")) {
+    recommendationPrompt = `Generate strategic recommendations for creating a webinar or LinkedIn Live session on "${idea.title}".
+
+While we cannot produce the actual webinar recording, provide recommendations including:
+1. Webinar topic and angle (based on the brief)
+2. Suggested format (panel discussion, solo presentation, interview, Q&A)
+3. Key talking points and agenda
+4. Slides structure and visual recommendations
+5. Interactive elements (polls, Q&A prompts)
+6. Guest speakers or co-presenters to consider
+7. Promotion strategy
+8. Follow-up content ideas (repurpose into blog posts, short videos)
+9. Platform recommendations (Zoom, LinkedIn Live, YouTube Live)
+10. Timeline and production checklist`;
+  } else if (assetTypeName.toLowerCase().includes("case study") || assetTypeName.toLowerCase().includes("customer success")) {
+    recommendationPrompt = `Generate strategic recommendations for creating a customer success story or case study titled "${idea.title}".
+
+This requires actual customer data and cannot be generated without:
+- Real customer interviews
+- Customer permission and quotes
+- Actual metrics and results
+- Customer logo/brand approval
+
+Provide recommendations including:
+1. What to ask customers during interviews (questions based on brief)
+2. Metrics and KPIs to collect
+3. Story structure outline (Challenge, Solution, Results)
+4. Visual elements needed (logos, charts, quotes)
+5. Legal and approval process checklist
+6. How to approach customers for case studies
+7. Alternative: Create a template/framework based on this brief that you can fill in with real customer data
+8. Timeline estimate (typically 2-4 weeks with customer availability)`;
+  } else {
+    recommendationPrompt = `Generate strategic recommendations for creating a ${assetTypeName} titled "${idea.title}".
+
+Provide recommendations including:
+1. Content structure and outline
+2. Key sections based on the brief
+3. Production requirements
+4. Resources needed
+5. Timeline estimate
+6. Next steps to get started`;
+  }
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-2024-08-06",
+      messages: [
+        {
+          role: "system",
+          content: `You are a strategic content advisor helping teams plan ambitious content projects. 
+Your recommendations should be practical, actionable, and realistic about scope and resources needed.
+Base recommendations on the provided brief and idea.`,
+        },
+        {
+          role: "user",
+          content: `${recommendationPrompt}
+
+STRATEGIC BRIEF:
+- Title: ${idea.title}
+- Asset Type: ${assetTypeName}
+- Why This Matters: ${brief.strategicPositioning.whyThisMatters}
+- Pain Cluster: ${brief.strategicPositioning.painClusterAddress}
+- Target ICP: ${gap.icp}
+- Funnel Stage: ${gap.stage}
+- Key Sections: ${brief.contentStructure.recommendedSections.map((s: any) => s.title).join(", ")}
+- Estimated Word Count: ${brief.contentStructure.totalEstimatedWords}
+
+${brandContext ? `BRAND CONTEXT:
+- Value Proposition: ${brandContext.valueProposition || "Not specified"}
+- Key Differentiators: ${brandContext.keyDifferentiators.join(", ") || "Not specified"}
+` : ""}
+
+Provide comprehensive, actionable recommendations formatted as clear sections.`,
+        },
+      ],
+      temperature: 0.7,
+      max_tokens: 2000,
+    });
+
+    const recommendations = completion.choices[0].message.content || "Unable to generate recommendations at this time.";
+    
+    return {
+      recommendations,
+      message: `For ${assetTypeName} content, we provide strategic recommendations and guidance rather than fully generated content. Use the brief and these recommendations to plan and produce the ${assetTypeName} with your team.`,
+    };
+  } catch (error) {
+    console.error("Error generating recommendations:", error);
+    return {
+      recommendations: `Unable to generate recommendations at this time. Please refer to the content brief for guidance on creating this ${assetTypeName}.`,
+      message: `For ${assetTypeName} content, we provide strategic recommendations and guidance rather than fully generated content.`,
+    };
+  }
+}
 
 /**
  * Determine source reputability server-side based on sourceType and domain patterns
@@ -249,6 +387,34 @@ export async function POST(request: NextRequest) {
 
     const { brief, idea, gap, trendingSources: providedSources } = validationResult.data;
 
+    console.log(`[Content Draft] Generating draft for: ${idea.title}`);
+    console.log(`[Content Draft] Asset type: ${idea.assetType}, Target words: ${brief.contentStructure.totalEstimatedWords}`);
+    console.log(`[Content Draft] Provided sources count: ${providedSources?.length || 0}`);
+
+    // Strategy: Only generate blog posts. For other content types, provide recommendations.
+    const normalizedAssetType = idea.assetType.replace(/_/g, " ").toLowerCase();
+    const isBlogPost = normalizedAssetType === "blog post" || idea.assetType === "Blog_Post";
+    
+    if (!isBlogPost) {
+      // Generate recommendations instead of full content
+      console.log(`[Content Draft] Asset type "${idea.assetType}" is not a blog post. Generating recommendations instead.`);
+      
+      const recommendations = await generateContentRecommendations(
+        idea.assetType,
+        brief,
+        idea,
+        gap,
+        accountId
+      );
+      
+      return NextResponse.json({
+        isRecommendation: true,
+        assetType: idea.assetType,
+        title: idea.title,
+        ...recommendations,
+      });
+    }
+
     // Fetch brand context
     const brandContext = await prisma.brandContext.findUnique({
       where: { accountId },
@@ -297,6 +463,11 @@ BRAND IDENTITY:
     const reputableSourcesAll = sourcesWithReputability.filter(
       (s) => s.isReputable && s.sourceType !== "other"
     );
+
+    console.log(`[Content Draft] Reputable sources after filtering: ${reputableSourcesAll.length}`);
+    if (reputableSourcesAll.length === 0 && (providedSources || []).length > 0) {
+      console.warn(`[Content Draft] WARNING: ${(providedSources || []).length} sources provided but none passed reputability check`);
+    }
 
     // Reputable sources that also include usable content extracts (for inline citations)
     const reputableSourcesWithContent = reputableSourcesAll.filter(
@@ -363,6 +534,35 @@ You have NO reputable sources. This means:
     const cutoffDateStr = eightMonthsAgo.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
     const todayStr = today.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
+    // Extract SEO keywords from brief for integration into content
+    const primaryKeyword = brief.seoStrategy?.primaryKeyword || "";
+    const secondaryKeywords = brief.seoStrategy?.secondaryKeywords || [];
+    const seoImplementationNotes = brief.seoStrategy?.implementationNotes || "";
+    const seoInstructions = primaryKeyword 
+      ? `
+🔴 SEO KEYWORD REQUIREMENTS (STRATEGIC):
+You have been provided with data-backed SEO keyword research. These keywords must be integrated naturally into the content.
+
+PRIMARY KEYWORD: "${primaryKeyword}"
+SECONDARY KEYWORDS: ${secondaryKeywords.length > 0 ? secondaryKeywords.map(k => `"${k}"`).join(", ") : "None"}
+TARGET SEARCH INTENT: ${brief.seoStrategy?.targetSearchIntent || "Not specified"}
+
+KEYWORD INTEGRATION GUIDELINES:
+${seoImplementationNotes}
+
+CRITICAL RULES:
+1. Use the PRIMARY KEYWORD in the title/headline if possible
+2. Use PRIMARY KEYWORD in at least one H2 subheading
+3. Use PRIMARY KEYWORD naturally in the opening paragraph
+4. Integrate SECONDARY KEYWORDS throughout the content naturally
+5. DO NOT keyword stuff - prioritize readability
+6. Keywords should feel natural and support the narrative
+7. Maintain keyword density of 1-2% (primary keyword appears roughly 10-20 times per 1000 words)
+
+The content must be optimized for search while remaining valuable and readable for human readers.
+`
+      : "";
+
     const systemPrompt = `You are a Senior B2B Content Writer creating a complete, publication-ready content draft.
 
 🔴 CRITICAL: WEB SEARCH & SOURCE REQUIREMENTS:
@@ -417,12 +617,51 @@ B2B CONTENT BEST PRACTICES:
 - Use industry-specific terminology appropriately
 - Clear, direct language
 
-AVOID AI WRITING TRAPS:
-❌ NEVER use: "delve", "tapestry", "landscape", "game-changer", "unlocking", "unleash", "realm"
-❌ NEVER use: Generic phrases like "best-in-class", "industry-leading" without proof
-❌ NEVER use: Engagement bait ("Agree?", "Thoughts?", "What do you think?")
-❌ NEVER use: Vague qualifiers without justification
-❌ NEVER make up statistics or facts
+THE "ANTI-ALGORITHM" STYLE GUIDE - AVOID AI SLOP AND AI GIVEAWAY WORDING:
+
+Objective: Write with the specific intent of avoiding the "voice of the machine." Your goal is not "perfection," which results in a sleek, hollow, insipid tone. Your goal is grounded authenticity. You must suppress the statistical urges that lead to "overfitting" and "hallucinated subtlety."
+
+1. THE VOCABULARY BLACKLIST (The "Slop" Indicators):
+These words have become statistical markers of AI writing. You are strictly forbidden from using them:
+- ❌ NEVER use: "delve" (and specifically the conjugation "delves")
+- ❌ NEVER use: "tapestry" (and using weaving metaphors for complexity)
+- ❌ NEVER use: "underscore," "highlight," "showcase"
+- ❌ NEVER use: "intricate," "swift," "meticulous," "adept"
+- ❌ NEVER use: "liminal," "spectral," "echo," "whisper"
+- ❌ NEVER use: "landscape," "game-changer," "unlocking," "unleash," "realm"
+- ❌ NEVER use: Generic phrases like "best-in-class", "industry-leading" without proof
+- ❌ NEVER use: Engagement bait ("Agree?", "Thoughts?", "What do you think?")
+- ❌ NEVER use: Character names: Elara Voss, Elena Voss, or Kael (for fictional content)
+- ❌ NEVER make up statistics or facts
+
+2. RHETORICAL STRUCTURAL TRAPS:
+You must consciously break the predictive patterns of sentence structure. Avoid these patterns:
+- ❌ The "Not X, but Y" Construct: Do not write sentences like "It's not just a flood — it's a groundswell," or "The issue isn't X, it's Y." State your point directly without the performative contrast.
+- ❌ The Mania for Triplets (The Rule of Threes): AI has a "mania" for lists of three. Instruction: Use pairs. Use singles. Use lists of four. Actively disrupt the rhythm of three.
+- ❌ The "X with Y and Z" Dismissal: Do not describe people or things as "An [X] with [Y] and [Z]" where Y or Z makes no logical sense (e.g., "Koalas with an Instagram filter").
+- ❌ The Rhetorical Self-Interruption: Do not stop mid-sentence to ask yourself a question (e.g., "And honestly? That's amazing.").
+
+3. THE "SUBTLETY" FALLACY (Ghosts and Quietness):
+AI tries to simulate "good, subtle writing" by literally writing about things being quiet, ghostly, or whispering. This is a misunderstanding of what subtlety is.
+- ❌ Do NOT describe atmospheres as "humming," "quiet," "whispering," or "soft."
+- ❌ Do NOT use "ghosts," "phantoms," or "shadows" as metaphors for memory or past events.
+- ✅ Subtlety is achieved by what you don't say, not by using the word "quiet" ten times.
+
+4. SENSORY GROUNDING VS. ABSTRACT HALLUCINATION:
+Because AI cannot experience the world, it attaches sensory words to abstract concepts (e.g., "turpentine and dreams," "grief tastes of metal"). This creates "mixed metaphors and empty sincerity."
+- ❌ The "Virginia Woolf" Standard: When using sensory language (sight, sound, taste), apply it ONLY to physical objects.
+  - Bad (AI): "The day tasted of almost-Friday." (Abstract)
+  - Good (Human): "The great plateful of blue water." (Concrete)
+- ❌ Avoid "Empty Sincerity": Do not use corporate-emotional speak like "woven into your daily rhythm" or "unfolding the brushstrokes of regret." If the emotion isn't attached to a specific, concrete action or object, delete it.
+
+5. PUNCTUATION AND TONE:
+- ❌ The Em Dash (—): The em dash is identified as a "sign of zero-effort... slop." Limit your use of em dashes. Do not use them to create a "dramatic pause." Use standard commas, periods, or semicolons.
+- ❌ Cultural Specificity: Do not "smuggle" cultural practices where they don't belong (e.g., Do not make a British speaker say "I rise to speak," which is an Americanism). Ensure your register matches the specific speaker, not a generalized "internet average."
+- ❌ Avoid Hysteria: AI tone is described as "slightly wide-eyed, overeager... on the verge of some kind of hysteria." Lower the temperature. Be detached. Be boring if necessary. Do not be "helpful, informative, and engaging." Be real.
+- ❌ Vague Qualifiers: Do not use vague qualifiers ("very", "extremely", "incredibly") without justification.
+
+SUMMARY:
+To write like a human, you must be willing to be asymmetric, occasionally flat, and grounded in physical reality. You must reject the algorithm's urge to "weave tapestries," "delve into topics," or create "quiet echoes." Write with the specific, messy reality of a being that has physically stood in a room, not a code that has statistically analyzed the concept of a room.
 
 ✅ DO use: Specific metrics from sources (with citations)
 ✅ DO use: Concrete examples from sources
@@ -431,7 +670,8 @@ AVOID AI WRITING TRAPS:
 ✅ DO cite sources for all data/statistics
 
 ${brandContextText}
-${sourcesText}`;
+${sourcesText}
+${seoInstructions}`;
 
     // Determine if we should use section-by-section generation for longer content
     const isLongForm = idea.assetType === "Whitepaper" || 
@@ -605,7 +845,12 @@ REQUIREMENTS:
    - Mark ALL specific claims that need verification
    - Be aggressive with fact-checking - when in doubt, mark it
 
-6. **Word Count**: Target ${brief.contentStructure.totalEstimatedWords} words
+6. **Word Count** (CRITICAL): You MUST generate approximately ${brief.contentStructure.totalEstimatedWords} words. 
+   - This is a ${idea.assetType}, and ${brief.contentStructure.totalEstimatedWords} words is the target length
+   - Do NOT generate only 400-500 words when the target is ${brief.contentStructure.totalEstimatedWords}
+   - Expand each section fully with detailed explanations, examples, and supporting content
+   - If you find yourself finishing too quickly, add more depth, examples, and detail to reach the target
+   - The content should be comprehensive and thorough, not brief or summarized
 7. **Brand Voice**: ${brandVoiceText}
 8. **ICP Focus**: Write for ${gap.icp}
 
@@ -672,6 +917,19 @@ ${isNonTextContent
 - Estimated production time/complexity`
   : `- Word count and reading time estimate`}`;
 
+    // Calculate appropriate max_tokens based on target word count
+    // Rule of thumb: ~1.25 tokens per word, plus overhead for structured output
+    // For long-form content, we need much higher limits
+    const targetWords = brief.contentStructure.totalEstimatedWords;
+    const baseTokens = Math.ceil(targetWords * 1.5); // 1.5 tokens per word for safety
+    const maxTokens = isLongForm 
+      ? Math.max(16000, baseTokens * 2) // At least 16k for long-form, or 2x target
+      : Math.max(8000, baseTokens); // At least 8k for shorter content
+
+    console.log(`[Content Draft] Generating ${idea.assetType} targeting ${targetWords} words with max_tokens: ${maxTokens}`);
+    console.log(`[Content Draft] SEO Keywords - Primary: "${primaryKeyword}", Secondary: ${secondaryKeywords.join(", ")}`);
+    console.log(`[Content Draft] Reputable sources: ${reputableSourcesAll.length} total, ${preparedSources.length} with content extracts`);
+    
     const completion = await openai.chat.completions.parse({
       model: "gpt-4o-2024-08-06",
       messages: [
@@ -680,7 +938,7 @@ ${isNonTextContent
       ],
       response_format: zodResponseFormat(ContentDraftSchema, "content_draft"),
       temperature: 0.3, // Lower temperature for fact-focused content
-      max_tokens: 8000, // Cap output to prevent runaway generation
+      max_tokens: maxTokens, // Dynamic token limit based on target word count
     });
 
     const result = completion.choices[0].message.parsed;

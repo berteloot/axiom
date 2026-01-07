@@ -648,7 +648,9 @@ export const TrendingTopicsSchema = z.object({
     .describe("List of reputable source URLs that were used (excluding competitor blogs)"),
 });
 
-export type TrendingTopicsResult = z.infer<typeof TrendingTopicsSchema>;
+export type TrendingTopicsResult = z.infer<typeof TrendingTopicsSchema> & {
+  _apiWarnings?: Array<{ type: string; message: string; api: string }>;
+};
 
 /**
  * Searches for trending topics related to content suggestions using Jina AI Search
@@ -710,6 +712,7 @@ export async function searchTrendingTopics(
 
     // Call Jina Search API - returns top 5 results as JSON with proper URLs
     const jinaSearchUrl = `${JINA_SEARCH_URL}/${encodeURIComponent(searchQuery)}`;
+    console.log(`[Jina Search] Calling Jina API: ${jinaSearchUrl.substring(0, 80)}...`);
     
     const response = await fetch(jinaSearchUrl, {
       headers: {
@@ -719,30 +722,79 @@ export async function searchTrendingTopics(
       },
     });
 
+    console.log(`[Jina Search] Response status: ${response.status} ${response.statusText}`);
+
     if (!response.ok) {
-      console.error("Jina Search error:", response.status, response.statusText);
+      const errorText = await response.text();
+      console.error(`[Jina Search] ERROR: ${response.status} ${response.statusText}`);
+      console.error(`[Jina Search] Error response: ${errorText.substring(0, 500)}`);
+      
+      const warnings: Array<{ type: string; message: string; api: string }> = [];
+      
+      // Add admin warnings for specific error codes
+      if (response.status === 401 || response.status === 403) {
+        warnings.push({
+          type: "auth",
+          message: "Jina API authentication failed. Check JINA_API_KEY credentials.",
+          api: "Jina"
+        });
+      } else if (response.status === 429) {
+        warnings.push({
+          type: "rate_limit",
+          message: "Jina API rate limit exceeded. Trending topics discovery unavailable.",
+          api: "Jina"
+        });
+      } else {
+        warnings.push({
+          type: "error",
+          message: `Jina API error (${response.status}): ${response.statusText}. Trending topics discovery unavailable.`,
+          api: "Jina"
+        });
+      }
+      
       // Return empty result instead of throwing - trending topics are optional
       return {
         results: [],
         trendingTopics: [],
         insights: "Trending topics discovery unavailable. Proceeding without trending context.",
         sourcesUsed: [],
+        _apiWarnings: warnings,
       };
     }
 
     // Parse Jina JSON response - contains data array with url, title, content
     const jinaResponse = await response.json();
+    console.log(`[Jina Search] Response structure keys:`, Object.keys(jinaResponse));
     
     // Extract search results from Jina JSON response
-    const jinaResults: Array<{ url: string; title: string; content: string }> = 
-      jinaResponse.data || [];
+    // Jina Search API returns results in different possible structures
+    let jinaResults: Array<{ url: string; title: string; content: string }> = [];
+    
+    if (jinaResponse.data && Array.isArray(jinaResponse.data)) {
+      jinaResults = jinaResponse.data;
+    } else if (jinaResponse.results && Array.isArray(jinaResponse.results)) {
+      jinaResults = jinaResponse.results;
+    } else if (Array.isArray(jinaResponse)) {
+      jinaResults = jinaResponse;
+    }
+    
+    console.log(`[Jina Search] Extracted ${jinaResults.length} results from response`);
     
     if (!jinaResults || jinaResults.length === 0) {
+      console.warn(`[Jina Search] No results found. Response structure:`, JSON.stringify(jinaResponse).substring(0, 500));
+      
+      const warnings: Array<{ type: string; message: string; api: string }> = [{
+        type: "error",
+        message: "Jina Search API returned no results. Trending topics discovery unavailable.",
+        api: "Jina"
+      }];
+      
       return {
         results: [],
         trendingTopics: [],
         insights: "No trending topics found for this query.",
         sourcesUsed: [],
+        _apiWarnings: warnings,
       };
     }
 
@@ -990,6 +1042,13 @@ ${searchResultsForAnalysis}`,
     };
   } catch (error) {
     console.error("Error searching trending topics:", error);
+    
+    const warnings: Array<{ type: string; message: string; api: string }> = [{
+      type: "error",
+      message: `Jina Search API error: ${error instanceof Error ? error.message : "Unknown error"}`,
+      api: "Jina"
+    }];
+    
     // Return empty result instead of throwing - trending topics are optional
     return {
       results: [],
@@ -998,6 +1057,7 @@ ${searchResultsForAnalysis}`,
         ? `Trending topics discovery failed: ${error.message}` 
         : "Trending topics discovery unavailable.",
       sourcesUsed: [],
+      _apiWarnings: warnings,
     };
   }
 }

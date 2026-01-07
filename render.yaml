@@ -14,7 +14,7 @@ services:
     runtime: node
     plan: starter  # Free tier, upgrade as needed
     region: oregon  # Should match database region
-    buildCommand: npm install && npx prisma generate && npm run build
+    buildCommand: npm ci && npx prisma generate && npm run build
     startCommand: npm start
     healthCheckPath: /
     envVars:
@@ -56,4 +56,10 @@ services:
       
       # Jina AI Configuration (optional, set in Render dashboard)
       - key: JINA_API_KEY
+        sync: false
+      
+      # DataForSEO Configuration (optional, set in Render dashboard)
+      - key: DATAFORSEO_LOGIN
+        sync: false
+      - key: DATAFORSEO_PASSWORD
         sync: false

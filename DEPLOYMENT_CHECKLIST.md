@@ -46,6 +46,8 @@ Quick checklist for deploying Asset Organizer to GitHub and Render.
   - [ ] `SENDGRID_API_KEY`
   - [ ] `EMAIL_FROM`
   - [ ] `JINA_API_KEY` (optional)
+  - [ ] `DATAFORSEO_LOGIN` (optional)
+  - [ ] `DATAFORSEO_PASSWORD` (optional)
 
 ### Deployment
 - [ ] First deployment completed successfully

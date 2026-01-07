@@ -286,6 +286,11 @@ AWS_S3_BUCKET_NAME="your-bucket-name"
 # Get your free API key at https://jina.ai/reader/
 # Includes 10M free tokens for non-commercial use
 JINA_API_KEY="jina_..."
+
+# DataForSEO (for keyword research - optional)
+# Get your credentials from https://dataforseo.com/
+DATAFORSEO_LOGIN="your_login"
+DATAFORSEO_PASSWORD="your_password"
 ```
 
 ⚠️ **Important**: Never use `NEXT_PUBLIC_` prefix for sensitive keys!

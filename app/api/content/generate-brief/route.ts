@@ -4,6 +4,8 @@ import { requireAccountId } from "@/lib/account-utils";
 import OpenAI from "openai";
 import { z } from "zod";
 import { zodResponseFormat } from "openai/helpers/zod";
+import { getStrategicKeywords } from "@/lib/keywords/dataforseo";
+import { getCurrentUserRole } from "@/lib/account-utils";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,6 +43,12 @@ const ContentBriefSchema = z.object({
     engagementIndicators: z.array(z.string()),
   }),
   contentGapsToAddress: z.array(z.string()).describe("Topics to explore deeply, questions to answer"),
+  seoStrategy: z.object({
+    primaryKeyword: z.string().describe("The single most strategically valuable keyword for this content"),
+    secondaryKeywords: z.array(z.string()).describe("2-3 supporting keywords that enhance SEO"),
+    targetSearchIntent: z.string().describe("The search intent this content targets (informational, commercial, transactional)"),
+    implementationNotes: z.string().describe("Specific guidance on WHERE and HOW to use these keywords (e.g., 'Use primary keyword in H2', 'Use in opening paragraph')"),
+  }),
 });
 
 export async function POST(request: NextRequest) {
@@ -93,6 +101,55 @@ Use these trending topics naturally within the content structure. Show how they 
 `
       : "";
 
+    // Check if user is admin/owner for API warnings
+    const userRole = await getCurrentUserRole(request);
+    const isAdmin = userRole === "OWNER" || userRole === "ADMIN";
+
+    // Step A: Determine seed keyword from selected idea
+    const seedKeyword = selectedIdea.title || selectedIdea.keyMessage || "";
+    console.log(`[Content Brief] Seed keyword extracted: "${seedKeyword}" for funnel stage: ${gap.stage}`);
+    
+    // Step B: Fetch SEO data (Just-in-Time keyword research)
+    const { keywords: keywordResults, warnings: keywordWarnings } = await getStrategicKeywords(seedKeyword, gap.stage);
+    console.log(`[Content Brief] Keyword research returned ${keywordResults.length} keywords`);
+    if (keywordResults.length > 0) {
+      console.log(`[Content Brief] Keywords:`, keywordResults.map(k => `${k.keyword} (Vol: ${k.volume}, CPC: $${k.cpc.toFixed(2)})`).join(", "));
+    }
+    
+    // Collect API warnings (only for admin display)
+    const apiWarnings: Array<{ type: string; message: string; api: string }> = [];
+    if (isAdmin && keywordWarnings.length > 0) {
+      apiWarnings.push(...keywordWarnings);
+    }
+    
+    // Step C: Format SEO data for prompt injection
+    const seoDataText = keywordResults.length > 0
+      ? `
+*** STRATEGIC SEO DATA ***
+We have researched the following real-world keywords for this topic:
+${keywordResults.map((kw, i) => 
+  `  ${i + 1}. "${kw.keyword}" - Volume: ${kw.volume.toLocaleString()}/month, CPC: $${kw.cpc.toFixed(2)}, Competition: ${kw.competition}`
+).join("\n")}
+
+INSTRUCTIONS:
+1. Select the 1 most strategically valuable keyword from this list as the "Primary Keyword".
+2. Select 2-3 "Secondary Keywords" that support the narrative and complement the primary keyword.
+3. Determine the "Target Search Intent" based on the funnel stage (${gap.stage}):
+   - TOFU_AWARENESS → Informational intent
+   - MOFU_CONSIDERATION → Commercial investigation intent
+   - BOFU_DECISION → Transactional/commercial intent
+4. In the "Implementation Notes", explain WHERE and HOW to use these keywords:
+   - Primary keyword placement (e.g., "Use in H1/H2", "Use in opening paragraph")
+   - Secondary keywords placement (e.g., "Use in subheadings", "Use naturally throughout body")
+   - Keyword density guidance (e.g., "Natural integration, avoid keyword stuffing")
+5. DO NOT keyword stuff. Prioritize readability and user experience.
+6. Ensure keywords align with the content's primary goal of solving pain clusters.
+`
+      : `
+*** SEO STRATEGY NOTE ***
+Keyword research data is not available at this time. Please provide strategic SEO guidance based on the content topic and funnel stage (${gap.stage}).
+`;
+
     // Calculate date cutoff (8 months ago from today) for system prompt
     const today = new Date();
     const eightMonthsAgo = new Date(today);
@@ -123,13 +180,54 @@ B2B CONTENT BEST PRACTICES:
 - Include quantifiable benefits
 - Use industry-specific terminology appropriately
 
-AVOID AI WRITING TRAPS:
-❌ NEVER use: "delve", "tapestry", "landscape", "game-changer", "unlocking", "unleash", "realm"
-❌ NEVER use: Generic phrases like "best-in-class", "industry-leading" without proof
-❌ NEVER use: Engagement bait ("Agree?", "Thoughts?", "What do you think?")
-❌ NEVER use: Vague qualifiers without justification
+THE "ANTI-ALGORITHM" STYLE GUIDE - AVOID AI SLOP AND AI GIVEAWAY WORDING:
 
-${brandContextText}`;
+Objective: Write with the specific intent of avoiding the "voice of the machine." Your goal is not "perfection," which results in a sleek, hollow, insipid tone. Your goal is grounded authenticity. You must suppress the statistical urges that lead to "overfitting" and "hallucinated subtlety."
+
+1. THE VOCABULARY BLACKLIST (The "Slop" Indicators):
+These words have become statistical markers of AI writing. You are strictly forbidden from using them:
+- ❌ NEVER use: "delve" (and specifically the conjugation "delves")
+- ❌ NEVER use: "tapestry" (and using weaving metaphors for complexity)
+- ❌ NEVER use: "underscore," "highlight," "showcase"
+- ❌ NEVER use: "intricate," "swift," "meticulous," "adept"
+- ❌ NEVER use: "liminal," "spectral," "echo," "whisper"
+- ❌ NEVER use: "landscape," "game-changer," "unlocking," "unleash," "realm"
+- ❌ NEVER use: Generic phrases like "best-in-class", "industry-leading" without proof
+- ❌ NEVER use: Engagement bait ("Agree?", "Thoughts?", "What do you think?")
+- ❌ NEVER use: Character names: Elara Voss, Elena Voss, or Kael (for fictional content)
+
+2. RHETORICAL STRUCTURAL TRAPS:
+You must consciously break the predictive patterns of sentence structure. Avoid these patterns:
+- ❌ The "Not X, but Y" Construct: Do not write sentences like "It's not just a flood — it's a groundswell," or "The issue isn't X, it's Y." State your point directly without the performative contrast.
+- ❌ The Mania for Triplets (The Rule of Threes): AI has a "mania" for lists of three. Instruction: Use pairs. Use singles. Use lists of four. Actively disrupt the rhythm of three.
+- ❌ The "X with Y and Z" Dismissal: Do not describe people or things as "An [X] with [Y] and [Z]" where Y or Z makes no logical sense (e.g., "Koalas with an Instagram filter").
+- ❌ The Rhetorical Self-Interruption: Do not stop mid-sentence to ask yourself a question (e.g., "And honestly? That's amazing.").
+
+3. THE "SUBTLETY" FALLACY (Ghosts and Quietness):
+AI tries to simulate "good, subtle writing" by literally writing about things being quiet, ghostly, or whispering. This is a misunderstanding of what subtlety is.
+- ❌ Do NOT describe atmospheres as "humming," "quiet," "whispering," or "soft."
+- ❌ Do NOT use "ghosts," "phantoms," or "shadows" as metaphors for memory or past events.
+- ✅ Subtlety is achieved by what you don't say, not by using the word "quiet" ten times.
+
+4. SENSORY GROUNDING VS. ABSTRACT HALLUCINATION:
+Because AI cannot experience the world, it attaches sensory words to abstract concepts (e.g., "turpentine and dreams," "grief tastes of metal"). This creates "mixed metaphors and empty sincerity."
+- ❌ The "Virginia Woolf" Standard: When using sensory language (sight, sound, taste), apply it ONLY to physical objects.
+  - Bad (AI): "The day tasted of almost-Friday." (Abstract)
+  - Good (Human): "The great plateful of blue water." (Concrete)
+- ❌ Avoid "Empty Sincerity": Do not use corporate-emotional speak like "woven into your daily rhythm" or "unfolding the brushstrokes of regret." If the emotion isn't attached to a specific, concrete action or object, delete it.
+
+5. PUNCTUATION AND TONE:
+- ❌ The Em Dash (—): The em dash is identified as a "sign of zero-effort... slop." Limit your use of em dashes. Do not use them to create a "dramatic pause." Use standard commas, periods, or semicolons.
+- ❌ Cultural Specificity: Do not "smuggle" cultural practices where they don't belong (e.g., Do not make a British speaker say "I rise to speak," which is an Americanism). Ensure your register matches the specific speaker, not a generalized "internet average."
+- ❌ Avoid Hysteria: AI tone is described as "slightly wide-eyed, overeager... on the verge of some kind of hysteria." Lower the temperature. Be detached. Be boring if necessary. Do not be "helpful, informative, and engaging." Be real.
+- ❌ Vague Qualifiers: Do not use vague qualifiers ("very", "extremely", "incredibly") without justification.
+
+SUMMARY:
+To write like a human, you must be willing to be asymmetric, occasionally flat, and grounded in physical reality. You must reject the algorithm's urge to "weave tapestries," "delve into topics," or create "quiet echoes." Write with the specific, messy reality of a being that has physically stood in a room, not a code that has statistically analyzed the concept of a room.
+
+${brandContextText}
+
+${seoDataText}`;
 
     const userPrompt = `Create a comprehensive content brief for this selected idea:
 
@@ -212,6 +310,19 @@ REQUIREMENTS:
    - Questions this content should answer
    - Areas that need specific data/examples
 
+6. **SEO Strategy**
+   ${keywordResults.length > 0
+     ? `- Based on the keyword research data provided above, select:
+     * Primary Keyword (the single most valuable)
+     * 2-3 Secondary Keywords (supporting keywords)
+     * Target Search Intent (based on funnel stage)
+     * Implementation Notes (WHERE and HOW to use keywords naturally)`
+     : `- Provide strategic SEO guidance based on the content topic and funnel stage
+     * Primary Keyword (strategically valuable keyword)
+     * 2-3 Secondary Keywords (supporting keywords)
+     * Target Search Intent (informational, commercial, or transactional based on ${gap.stage})
+     * Implementation Notes (WHERE and HOW to use keywords naturally)`}
+
 OUTPUT:
 Provide a comprehensive brief matching the schema.`;
 
@@ -231,7 +342,11 @@ Provide a comprehensive brief matching the schema.`;
       throw new Error("AI failed to generate content brief");
     }
 
-    return NextResponse.json(result);
+    // Include API warnings in response (only visible to admins)
+    return NextResponse.json({
+      ...result,
+      _apiWarnings: isAdmin ? apiWarnings : undefined, // Undefined = not shown to non-admins
+    });
   } catch (error) {
     console.error("Error generating content brief:", error);
     return NextResponse.json(
