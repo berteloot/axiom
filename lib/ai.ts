@@ -399,7 +399,7 @@ INSTRUCTIONS:
       
       // GPT-4o has a 128k context window. 
       // We only truncate if it's massive (>100k chars) to save cost, not because we have to.
-      const safeText = text.length > 100000 ? text.slice(0, 100000) + "..." : text;
+      const safeText = text.length > 300000 ? text.slice(0, 300000) + "..." : text;
       
       userContent = [
         { type: "text", text: `Analyze this content:\n\n${safeText}` }
