@@ -369,6 +369,57 @@ const FunnelHealthPage: React.FC<{ reportData: ReportData }> = ({ reportData }) 
           </View>
         ))}
       </View>
+
+      <Text style={styles.subsectionTitle}>Asset Usage Status</Text>
+      <View style={styles.table}>
+        <View style={styles.tableRow}>
+          <Text style={[styles.tableCell, styles.tableCellHeader]}>Status</Text>
+          <Text style={[styles.tableCell, styles.tableCellHeader]}>Count</Text>
+          <Text style={[styles.tableCell, styles.tableCellHeader]}>Percentage</Text>
+        </View>
+        <View style={styles.tableRow}>
+          <Text style={styles.tableCell}>In Use</Text>
+          <Text style={styles.tableCell}>{reportData.inUseBreakdown.inUse}</Text>
+          <Text style={styles.tableCell}>
+            {reportData.inUseBreakdown.total > 0
+              ? Math.round((reportData.inUseBreakdown.inUse / reportData.inUseBreakdown.total) * 100)
+              : 0}%
+          </Text>
+        </View>
+        <View style={styles.tableRow}>
+          <Text style={styles.tableCell}>Available</Text>
+          <Text style={styles.tableCell}>{reportData.inUseBreakdown.available}</Text>
+          <Text style={styles.tableCell}>
+            {reportData.inUseBreakdown.total > 0
+              ? Math.round((reportData.inUseBreakdown.available / reportData.inUseBreakdown.total) * 100)
+              : 0}%
+          </Text>
+        </View>
+      </View>
+
+      {Object.keys(reportData.byProductLine).length > 0 && (
+        <>
+          <Text style={styles.subsectionTitle}>Assets by Product Line</Text>
+          <View style={styles.table}>
+            <View style={styles.tableRow}>
+              <Text style={[styles.tableCell, styles.tableCellHeader]}>Product Line</Text>
+              <Text style={[styles.tableCell, styles.tableCellHeader]}>Asset Count</Text>
+              <Text style={[styles.tableCell, styles.tableCellHeader]}>Percentage</Text>
+            </View>
+            {Object.entries(reportData.byProductLine).map(([productLine, count]) => {
+              const totalAssets = Object.values(reportData.byProductLine).reduce((sum, c) => sum + c, 0);
+              const percentage = totalAssets > 0 ? Math.round((count / totalAssets) * 100) : 0;
+              return (
+                <View key={productLine} style={styles.tableRow}>
+                  <Text style={styles.tableCell}>{productLine}</Text>
+                  <Text style={styles.tableCell}>{count}</Text>
+                  <Text style={styles.tableCell}>{percentage}%</Text>
+                </View>
+              );
+            })}
+          </View>
+        </>
+      )}
     </View>
 
     <Text style={styles.pageNumber} render={({ pageNumber }) => `${pageNumber}`} />

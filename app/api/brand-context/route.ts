@@ -13,8 +13,26 @@ const brandContextSchema = z.object({
   brandVoice: z.array(z.string()).min(1, "At least one brand voice attribute is required").max(10),
   competitors: z.array(z.string()).max(20),
   targetIndustries: z.array(z.string()).min(1, "At least one industry is required").max(10),
-  websiteUrl: z.string().url().nullable().optional(),
-  valueProposition: z.string().max(500).nullable().optional(),
+  websiteUrl: z.preprocess(
+    (val) => {
+      // Convert empty string or undefined to null for proper validation
+      if (val === "" || val === undefined || val === null) {
+        return null;
+      }
+      return val;
+    },
+    z.union([z.string().url(), z.null()]).optional()
+  ),
+  valueProposition: z.preprocess(
+    (val) => {
+      // Convert empty string or undefined to null for proper validation
+      if (val === "" || val === undefined || val === null) {
+        return null;
+      }
+      return val;
+    },
+    z.union([z.string().max(500), z.null()]).optional()
+  ),
   painClusters: z.array(z.string()).max(10),
   keyDifferentiators: z.array(z.string()).max(10),
   primaryICPRoles: z.array(z.string()).max(10),
@@ -216,8 +234,8 @@ export async function PATCH(request: NextRequest) {
         ...(data.brandVoice !== undefined && { brandVoice: data.brandVoice }),
         ...(data.competitors !== undefined && { competitors: data.competitors }),
         ...(data.targetIndustries !== undefined && { targetIndustries: data.targetIndustries }),
-        ...(data.websiteUrl !== undefined && { websiteUrl: data.websiteUrl }),
-        ...(data.valueProposition !== undefined && { valueProposition: data.valueProposition }),
+        ...(data.websiteUrl !== undefined && { websiteUrl: data.websiteUrl || null }),
+        ...(data.valueProposition !== undefined && { valueProposition: data.valueProposition || null }),
         ...(data.painClusters !== undefined && { painClusters: data.painClusters }),
         ...(data.keyDifferentiators !== undefined && { keyDifferentiators: data.keyDifferentiators }),
         ...(data.primaryICPRoles !== undefined && { primaryICPRoles: standardizeICPTargets(data.primaryICPRoles) }),

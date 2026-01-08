@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import React, { useEffect, useState, useCallback } from "react"
 import { useAccount } from "@/lib/account-context"
 import { BrandIdentityForm, BrandIdentityFormData } from "@/components/settings/BrandIdentityForm"
 import { ProductLinesManager } from "@/components/settings/ProductLinesManager"
@@ -96,7 +96,7 @@ export default function CompanyProfilePage() {
     }
   }
 
-  const handleBrandIdentitySubmit = async (data: BrandIdentityFormData) => {
+  const handleBrandIdentitySubmit = useCallback(async (data: BrandIdentityFormData) => {
     if (!currentAccount) {
       setError("Please select an account first")
       return
@@ -135,7 +135,7 @@ export default function CompanyProfilePage() {
     } finally {
       setIsSaving(false)
     }
-  }
+  }, [currentAccount, brandContext])
 
   const handleProductLineAdd = async (data: ProductLineFormData) => {
     setError(null)

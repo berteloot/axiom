@@ -23,9 +23,10 @@ import { MultiSelectCombobox } from "@/components/ui/combobox";
 import { EditableBadge } from "@/components/ui/editable-badge";
 import { ALL_JOB_TITLES } from "@/lib/job-titles";
 import { extractCustomTargets, isCustomTarget } from "@/lib/icp-targets";
-import { Info, X, Package } from "lucide-react";
+import { Info, X, Package, CheckSquare } from "lucide-react";
 import { Asset, FunnelStage, ProductLine } from "@/lib/types";
 import { AssetTypeSelector } from "@/components/assets/AssetTypeSelector";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface ReviewFormProps {
   asset: Asset;
@@ -37,6 +38,7 @@ interface ReviewFormProps {
     painClusters: string;
     outreachTip: string;
     productLineIds: string[];
+    inUse: boolean;
   };
   customCreatedAt: Date | null;
   lastReviewedAt: Date | null;
@@ -173,7 +175,7 @@ export function ReviewForm({
           onChange={(value) => onFormDataChange({ assetType: value || null })}
         />
         <p className="text-xs text-muted-foreground">
-          The marketing asset type (e.g., "Case Study", "Whitepaper"). This is distinct from the technical file type.
+          The marketing asset type (e.g., &quot;Case Study&quot;, &quot;Whitepaper&quot;). This is distinct from the technical file type.
         </p>
       </div>
 
@@ -492,6 +494,26 @@ export function ReviewForm({
             return compareDate < today
           }}
         />
+      </div>
+
+      <div className="flex items-center space-x-3 p-4 border rounded-lg bg-muted/30">
+        <Checkbox
+          id="inUse"
+          checked={formData.inUse}
+          onCheckedChange={(checked) => onFormDataChange({ inUse: checked === true })}
+        />
+        <div className="space-y-1">
+          <Label
+            htmlFor="inUse"
+            className="text-sm font-medium leading-none cursor-pointer flex items-center gap-2"
+          >
+            <CheckSquare className="h-4 w-4 text-muted-foreground" />
+            In Use
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            Mark this asset as currently being used in campaigns or projects
+          </p>
+        </div>
       </div>
     </div>
   );

@@ -105,6 +105,7 @@ export const updateAssetSchema = z.object({
   customCreatedAt: z.string().datetime().nullable().optional(),
   lastReviewedAt: z.string().datetime().nullable().optional(),
   expiryDate: z.string().datetime().nullable().optional(),
+  inUse: z.boolean().optional(),
 });
 
 /**

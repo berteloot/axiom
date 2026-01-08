@@ -1,13 +1,14 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Mail, X, Edit } from "lucide-react";
+import { Mail, X, Edit, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SequenceActionBarProps {
   selectedCount: number;
   onDraftSequence: () => void;
   onBulkEdit?: () => void;
+  onPPCCampaign?: () => void;
   onClearSelection: () => void;
   isLoading?: boolean;
 }
@@ -16,6 +17,7 @@ export function SequenceActionBar({
   selectedCount,
   onDraftSequence,
   onBulkEdit,
+  onPPCCampaign,
   onClearSelection,
   isLoading = false,
 }: SequenceActionBarProps) {
@@ -46,6 +48,19 @@ export function SequenceActionBar({
           >
             <Edit className="h-4 w-4" />
             Bulk Edit
+          </Button>
+        )}
+
+        {onPPCCampaign && (
+          <Button
+            variant="default"
+            size="sm"
+            onClick={onPPCCampaign}
+            disabled={isLoading}
+            className="gap-2"
+          >
+            <TrendingUp className="h-4 w-4" />
+            PPC Campaign
           </Button>
         )}
         

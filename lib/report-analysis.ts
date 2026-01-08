@@ -27,6 +27,12 @@ export interface ReportData {
     byAssetType: Record<string, number>;
     total: number;
   };
+  inUseBreakdown: {
+    inUse: number;
+    available: number;
+    total: number;
+  };
+  byProductLine: Record<string, number>;
   coverageHeatmap: {
     // Count of assets for each persona at each funnel stage
     personaCoverage: Record<string, Record<FunnelStage, number>>;
@@ -104,6 +110,12 @@ export function generateReportData(assets: Asset[], brandContext?: BrandContext)
   // Inventory breakdown
   const inventoryBreakdown = calculateInventoryBreakdown(assets);
 
+  // In-use vs available breakdown
+  const inUseBreakdown = calculateInUseBreakdown(assets);
+
+  // Assets per product line
+  const byProductLine = calculateByProductLine(assets);
+
   // Coverage heatmap
   const coverageHeatmap = calculateCoverageHeatmap(assets, personas);
 
@@ -119,6 +131,8 @@ export function generateReportData(assets: Asset[], brandContext?: BrandContext)
   return {
     healthScore,
     inventoryBreakdown,
+    inUseBreakdown,
+    byProductLine,
     coverageHeatmap,
     gapAnalysis,
     strategicWins,
@@ -258,6 +272,53 @@ function calculateInventoryBreakdown(assets: Asset[]) {
     byAssetType,
     total: assets.length,
   };
+}
+
+/**
+ * Calculate breakdown of assets in use vs available
+ */
+function calculateInUseBreakdown(assets: Asset[]) {
+  let inUse = 0;
+  let available = 0;
+
+  assets.forEach(asset => {
+    if (asset.inUse === true) {
+      inUse++;
+    } else {
+      available++;
+    }
+  });
+
+  return {
+    inUse,
+    available,
+    total: assets.length,
+  };
+}
+
+/**
+ * Calculate assets per product line
+ */
+function calculateByProductLine(assets: Asset[]): Record<string, number> {
+  const byProductLine: Record<string, number> = {};
+  let unassigned = 0;
+
+  assets.forEach(asset => {
+    if (asset.productLines && asset.productLines.length > 0) {
+      asset.productLines.forEach(productLine => {
+        const productLineName = productLine.name || 'Unknown';
+        byProductLine[productLineName] = (byProductLine[productLineName] || 0) + 1;
+      });
+    } else {
+      unassigned++;
+    }
+  });
+
+  if (unassigned > 0) {
+    byProductLine['Unassigned'] = unassigned;
+  }
+
+  return byProductLine;
 }
 
 /**

@@ -74,10 +74,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     // Build update data object (only include fields that are defined)
-    const updateData: {
-      icpTargets?: string[]
-      funnelStage?: string
-    } = {}
+    const updateData: Record<string, any> = {}
 
     if (icpTargets !== undefined) {
       updateData.icpTargets = standardizeICPTargets(icpTargets)

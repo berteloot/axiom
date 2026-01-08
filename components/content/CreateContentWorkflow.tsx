@@ -38,9 +38,16 @@ import {
   FileCheck,
   FileEdit,
 } from "lucide-react";
-import { FunnelStage } from "@/lib/types";
+import { FunnelStage, ProductLine } from "@/lib/types";
 import { useAccount } from "@/lib/account-context";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const STAGE_DISPLAY: Record<FunnelStage, string> = {
   TOFU_AWARENESS: "TOFU",
@@ -53,6 +60,7 @@ interface Gap {
   icp: string;
   stage: FunnelStage;
   painCluster?: string;
+  productLineId?: string;
 }
 
 interface ContentIdea {
@@ -202,6 +210,33 @@ export function CreateContentWorkflow({
   const { currentAccount } = useAccount();
   const isAdmin = currentAccount?.role === "OWNER" || currentAccount?.role === "ADMIN";
   const [apiWarnings, setApiWarnings] = useState<Array<{ type: string; message: string; api: string }>>([]);
+  const [productLines, setProductLines] = useState<ProductLine[]>([]);
+  const [selectedProductLineId, setSelectedProductLineId] = useState<string | undefined>(
+    initialGap?.productLineId
+  );
+
+  // Fetch product lines on mount
+  useEffect(() => {
+    const fetchProductLines = async () => {
+      try {
+        const response = await fetch("/api/product-lines");
+        if (response.ok) {
+          const data = await response.json();
+          setProductLines(data.productLines || []);
+        }
+      } catch (error) {
+        console.error("Error fetching product lines:", error);
+      }
+    };
+    fetchProductLines();
+  }, []);
+
+  // Update selected product line when initialGap changes
+  useEffect(() => {
+    if (initialGap?.productLineId) {
+      setSelectedProductLineId(initialGap.productLineId);
+    }
+  }, [initialGap]);
 
   const handleGapSelect = (gap: Gap) => {
     setSelectedGap(gap);
@@ -216,11 +251,15 @@ export function CreateContentWorkflow({
     setError(null);
 
     try {
+      const gapWithProductLine = {
+        ...selectedGap,
+        productLineId: selectedProductLineId,
+      };
       const response = await fetch("/api/content/generate-ideas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          gap: selectedGap,
+          gap: gapWithProductLine,
           includeTrendingTopics: true,
         }),
       });
@@ -260,11 +299,15 @@ export function CreateContentWorkflow({
     setError(null);
 
     try {
+      const gapWithProductLine = {
+        ...selectedGap,
+        productLineId: selectedProductLineId,
+      };
       const response = await fetch("/api/content/generate-ideas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          gap: selectedGap,
+          gap: gapWithProductLine,
           includeTrendingTopics: !!trendingData,
         }),
       });
@@ -294,12 +337,16 @@ export function CreateContentWorkflow({
     setError(null);
 
     try {
+      const gapWithProductLine = {
+        ...selectedGap,
+        productLineId: selectedProductLineId,
+      };
       const response = await fetch("/api/content/generate-brief", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           selectedIdea: idea,
-          gap: selectedGap,
+          gap: gapWithProductLine,
           trendingTopics: trendingData?.topics,
         }),
       });
@@ -340,13 +387,17 @@ export function CreateContentWorkflow({
     }
 
     try {
+      const gapWithProductLine = {
+        ...selectedGap,
+        productLineId: selectedProductLineId,
+      };
       const response = await fetch("/api/content/generate-draft", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           brief: contentBrief,
           idea: selectedIdea,
-          gap: selectedGap,
+          gap: gapWithProductLine,
           trendingSources: sourcesToSend,
         }),
       });
@@ -601,11 +652,15 @@ ${ideasText}
                 setIsGeneratingIdeas(true);
                 setError(null);
                 try {
+                  const gapWithProductLine = {
+                    ...selectedGap,
+                    productLineId: selectedProductLineId,
+                  };
                   const response = await fetch("/api/content/generate-ideas", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                      gap: selectedGap,
+                      gap: gapWithProductLine,
                       includeTrendingTopics: false,
                     }),
                   });
@@ -622,6 +677,9 @@ ${ideasText}
                   setIsGeneratingIdeas(false);
                 }
               }}
+              productLines={productLines}
+              selectedProductLineId={selectedProductLineId}
+              onProductLineChange={setSelectedProductLineId}
             />
           ) : currentStep === "trending-discovery" ? (
             <div className="space-y-4 text-center py-8">
@@ -771,12 +829,18 @@ function TrendingDiscoveryStep({
   trendingData,
   onDiscover,
   onSkip,
+  productLines,
+  selectedProductLineId,
+  onProductLineChange,
 }: {
   gap: Gap;
   isDiscovering: boolean;
   trendingData: { topics: string[]; insights: string; sources: Array<{ url: string; title: string }> } | null;
   onDiscover: () => void;
   onSkip: () => void;
+  productLines: ProductLine[];
+  selectedProductLineId?: string;
+  onProductLineChange: (productLineId: string | undefined) => void;
 }) {
   return (
     <div className="space-y-4">
@@ -810,6 +874,27 @@ function TrendingDiscoveryStep({
             <div className="flex items-center gap-2">
               <Badge variant="outline">Pain Cluster</Badge>
               <span className="text-sm">{gap.painCluster}</span>
+            </div>
+          )}
+          {productLines.length > 0 && (
+            <div className="flex items-center gap-2">
+              <Badge variant="outline">Product Line</Badge>
+              <Select
+                value={selectedProductLineId || "none"}
+                onValueChange={(value) => onProductLineChange(value === "none" ? undefined : value)}
+              >
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Select product line (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">All Product Lines</SelectItem>
+                  {productLines.map((pl) => (
+                    <SelectItem key={pl.id} value={pl.id}>
+                      {pl.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
         </CardContent>

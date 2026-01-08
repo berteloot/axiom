@@ -69,15 +69,27 @@ async function migrateCompanyProfiles() {
       console.log(`  ✓ Created ProductLine: "${productLine.name}"`);
 
       // 3. Link all existing assets to this product line
-      const updatedAssets = await prisma.asset.updateMany({
+      // Note: This is a legacy migration script. The productLineId field no longer exists.
+      // Assets are now linked via the AssetProductLine junction table.
+      // This migration is kept for historical reference only.
+      const assets = await prisma.asset.findMany({
         where: {
           accountId: profile.accountId,
-          productLineId: null, // Only update assets not already linked
-        },
-        data: {
-          productLineId: productLine.id,
         },
       });
+
+      // Create associations via junction table
+      if (assets.length > 0) {
+        await prisma.assetProductLine.createMany({
+          data: assets.map(asset => ({
+            assetId: asset.id,
+            productLineId: productLine.id,
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      const updatedAssets = { count: assets.length };
 
       console.log(`  ✓ Linked ${updatedAssets.count} assets to this product line\n`);
     }

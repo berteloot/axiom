@@ -20,6 +20,7 @@ const GenerateIdeasRequestSchema = z.object({
     icp: z.string().min(1, "ICP is required"),
     stage: z.enum(["TOFU_AWARENESS", "MOFU_CONSIDERATION", "BOFU_DECISION", "RETENTION"]),
     painCluster: z.string().nullable().optional(),
+    productLineId: z.string().optional(),
   }),
   includeTrendingTopics: z.boolean().optional().default(true),
 });
@@ -107,6 +108,9 @@ export async function POST(request: NextRequest) {
     // Fetch brand context
     const brandContext = await prisma.brandContext.findUnique({
       where: { accountId },
+      include: {
+        productLines: true,
+      },
     });
 
     if (!brandContext) {
@@ -114,6 +118,18 @@ export async function POST(request: NextRequest) {
         { error: "Brand context not found. Please set up your brand identity first." },
         { status: 404 }
       );
+    }
+
+    // Fetch product line if specified
+    let productLine = null;
+    if (gap.productLineId) {
+      productLine = brandContext.productLines.find(pl => pl.id === gap.productLineId);
+      if (!productLine) {
+        return NextResponse.json(
+          { error: "Product line not found" },
+          { status: 404 }
+        );
+      }
     }
 
     // Fetch existing assets for context
@@ -193,6 +209,17 @@ export async function POST(request: NextRequest) {
       ? brandContext.brandVoice.join(", ")
       : "Professional, Customer-Centric";
 
+    // Build product line context if specified
+    const productLineContext = productLine
+      ? `
+PRODUCT LINE CONTEXT (THIS IS THE SPECIFIC PRODUCT THIS CONTENT IS FOR):
+- Product Line Name: ${productLine.name}
+- Description: ${productLine.description}
+- Value Proposition: ${productLine.valueProposition}
+- Target ICPs: ${productLine.specificICP.join(", ")}
+`
+      : "";
+
     const brandContextText = `
 BRAND IDENTITY:
 - Brand Voice: ${brandVoiceText}
@@ -202,6 +229,7 @@ BRAND IDENTITY:
 - ROI Claims: ${brandContext.roiClaims.join(", ") || "Not specified"}
 - Key Differentiators: ${brandContext.keyDifferentiators.join(", ")}
 - Use Cases: ${brandContext.useCases.join(", ")}
+${productLineContext}
 `;
 
     const trendingContextText = trendingData && trendingData.trendingTopics.length > 0
@@ -339,9 +367,10 @@ ${brandContext.painClusters.length > 0
 🔴 CRITICAL REQUIREMENT: Every content idea MUST solve the pain cluster(s). The content must:
 - Clearly identify the pain cluster as a problem
 - Explain the cost/impact of not solving it
-- Demonstrate HOW to solve it (using our value proposition: ${brandContext.valueProposition || "Not specified"})
+- Demonstrate HOW to solve it${productLine ? ` (using ${productLine.name}'s value proposition: ${productLine.valueProposition})` : ` (using our value proposition: ${brandContext.valueProposition || "Not specified"})`}
 - Reference our differentiators: ${brandContext.keyDifferentiators.join(", ") || "Not specified"}
 - Show how our use cases address it: ${brandContext.useCases.join(", ") || "Not specified"}
+${productLine ? `- **CRITICAL**: This content is specifically for the "${productLine.name}" product line. Use the product line's value proposition and target ICPs (${productLine.specificICP.join(", ")}) when generating ideas.` : ""}
 
 🔴 DATE REQUIREMENT (CRITICAL):
 - Today's date: ${todayStr}

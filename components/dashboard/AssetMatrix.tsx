@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { Asset, FunnelStage } from "@/lib/types";
+import { useState, useMemo, useEffect } from "react";
+import { Asset, FunnelStage, ProductLine } from "@/lib/types";
 import {
   Sheet,
   SheetContent,
@@ -13,12 +13,19 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ExternalLink, Copy, Check, Search, ArrowUpDown, Download, Linkedin, Eye } from "lucide-react";
+import { ExternalLink, Copy, Check, Search, ArrowUpDown, Download, Linkedin, Eye, Filter } from "lucide-react";
 import { LinkedInPostGenerator } from "@/components/LinkedInPostGenerator";
 import { ReviewModal } from "@/components/ReviewModal";
 import { CreateContentWorkflow } from "@/components/content/CreateContentWorkflow";
 import { extractKeyFromS3Url } from "@/lib/s3";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface AssetMatrixProps {
   assets: Asset[];
@@ -53,6 +60,8 @@ function getCellColor(count: number): string {
 
 export function AssetMatrix({ assets }: AssetMatrixProps) {
   const [viewBy, setViewBy] = useState<ViewBy>("icp");
+  const [selectedProductLineId, setSelectedProductLineId] = useState<string | "all">("all");
+  const [productLines, setProductLines] = useState<ProductLine[]>([]);
   const [selectedCell, setSelectedCell] = useState<{
     rowKey: string;
     stage: FunnelStage;
@@ -71,12 +80,39 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
     icp: string;
     stage: FunnelStage;
     painCluster?: string;
+    productLineId?: string;
   } | null>(null);
+
+  // Fetch product lines on mount
+  useEffect(() => {
+    const fetchProductLines = async () => {
+      try {
+        const response = await fetch("/api/product-lines");
+        if (response.ok) {
+          const data = await response.json();
+          setProductLines(data.productLines || []);
+        }
+      } catch (error) {
+        console.error("Error fetching product lines:", error);
+      }
+    };
+    fetchProductLines();
+  }, []);
+
+  // Filter assets by selected product line
+  const filteredAssets = useMemo(() => {
+    if (selectedProductLineId === "all") {
+      return assets;
+    }
+    return assets.filter((asset) =>
+      asset.productLines?.some((pl) => pl.id === selectedProductLineId)
+    );
+  }, [assets, selectedProductLineId]);
 
   // Extract unique row keys based on view mode
   const rowKeys = useMemo(() => {
     const keys = new Set<string>();
-    assets.forEach((asset) => {
+    filteredAssets.forEach((asset) => {
       if (viewBy === "icp") {
         asset.icpTargets.forEach((icp) => keys.add(icp));
       } else {
@@ -84,7 +120,7 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
       }
     });
     return Array.from(keys).sort();
-  }, [assets, viewBy]);
+  }, [filteredAssets, viewBy]);
 
   // Build matrix data structure
   const matrixData = useMemo(() => {
@@ -99,7 +135,7 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
       };
     });
 
-    assets.forEach((asset) => {
+    filteredAssets.forEach((asset) => {
       const keys = viewBy === "icp" ? asset.icpTargets : asset.painClusters;
       keys.forEach((key) => {
         if (data[key] && data[key][asset.funnelStage]) {
@@ -109,7 +145,7 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
     });
 
     return data;
-  }, [assets, rowKeys, viewBy]);
+  }, [filteredAssets, rowKeys, viewBy]);
 
   // Calculate totals per stage (column totals)
   const stageTotals = useMemo(() => {
@@ -251,7 +287,7 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
     
     // If cell is empty, open content creation workflow
     if (cellAssets.length === 0) {
-      let gap: { icp: string; stage: FunnelStage; painCluster?: string };
+      let gap: { icp: string; stage: FunnelStage; painCluster?: string; productLineId?: string };
       
       if (viewBy === "icp") {
         // When viewing by ICP, rowKey is the ICP
@@ -290,6 +326,11 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
             painCluster: rowKey,
           };
         }
+      }
+      
+      // Include product line context if filtering by product line
+      if (selectedProductLineId !== "all") {
+        gap.productLineId = selectedProductLineId;
       }
       
       setSelectedGap(gap);
@@ -379,8 +420,8 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
                 </div>
               </div>
             </div>
-            {/* Search and Sort */}
-            <div className="flex items-center gap-2">
+            {/* Search, Sort, and Product Line Filter */}
+            <div className="flex items-center gap-2 flex-wrap">
               <div className="relative flex-1 max-w-xs">
                 <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -390,6 +431,25 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
                   className="pl-8"
                 />
               </div>
+              {productLines.length > 0 && (
+                <Select
+                  value={selectedProductLineId}
+                  onValueChange={(value) => setSelectedProductLineId(value)}
+                >
+                  <SelectTrigger className="w-[200px]">
+                    <Filter className="h-4 w-4 mr-2" />
+                    <SelectValue placeholder="All Product Lines" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Product Lines</SelectItem>
+                    {productLines.map((pl) => (
+                      <SelectItem key={pl.id} value={pl.id}>
+                        {pl.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <Button
                 variant="outline"
                 size="sm"
@@ -519,6 +579,20 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
                                     a.contentQualityScore < 50
                             ).length;
 
+                            // Calculate product line breakdown
+                            const productLineBreakdown = (() => {
+                              if (selectedProductLineId !== "all" || productLines.length === 0) {
+                                return null;
+                              }
+                              const breakdown: Record<string, number> = {};
+                              cellAssets.forEach((asset) => {
+                                asset.productLines?.forEach((pl) => {
+                                  breakdown[pl.name] = (breakdown[pl.name] || 0) + 1;
+                                });
+                              });
+                              return Object.keys(breakdown).length > 0 ? breakdown : null;
+                            })();
+
                             return (
                               <td
                                 key={stage}
@@ -532,6 +606,15 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
                                         <div className="font-semibold text-lg">
                                           {count}
                                         </div>
+                                        {productLineBreakdown && Object.keys(productLineBreakdown).length > 0 && (
+                                          <div className="text-xs text-muted-foreground">
+                                            {Object.entries(productLineBreakdown)
+                                              .slice(0, 2)
+                                              .map(([name, num]) => `${num} ${name}`)
+                                              .join(", ")}
+                                            {Object.keys(productLineBreakdown).length > 2 && "..."}
+                                          </div>
+                                        )}
                                         {avgScore !== null && (
                                           <div className="text-xs font-medium">
                                             Avg: {avgScore}/100
@@ -549,6 +632,16 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
                                         <p className="font-semibold">
                                           {count} asset{count !== 1 ? "s" : ""} in this cell
                                         </p>
+                                        {productLineBreakdown && Object.keys(productLineBreakdown).length > 0 && (
+                                          <div className="text-xs mt-1">
+                                            <p className="font-medium mb-1">By Product Line:</p>
+                                            {Object.entries(productLineBreakdown).map(([name, num]) => (
+                                              <p key={name} className="text-muted-foreground">
+                                                {name}: {num}
+                                              </p>
+                                            ))}
+                                          </div>
+                                        )}
                                         {avgScore !== null && (
                                           <p className="text-sm">
                                             Average quality score: {avgScore}/100

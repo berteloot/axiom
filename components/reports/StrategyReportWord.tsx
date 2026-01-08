@@ -721,6 +721,235 @@ export async function generateWordDocument(
           ),
         ],
       }),
+      new Paragraph({
+        text: 'Asset Usage Status',
+        heading: HeadingLevel.HEADING_2,
+        spacing: { before: 400, after: 200 },
+      }),
+      new Table({
+        width: {
+          size: 100,
+          type: WidthType.PERCENTAGE,
+        },
+        rows: [
+          new TableRow({
+            children: [
+              new TableCell({
+                children: [
+                  new Paragraph({
+                    children: [
+                      new TextRun({
+                        text: 'Status',
+                        bold: true,
+                      }),
+                    ],
+                  }),
+                ],
+              }),
+              new TableCell({
+                children: [
+                  new Paragraph({
+                    children: [
+                      new TextRun({
+                        text: 'Count',
+                        bold: true,
+                      }),
+                    ],
+                  }),
+                ],
+              }),
+              new TableCell({
+                children: [
+                  new Paragraph({
+                    children: [
+                      new TextRun({
+                        text: 'Percentage',
+                        bold: true,
+                      }),
+                    ],
+                  }),
+                ],
+              }),
+            ],
+          }),
+          new TableRow({
+            children: [
+              new TableCell({
+                children: [
+                  new Paragraph({
+                    children: [
+                      new TextRun({
+                        text: 'In Use',
+                      }),
+                    ],
+                  }),
+                ],
+              }),
+              new TableCell({
+                children: [
+                  new Paragraph({
+                    children: [
+                      new TextRun({
+                        text: reportData.inUseBreakdown.inUse.toString(),
+                      }),
+                    ],
+                  }),
+                ],
+              }),
+              new TableCell({
+                children: [
+                  new Paragraph({
+                    children: [
+                      new TextRun({
+                        text: reportData.inUseBreakdown.total > 0
+                          ? `${Math.round((reportData.inUseBreakdown.inUse / reportData.inUseBreakdown.total) * 100)}%`
+                          : '0%',
+                      }),
+                    ],
+                  }),
+                ],
+              }),
+            ],
+          }),
+          new TableRow({
+            children: [
+              new TableCell({
+                children: [
+                  new Paragraph({
+                    children: [
+                      new TextRun({
+                        text: 'Available',
+                      }),
+                    ],
+                  }),
+                ],
+              }),
+              new TableCell({
+                children: [
+                  new Paragraph({
+                    children: [
+                      new TextRun({
+                        text: reportData.inUseBreakdown.available.toString(),
+                      }),
+                    ],
+                  }),
+                ],
+              }),
+              new TableCell({
+                children: [
+                  new Paragraph({
+                    children: [
+                      new TextRun({
+                        text: reportData.inUseBreakdown.total > 0
+                          ? `${Math.round((reportData.inUseBreakdown.available / reportData.inUseBreakdown.total) * 100)}%`
+                          : '0%',
+                      }),
+                    ],
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+      ...(Object.keys(reportData.byProductLine).length > 0
+        ? [
+            new Paragraph({
+              text: 'Assets by Product Line',
+              heading: HeadingLevel.HEADING_2,
+              spacing: { before: 400, after: 200 },
+            }),
+            new Table({
+              width: {
+                size: 100,
+                type: WidthType.PERCENTAGE,
+              },
+              rows: [
+                new TableRow({
+                  children: [
+                    new TableCell({
+                      children: [
+                        new Paragraph({
+                          children: [
+                            new TextRun({
+                              text: 'Product Line',
+                              bold: true,
+                            }),
+                          ],
+                        }),
+                      ],
+                    }),
+                    new TableCell({
+                      children: [
+                        new Paragraph({
+                          children: [
+                            new TextRun({
+                              text: 'Asset Count',
+                              bold: true,
+                            }),
+                          ],
+                        }),
+                      ],
+                    }),
+                    new TableCell({
+                      children: [
+                        new Paragraph({
+                          children: [
+                            new TextRun({
+                              text: 'Percentage',
+                              bold: true,
+                            }),
+                          ],
+                        }),
+                      ],
+                    }),
+                  ],
+                }),
+                ...Object.entries(reportData.byProductLine).map(([productLine, count]) => {
+                  const totalAssets = Object.values(reportData.byProductLine).reduce((sum, c) => sum + c, 0);
+                  const percentage = totalAssets > 0 ? Math.round((count / totalAssets) * 100) : 0;
+                  return new TableRow({
+                    children: [
+                      new TableCell({
+                        children: [
+                          new Paragraph({
+                            children: [
+                              new TextRun({
+                                text: productLine,
+                              }),
+                            ],
+                          }),
+                        ],
+                      }),
+                      new TableCell({
+                        children: [
+                          new Paragraph({
+                            children: [
+                              new TextRun({
+                                text: count.toString(),
+                              }),
+                            ],
+                          }),
+                        ],
+                      }),
+                      new TableCell({
+                        children: [
+                          new Paragraph({
+                            children: [
+                              new TextRun({
+                                text: `${percentage}%`,
+                              }),
+                            ],
+                          }),
+                        ],
+                      }),
+                    ],
+                  });
+                }),
+              ],
+            }),
+          ]
+        : []),
     ],
   });
 

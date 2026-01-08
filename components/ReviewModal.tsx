@@ -48,6 +48,7 @@ export function ReviewModal({
     painClusters: asset.painClusters.join(", "),
     outreachTip: asset.outreachTip,
     productLineIds: asset.productLines?.map(pl => pl.id) || [],
+    inUse: asset.inUse || false,
   });
   const [customCreatedAt, setCustomCreatedAt] = useState<Date | null>(
     asset.customCreatedAt ? new Date(asset.customCreatedAt) : null
@@ -75,6 +76,7 @@ export function ReviewModal({
         painClusters: asset.painClusters.join(", "),
         outreachTip: asset.outreachTip,
         productLineIds: asset.productLines?.map(pl => pl.id) || [],
+        inUse: asset.inUse || false,
       });
       setCustomCreatedAt(asset.customCreatedAt ? new Date(asset.customCreatedAt) : null);
       setLastReviewedAt(asset.lastReviewedAt ? new Date(asset.lastReviewedAt) : null);
@@ -114,6 +116,7 @@ export function ReviewModal({
           customCreatedAt: customCreatedAt?.toISOString() || null,
           lastReviewedAt: lastReviewedAt?.toISOString() || null,
           expiryDate: expiryDate?.toISOString() || null,
+          inUse: formData.inUse,
         }),
       });
 

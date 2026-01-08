@@ -22,6 +22,7 @@ import {
   SortDesc,
   ChevronDown,
   ChevronUp,
+  CheckSquare,
 } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
@@ -37,6 +38,8 @@ export type SortField =
 
 export type SortDirection = "asc" | "desc";
 
+export type InUseFilter = "all" | "in_use" | "available";
+
 export interface AssetFiltersState {
   search: string;
   funnelStages: FunnelStage[];
@@ -46,6 +49,7 @@ export interface AssetFiltersState {
   productLines: string[]; // Product/Service line IDs
   assetTypes: string[]; // Asset types (e.g., "Case Study", "Whitepaper")
   color: string; // Hex color code for filtering (e.g., "#FF5733")
+  inUse: InUseFilter; // Filter by in use status
   sortBy: SortField;
   sortDirection: SortDirection;
 }
@@ -139,6 +143,7 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
       productLines: [],
       assetTypes: [],
       color: "",
+      inUse: "all",
       sortBy: "createdAt",
       sortDirection: "desc",
     });
@@ -152,7 +157,8 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
     filters.productLines.length +
     filters.assetTypes.length +
     (filters.search ? 1 : 0) +
-    (filters.color ? 1 : 0);
+    (filters.color ? 1 : 0) +
+    (filters.inUse !== "all" ? 1 : 0);
 
   const hasActiveFilters = activeFilterCount > 0;
 
@@ -345,6 +351,27 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
               />
             </div>
 
+            {/* In Use Filter */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium flex items-center gap-1.5">
+                <CheckSquare className="h-3.5 w-3.5" />
+                Usage Status
+              </label>
+              <Select
+                value={filters.inUse}
+                onValueChange={(value: InUseFilter) => updateFilters({ inUse: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All assets" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All assets</SelectItem>
+                  <SelectItem value="in_use">In use</SelectItem>
+                  <SelectItem value="available">Available</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             {/* Color Filter */}
             <div className="space-y-2">
               <label className="text-sm font-medium">Dominant Color</label>
@@ -519,6 +546,19 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
               </button>
             </Badge>
           )}
+          {filters.inUse !== "all" && (
+            <Badge variant="secondary" className="gap-1">
+              <CheckSquare className="h-3 w-3" />
+              {filters.inUse === "in_use" ? "In Use" : "Available"}
+              <button
+                onClick={() => updateFilters({ inUse: "all" })}
+                className="ml-1 hover:bg-destructive/20 rounded-full p-0.5"
+                aria-label="Remove usage status filter"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          )}
         </div>
       )}
     </div>
@@ -586,6 +626,13 @@ export function applyAssetFilters(assets: Asset[], filters: AssetFiltersState): 
       if (!asset.dominantColor) return false;
       return asset.dominantColor.toUpperCase() === filterColor;
     });
+  }
+
+  // In Use filter
+  if (filters.inUse === "in_use") {
+    filtered = filtered.filter((asset) => asset.inUse === true);
+  } else if (filters.inUse === "available") {
+    filtered = filtered.filter((asset) => asset.inUse !== true);
   }
 
   // Sorting

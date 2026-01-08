@@ -72,6 +72,7 @@ const GenerateDraftRequestSchema = z.object({
     icp: z.string().min(1, "ICP is required"),
     stage: z.enum(["TOFU_AWARENESS", "MOFU_CONSIDERATION", "BOFU_DECISION", "RETENTION"]),
     painCluster: z.string().nullable().optional(),
+    productLineId: z.string().optional(),
   }),
   trendingSources: z.array(
     z.object({
@@ -415,9 +416,12 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Fetch brand context
+    // Fetch brand context with product lines
     const brandContext = await prisma.brandContext.findUnique({
       where: { accountId },
+      include: {
+        productLines: true,
+      },
     });
 
     if (!brandContext) {
@@ -425,6 +429,12 @@ export async function POST(request: NextRequest) {
         { error: "Brand context not found. Please set up your brand identity first." },
         { status: 404 }
       );
+    }
+
+    // Fetch product line if specified
+    let productLine = null;
+    if (gap.productLineId) {
+      productLine = brandContext.productLines.find(pl => pl.id === gap.productLineId);
     }
 
     // Build brand context string with safe fallbacks
@@ -442,6 +452,17 @@ export async function POST(request: NextRequest) {
 
     const defaultPainCluster = gap.painCluster ?? brandContext.painClusters[0] ?? "Not specified";
 
+    // Build product line context if specified
+    const productLineContext = productLine
+      ? `
+PRODUCT LINE CONTEXT (THIS IS THE SPECIFIC PRODUCT THIS CONTENT IS FOR):
+- Product Line Name: ${productLine.name}
+- Description: ${productLine.description}
+- Value Proposition: ${productLine.valueProposition}
+- Target ICPs: ${productLine.specificICP.join(", ")}
+`
+      : "";
+
     const brandContextText = `
 BRAND IDENTITY:
 - Brand Voice: ${brandVoiceText}
@@ -451,6 +472,7 @@ BRAND IDENTITY:
 - ROI Claims: ${brandContext.roiClaims.length > 0 ? brandContext.roiClaims.join(", ") : "Not specified"}
 - Key Differentiators: ${brandContext.keyDifferentiators.length > 0 ? brandContext.keyDifferentiators.join(", ") : "Not specified"}
 - Use Cases: ${brandContext.useCases.length > 0 ? brandContext.useCases.join(", ") : "Not specified"}
+${productLineContext}
 `;
 
     // Determine reputability server-side for ALL provided sources (do not trust client isReputable)
@@ -813,6 +835,7 @@ REQUIREMENTS:
    `).join("")}
 
 2. **Pain Cluster Solution**: Every section must demonstrate HOW to solve: ${defaultPainCluster}
+   ${productLine ? `- **CRITICAL**: This content is specifically for the "${productLine.name}" product line. Use the product line's value proposition (${productLine.valueProposition}) when explaining how to solve the pain cluster.` : ""}
 
 3. **Source Citations** (CRITICAL - EDITORIAL BEST PRACTICES): 
    - **ONLY cite statistics/facts that appear in the source content extracts above**

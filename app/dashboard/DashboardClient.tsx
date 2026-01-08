@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { AssetTable } from "@/components/AssetTable";
 import { ReviewModal } from "@/components/ReviewModal";
@@ -9,7 +9,7 @@ import { UploadModal } from "@/components/UploadModal";
 import { SequenceActionBar } from "@/components/SequenceActionBar";
 import { SequenceModal } from "@/components/SequenceModal";
 import { BulkEditModal } from "@/components/BulkEditModal";
-import { AssetFilters, applyAssetFilters, AssetFiltersState, SortField, SortDirection } from "@/components/AssetFilters";
+import { AssetFilters, applyAssetFilters, AssetFiltersState, SortField, SortDirection, InUseFilter } from "@/components/AssetFilters";
 import { Asset, FunnelStage, AssetStatus } from "@/lib/types";
 import { BrandContext } from "@/lib/report-analysis";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,6 +26,7 @@ import { CriticalGapsModal, CriticalGap } from "@/components/dashboard/CriticalG
 import { SaveSearchButton } from "@/components/smart-collections";
 import DownloadReportButton from "@/components/reports/DownloadReportButton";
 import { useAccount } from "@/lib/account-context";
+import { PPCCampaignBuilder } from "@/components/ppc/PPCCampaignBuilder";
 
 const STAGES: FunnelStage[] = [
   "TOFU_AWARENESS",
@@ -79,6 +80,11 @@ function parseFiltersFromUrl(searchParams: URLSearchParams): Partial<AssetFilter
     // Decode the color (URL encodes # as %23)
     filters.color = decodeURIComponent(color).toUpperCase();
   }
+
+  const inUse = searchParams.get("inUse");
+  if (inUse && ["all", "in_use", "available"].includes(inUse)) {
+    filters.inUse = inUse as InUseFilter;
+  }
   
   const sort = searchParams.get("sort");
   if (sort && ["title", "createdAt", "updatedAt", "customCreatedAt", "lastReviewedAt", "funnelStage", "status", "contentQualityScore"].includes(sort)) {
@@ -99,6 +105,7 @@ export default function DashboardClient() {
   const { currentAccount } = useAccount();
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
+  const pendingInUseUpdates = useRef<Map<string, boolean>>(new Map());
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -132,6 +139,7 @@ export default function DashboardClient() {
       productLines: urlFilters.productLines ?? [],
       assetTypes: urlFilters.assetTypes ?? [],
       color: urlFilters.color ?? "",
+      inUse: urlFilters.inUse ?? "all",
       sortBy: urlFilters.sortBy ?? "createdAt",
       sortDirection: urlFilters.sortDirection ?? "desc",
     };
@@ -153,6 +161,7 @@ export default function DashboardClient() {
         productLines: urlFilters.productLines ?? [],
         assetTypes: urlFilters.assetTypes ?? [],
         color: urlFilters.color ?? "",
+        inUse: urlFilters.inUse ?? "all",
         sortBy: urlFilters.sortBy ?? "createdAt",
         sortDirection: urlFilters.sortDirection ?? "desc",
       });
@@ -203,7 +212,34 @@ export default function DashboardClient() {
       const response = await fetch("/api/assets");
       if (!response.ok) throw new Error("Failed to fetch assets");
       const data = await response.json();
-      setAssets(data.assets);
+      
+      // Merge with current state to preserve pending optimistic updates
+      setAssets((current) => {
+        const currentMap = new Map(current.map(a => [a.id, a]));
+        
+        // For each fetched asset, preserve pending updates
+        const merged = data.assets.map((fetched: Asset) => {
+          const currentAsset = currentMap.get(fetched.id);
+          const pendingValue = pendingInUseUpdates.current.get(fetched.id);
+          
+          // If there's a pending update, use it
+          if (pendingValue !== undefined) {
+            return { ...fetched, inUse: pendingValue };
+          }
+          
+          // If current asset has an inUse value that differs from fetched, 
+          // and we don't have a pending update, use fetched (server is source of truth)
+          if (currentAsset && currentAsset.inUse !== fetched.inUse) {
+            // Use fetched value unless we have a pending update
+            return fetched;
+          }
+          
+          return fetched;
+        });
+        
+        return merged;
+      });
+      
       // Cache the data in sessionStorage for instant loading on next visit
       sessionStorage.setItem('dashboard-assets', JSON.stringify(data.assets));
     } catch (error) {
@@ -245,6 +281,101 @@ export default function DashboardClient() {
     setIsUploadModalOpen(false);
     // Switch to library view so user can see the processing asset
     setActiveTab("library");
+  };
+
+  const handleInUseChange = async (assetId: string, inUse: boolean) => {
+    // Track pending update
+    pendingInUseUpdates.current.set(assetId, inUse);
+    
+    // Optimistic UI update (so checkbox ticks immediately)
+    setAssets((current) => {
+      return current.map((a) => 
+        a.id === assetId ? { ...a, inUse } : a
+      );
+    });
+
+    // Best-effort cache update (keeps UI consistent on reload)
+    try {
+      const cachedData = sessionStorage.getItem('dashboard-assets');
+      if (cachedData) {
+        const parsed = JSON.parse(cachedData);
+        const updated = parsed.map((a: Asset) => (a.id === assetId ? { ...a, inUse } : a));
+        sessionStorage.setItem('dashboard-assets', JSON.stringify(updated));
+      }
+    } catch {
+      // ignore cache errors
+    }
+
+    try {
+      const response = await fetch(`/api/assets/${assetId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ inUse }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        
+        // If it's a migration error, keep the optimistic update and show a warning
+        if (errorData.code === "MIGRATION_REQUIRED" || errorData.code === "SCHEMA_ERROR") {
+          console.warn("Database migration required for 'inUse' feature:", errorData.details);
+          // Keep pending update in ref
+          return;
+        }
+        
+        // Remove pending update on error and revert
+        pendingInUseUpdates.current.delete(assetId);
+        throw new Error(errorData.error || "Failed to update asset");
+      }
+
+      // On success, confirm the update and remove from pending
+      const data = await response.json();
+      pendingInUseUpdates.current.delete(assetId);
+      
+      if (data.asset) {
+        // Update state with server response
+        setAssets((current) => {
+          return current.map((a) => 
+            a.id === assetId ? { ...a, inUse: data.asset.inUse } : a
+          );
+        });
+
+        // Update cache with server response
+        try {
+          const cachedData = sessionStorage.getItem('dashboard-assets');
+          if (cachedData) {
+            const parsed = JSON.parse(cachedData);
+            const updated = parsed.map((a: Asset) => 
+              a.id === assetId ? { ...a, inUse: data.asset.inUse } : a
+            );
+            sessionStorage.setItem('dashboard-assets', JSON.stringify(updated));
+          }
+        } catch {
+          // ignore cache errors
+        }
+      }
+    } catch (error) {
+      console.error("Error updating asset in use status:", error);
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      
+      // Only revert if it's not a migration/schema error
+      if (!errorMessage.includes("migration") && !errorMessage.includes("column")) {
+        // Revert optimistic update on real errors
+        setAssets((current) => {
+          const asset = current.find(a => a.id === assetId);
+          if (asset) {
+            // Revert to previous inUse value (or false if unknown)
+            return current.map((a) => 
+              a.id === assetId ? { ...a, inUse: asset.inUse ?? false } : a
+            );
+          }
+          return current;
+        });
+      }
+      // For migration errors, keep the optimistic update so UI remains functional
+    }
   };
 
   const handleBulkEdit = async (updates: {
@@ -659,13 +790,35 @@ export default function DashboardClient() {
                 <AssetFilters
                   assets={assets}
                   filters={filters}
-                  onFiltersChange={setFilters}
+                  onFiltersChange={(newFilters) => {
+                    setFilters(newFilters);
+                  }}
                 />
-                <AssetTable 
-                  assets={filteredAssets} 
+
+                <AssetTable
+                  assets={filteredAssets}
                   onReview={handleReview}
                   selectedAssetIds={selectedAssetIds}
                   onSelectionChange={setSelectedAssetIds}
+                  onInUseChange={handleInUseChange}
+                />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="ppc" className="space-y-4">
+            <Card className="bg-white shadow-sm">
+              <CardHeader>
+                <CardTitle>PPC Campaign Builder</CardTitle>
+                <CardDescription>
+                  Discover keywords, map to landing pages, and organize ad groups for pay-per-click campaigns
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <PPCCampaignBuilder
+                  assets={assets}
+                  selectedAssetIds={selectedAssetIds}
+                  onAssetSelectionChange={setSelectedAssetIds}
                 />
               </CardContent>
             </Card>
@@ -674,14 +827,14 @@ export default function DashboardClient() {
       </div>
 
       {/* Modals */}
-      {selectedAsset && (
+      {selectedAsset ? (
         <ReviewModal
           asset={selectedAsset}
           open={isReviewModalOpen}
           onOpenChange={setIsReviewModalOpen}
           onApprove={handleApprove}
         />
-      )}
+      ) : null}
 
       <UploadModal
         open={isUploadModalOpen}
@@ -693,6 +846,7 @@ export default function DashboardClient() {
         selectedCount={selectedAssetIds.length}
         onDraftSequence={handleDraftSequence}
         onBulkEdit={() => setIsBulkEditModalOpen(true)}
+        onPPCCampaign={() => setActiveTab("ppc")}
         onClearSelection={() => setSelectedAssetIds([])}
         isLoading={isDraftingSequence}
       />

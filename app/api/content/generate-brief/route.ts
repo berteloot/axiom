@@ -64,9 +64,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Fetch brand context
+    // Fetch brand context with product lines
     const brandContext = await prisma.brandContext.findUnique({
       where: { accountId },
+      include: {
+        productLines: true,
+      },
     });
 
     if (!brandContext) {
@@ -76,10 +79,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Fetch product line if specified
+    let productLine = null;
+    if (gap.productLineId) {
+      productLine = brandContext.productLines.find(pl => pl.id === gap.productLineId);
+    }
+
     // Build brand context string
     const brandVoiceText = brandContext.brandVoice.length > 0
       ? brandContext.brandVoice.join(", ")
       : "Professional, Customer-Centric";
+
+    // Build product line context if specified
+    const productLineContext = productLine
+      ? `
+PRODUCT LINE CONTEXT (THIS IS THE SPECIFIC PRODUCT THIS CONTENT IS FOR):
+- Product Line Name: ${productLine.name}
+- Description: ${productLine.description}
+- Value Proposition: ${productLine.valueProposition}
+- Target ICPs: ${productLine.specificICP.join(", ")}
+`
+      : "";
 
     const brandContextText = `
 BRAND IDENTITY:
@@ -90,6 +110,7 @@ BRAND IDENTITY:
 - ROI Claims: ${brandContext.roiClaims.join(", ") || "Not specified"}
 - Key Differentiators: ${brandContext.keyDifferentiators.join(", ")}
 - Use Cases: ${brandContext.useCases.join(", ")}
+${productLineContext}
 `;
 
     const trendingTopicsText = trendingTopics && trendingTopics.length > 0
@@ -255,9 +276,10 @@ REQUIREMENTS:
 1. **Strategic Positioning**
    - Explain why this content matters for ${gap.icp} at ${gap.stage} stage
    - **Detail EXACTLY how it solves the pain cluster**: ${gap.painCluster || brandContext.painClusters[0] || "General business challenges"}
-   - Show how the value proposition addresses this pain: ${brandContext.valueProposition || "Not specified"}
+   - Show how the value proposition addresses this pain: ${productLine ? `${productLine.name}'s value proposition: ${productLine.valueProposition}` : brandContext.valueProposition || "Not specified"}
    - Explain how differentiators solve it: ${brandContext.keyDifferentiators.join(", ") || "Not specified"}
    - Reference relevant use cases: ${brandContext.useCases.join(", ") || "Not specified"}
+   ${productLine ? `- **CRITICAL**: This content is specifically for the "${productLine.name}" product line. Use the product line's value proposition and target ICPs (${productLine.specificICP.join(", ")}) throughout the brief.` : ""}
    ${trendingTopics && trendingTopics.length > 0
      ? "- Show how trending topics enhance relevance and connect to pain cluster solutions"
      : ""}

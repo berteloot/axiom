@@ -23,10 +23,16 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Asset, AssetStatus } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
 import { LinkedInPostGenerator } from "@/components/LinkedInPostGenerator";
-import { Linkedin, FileText, Image, FileSpreadsheet, File, Video, Music, X, BookOpen } from "lucide-react";
+import { Linkedin, FileText, Image, FileSpreadsheet, File, Video, Music, X, BookOpen, Eye, RotateCw } from "lucide-react";
 import { useState } from "react";
 import { VideoCompressionGuide } from "@/components/VideoCompressionGuide";
 
@@ -55,7 +61,8 @@ interface AssetTableProps {
   assets: Asset[];
   onReview: (asset: Asset) => void;
   selectedAssetIds?: string[];
-  onSelectionChange?: (selectedIds: string[]) => void;
+  onSelectionChange?: React.Dispatch<React.SetStateAction<string[]>>;
+  onInUseChange?: (assetId: string, inUse: boolean) => void;
 }
 
 const getStatusColor = (status: AssetStatus) => {
@@ -131,7 +138,8 @@ export function AssetTable({
   assets, 
   onReview, 
   selectedAssetIds = [],
-  onSelectionChange 
+  onSelectionChange,
+  onInUseChange 
 }: AssetTableProps) {
   const [selectedAssetForPost, setSelectedAssetForPost] = useState<Asset | null>(null);
   const [isLinkedInModalOpen, setIsLinkedInModalOpen] = useState(false);
@@ -190,11 +198,10 @@ export function AssetTable({
   const handleSelectAsset = (assetId: string, checked: boolean) => {
     if (!onSelectionChange) return;
     
-    if (checked) {
-      onSelectionChange([...selectedAssetIds, assetId]);
-    } else {
-      onSelectionChange(selectedAssetIds.filter(id => id !== assetId));
-    }
+    onSelectionChange((prev) => {
+      if (checked) return Array.from(new Set([...prev, assetId]));
+      return prev.filter((id) => id !== assetId);
+    });
   };
 
   const handleSelectAll = (checked: boolean) => {
@@ -211,40 +218,52 @@ export function AssetTable({
     }
   };
 
-  const allSelectableSelected = assets.filter(
-    asset => asset.status === "APPROVED" || asset.status === "PROCESSED"
-  ).every(asset => selectedAssetIds.includes(asset.id));
+  const selectableAssetIds = assets
+    .filter((asset) => asset.status === "APPROVED" || asset.status === "PROCESSED")
+    .map((asset) => asset.id);
 
-  const someSelectableSelected = assets.some(
-    asset => (asset.status === "APPROVED" || asset.status === "PROCESSED") && selectedAssetIds.includes(asset.id)
-  );
+  const allSelectableSelected =
+    selectableAssetIds.length > 0 &&
+    selectableAssetIds.every((id) => selectedAssetIds.includes(id));
+
+  const someSelectableSelected =
+    selectableAssetIds.some((id) => selectedAssetIds.includes(id)) && !allSelectableSelected;
 
   return (
     <div className="rounded-md border overflow-hidden">
-      <div className="overflow-x-auto -mx-4 sm:mx-0">
-        <div className="inline-block min-w-full align-middle px-4 sm:px-0">
-          <Table className="table-fixed">
-            <TableHeader>
-              <TableRow>
-                {onSelectionChange && (
-                  <TableHead className="w-[48px] px-2">
-                    <Checkbox
-                      checked={allSelectableSelected && assets.length > 0}
-                      onCheckedChange={handleSelectAll}
-                      aria-label="Select all"
-                    />
-                  </TableHead>
-                )}
-                <TableHead className="w-[200px] px-4">Title</TableHead>
-                <TableHead className="w-[120px] px-4">Type</TableHead>
-                <TableHead className="w-[150px] px-4">Product Line</TableHead>
-                <TableHead className="w-[140px] px-4">ICP Targets</TableHead>
-                <TableHead className="w-[100px] px-4">Stage</TableHead>
-                <TableHead className="w-[120px] px-4">Status</TableHead>
-                <TableHead className="w-[120px] px-4">Date</TableHead>
-                <TableHead className="text-right w-[180px] px-4">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              {onSelectionChange && (
+                <TableHead className="w-12 px-2">
+                  <Checkbox
+                    checked={allSelectableSelected}
+                    onCheckedChange={(checked) => handleSelectAll(checked === true)}
+                    aria-label="Select all"
+                  />
+                </TableHead>
+              )}
+              <TableHead className="min-w-[180px] px-2">Title</TableHead>
+              <TableHead className="w-16 px-2 text-center">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="cursor-help">In Use</span>
+                    </TooltipTrigger>
+                    <TooltipContent>Mark if asset is currently in use</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </TableHead>
+              <TableHead className="w-20 px-2">Type</TableHead>
+              <TableHead className="w-24 px-2">Product</TableHead>
+              <TableHead className="w-24 px-2">ICP</TableHead>
+              <TableHead className="w-20 px-2">Stage</TableHead>
+              <TableHead className="w-24 px-2">Status</TableHead>
+              <TableHead className="w-20 px-2">Date</TableHead>
+              <TableHead className="text-right w-32 px-2">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
             <TableBody>
               {assets.map((asset) => {
                 const isSelectable = asset.status === "APPROVED" || asset.status === "PROCESSED";
@@ -253,7 +272,7 @@ export function AssetTable({
                 return (
                   <TableRow key={asset.id}>
                     {onSelectionChange && (
-                      <TableCell className="w-[48px] px-2">
+                      <TableCell className="w-12 px-2">
                         <Checkbox
                           checked={isSelected}
                           onCheckedChange={(checked) => handleSelectAsset(asset.id, checked as boolean)}
@@ -262,100 +281,107 @@ export function AssetTable({
                         />
                       </TableCell>
                     )}
-                    <TableCell className="font-medium w-[200px] px-4">
-                      <div className="flex items-center gap-1.5">
-                        {getFileTypeIcon(asset.fileType)}
+                    <TableCell className="font-medium min-w-[180px] px-2">
+                      <div className="flex items-start gap-1">
+                        <div className="flex-shrink-0 pt-0.5">
+                          {getFileTypeIcon(asset.fileType)}
+                        </div>
                         {asset.dominantColor && (
                           <div
-                            className="w-3 h-3 rounded-full border border-gray-300 dark:border-gray-600 flex-shrink-0"
+                            className="w-2.5 h-2.5 rounded-full border border-gray-300 dark:border-gray-600 flex-shrink-0 mt-1"
                             style={{ backgroundColor: asset.dominantColor }}
-                            title={`Dominant color: ${asset.dominantColor}`}
-                            aria-label={`Dominant color: ${asset.dominantColor}`}
+                            title={`Color: ${asset.dominantColor}`}
+                            aria-label={`Color: ${asset.dominantColor}`}
                           />
                         )}
-                        <span className="truncate" title={asset.title}>
+                        <span className="text-sm line-clamp-2 leading-tight" title={asset.title}>
                           {asset.title}
                         </span>
                       </div>
                     </TableCell>
-                  <TableCell className="w-[120px] px-4">
+                  <TableCell className="w-16 px-2">
+                    <div className="flex justify-center">
+                      <Checkbox
+                        checked={!!asset.inUse}
+                        onCheckedChange={(checked) => {
+                          if (onInUseChange) {
+                            onInUseChange(asset.id, checked === true);
+                          }
+                        }}
+                        aria-label={`Mark ${asset.title} as ${asset.inUse ? "not in use" : "in use"}`}
+                      />
+                    </div>
+                  </TableCell>
+                  <TableCell className="w-20 px-2">
                     {asset.assetType ? (
-                      <Badge variant="secondary" className="text-xs">
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 truncate max-w-full" title={asset.assetType}>
                         {asset.assetType}
                       </Badge>
                     ) : (
-                      <span className="text-muted-foreground text-xs">
+                      <span className="text-muted-foreground text-[10px]">
                         {asset.fileType.split("/").pop()?.toUpperCase() || "FILE"}
                       </span>
                     )}
                   </TableCell>
-                  <TableCell className="w-[150px] px-4">
+                  <TableCell className="w-24 px-2">
                     {asset.productLines && asset.productLines.length > 0 ? (
-                      <div className="flex flex-wrap gap-0.5">
-                        {asset.productLines.slice(0, 1).map((productLine) => (
-                          <Badge 
-                            key={productLine.id} 
-                            variant="secondary" 
-                            className="text-xs truncate max-w-full" 
-                            title={productLine.name}
-                          >
-                            {productLine.name}
-                          </Badge>
-                        ))}
-                        {asset.productLines.length > 1 && (
-                          <Badge 
-                            variant="secondary" 
-                            className="text-xs" 
-                            title={asset.productLines.slice(1).map(pl => pl.name).join(", ")}
-                          >
-                            +{asset.productLines.length - 1}
-                          </Badge>
-                        )}
-                      </div>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge 
+                              variant="secondary" 
+                              className="text-[10px] px-1.5 py-0 truncate max-w-full cursor-help"
+                            >
+                              {asset.productLines[0].name}
+                              {asset.productLines.length > 1 && ` +${asset.productLines.length - 1}`}
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <div className="text-xs space-y-1">
+                              {asset.productLines.map(pl => (
+                                <div key={pl.id}>{pl.name}</div>
+                              ))}
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     ) : (
                       <span className="text-muted-foreground text-xs">—</span>
                     )}
                   </TableCell>
-                  <TableCell className="w-[140px] px-4">
-                    <div className="flex flex-wrap gap-0.5">
-                      {asset.icpTargets.length > 0 ? (
-                        asset.icpTargets.slice(0, 1).map((target, idx) => (
-                          <Badge
-                            key={idx}
-                            variant="outline"
-                            className="text-xs truncate max-w-full"
-                            title={target}
-                          >
-                            {target}
-                          </Badge>
-                        ))
+                  <TableCell className="w-24 px-2">
+                    {asset.icpTargets.length > 0 ? (
+                      asset.icpTargets.length === 1 ? (
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] px-1.5 py-0 truncate max-w-full"
+                          title={asset.icpTargets[0]}
+                        >
+                          {asset.icpTargets[0]}
+                        </Badge>
                       ) : (
-                        <span className="text-muted-foreground text-xs">—</span>
-                      )}
-                      {asset.icpTargets.length > 1 && (
                         <Popover>
                           <PopoverTrigger asChild>
                             <button
                               type="button"
-                              className="inline-flex items-center rounded-full border border-input bg-background px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 cursor-pointer hover:bg-accent"
-                              title={`Click to see all ${asset.icpTargets.length} ICP targets`}
-                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center rounded-full border border-input bg-background px-1.5 py-0 text-[10px] font-semibold leading-5 transition-colors hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 truncate max-w-full"
+                              aria-label={`View ICP targets (${asset.icpTargets.length})`}
+                              title={`View all ${asset.icpTargets.length} ICP targets`}
                             >
-                              +{asset.icpTargets.length - 1}
+                              {asset.icpTargets[0]} +{asset.icpTargets.length - 1}
                             </button>
                           </PopoverTrigger>
-                          <PopoverContent className="w-auto p-3" align="start" onClick={(e) => e.stopPropagation()}>
+                          <PopoverContent
+                            className="w-64 p-3"
+                            align="start"
+                          >
                             <div className="space-y-2">
-                              <div className="text-sm font-semibold mb-2">
-                                All ICP Targets ({asset.icpTargets.length})
+                              <div className="text-sm font-semibold">
+                                ICP Targets ({asset.icpTargets.length})
                               </div>
                               <div className="flex flex-wrap gap-1.5">
                                 {asset.icpTargets.map((target, idx) => (
-                                  <Badge
-                                    key={idx}
-                                    variant="outline"
-                                    className="text-xs"
-                                  >
+                                  <Badge key={idx} variant="outline" className="text-xs">
                                     {target}
                                   </Badge>
                                 ))}
@@ -363,110 +389,162 @@ export function AssetTable({
                             </div>
                           </PopoverContent>
                         </Popover>
-                      )}
-                    </div>
+                      )
+                    ) : (
+                      <span className="text-muted-foreground text-xs">—</span>
+                    )}
                   </TableCell>
-                  <TableCell className="w-[100px] px-4">
+                  <TableCell className="w-20 px-2">
                     <Badge
                       variant="outline"
-                      className={`text-xs ${getStageColor(asset.funnelStage)}`}
+                      className={`text-[10px] px-1.5 py-0 ${getStageColor(asset.funnelStage)}`}
                     >
                       {formatStageShort(asset.funnelStage)}
                     </Badge>
                   </TableCell>
-                  <TableCell className="w-[120px] px-4">
+                  <TableCell className="w-24 px-2">
                     <Badge
                       variant="outline"
-                      className={`text-xs ${getStatusColor(asset.status)}`}
+                      className={`text-[10px] px-1.5 py-0 ${getStatusColor(asset.status)}`}
                     >
                       {asset.status}
                     </Badge>
                   </TableCell>
-                  <TableCell className="w-[120px] px-4">
-                    <div className="flex flex-col gap-0.5 text-xs">
-                      <span className="text-muted-foreground">
-                        {formatDate(getPrimaryDate(asset))}
-                      </span>
+                  <TableCell className="w-20 px-2">
+                    <div className="flex flex-col gap-0.5">
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="text-[10px] text-muted-foreground cursor-help truncate">
+                              {formatDate(getPrimaryDate(asset))}
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <div className="text-xs">
+                              {new Date(getPrimaryDate(asset) || "").toLocaleDateString()}
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                       {asset.contentQualityScore !== null && asset.contentQualityScore !== undefined && (
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-[10px] text-muted-foreground">
                           Q: {asset.contentQualityScore}
                         </span>
                       )}
                     </div>
                   </TableCell>
-                  <TableCell className="text-right w-[180px] px-4">
-                    <div className="flex justify-end gap-1">
+                  <TableCell className="text-right w-32 px-2">
+                    <div className="flex justify-end gap-0.5">
                       {asset.status === "ERROR" && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={(e) => handleRetry(asset.id, e)}
-                          className="min-h-[44px] sm:min-h-0"
-                        >
-                          Retry
-                        </Button>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={(e) => handleRetry(asset.id, e)}
+                              >
+                                <RotateCw className="h-3.5 w-3.5" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Retry processing</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       )}
                       {asset.status === "PROCESSING" && asset.fileType.startsWith("video/") && (
                         <>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setProcessingAssetSize(465); // Default estimate
-                              setShowProcessingGuide(true);
-                            }}
-                            className="min-h-[44px] sm:min-h-0"
-                            title="Show manual processing guide"
-                          >
-                            <BookOpen className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
-                            <span className="hidden sm:inline">Manual Guide</span>
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={(e) => handleCancel(asset.id, e)}
-                            className="min-h-[44px] sm:min-h-0 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20"
-                          >
-                            <X className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
-                            <span className="hidden sm:inline">Cancel</span>
-                          </Button>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setProcessingAssetSize(465);
+                                    setShowProcessingGuide(true);
+                                  }}
+                                >
+                                  <BookOpen className="h-3.5 w-3.5" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Manual processing guide</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  onClick={(e) => handleCancel(asset.id, e)}
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Cancel processing</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                         </>
                       )}
                       {asset.status === "PROCESSING" && !asset.fileType.startsWith("video/") && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={(e) => handleCancel(asset.id, e)}
-                          className="min-h-[44px] sm:min-h-0 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20"
-                        >
-                          <X className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
-                          <span className="hidden sm:inline">Cancel</span>
-                        </Button>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                onClick={(e) => handleCancel(asset.id, e)}
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Cancel processing</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       )}
-                      {asset.status === "PROCESSED" || asset.status === "APPROVED" ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedAssetForPost(asset);
-                            setIsLinkedInModalOpen(true);
-                          }}
-                          className="min-h-[44px] sm:min-h-0 gap-1"
-                        >
-                          <Linkedin className="h-3 w-3 sm:h-4 sm:w-4" />
-                          <span className="hidden sm:inline">LinkedIn</span>
-                        </Button>
-                      ) : null}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => onReview(asset)}
-                        disabled={asset.status === "PROCESSING"}
-                        className="min-h-[44px] sm:min-h-0"
-                      >
-                        {asset.status === "PROCESSING" ? "Processing..." : "Review"}
-                      </Button>
+                      {(asset.status === "PROCESSED" || asset.status === "APPROVED") && (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => {
+                                  setSelectedAssetForPost(asset);
+                                  setIsLinkedInModalOpen(true);
+                                }}
+                              >
+                                <Linkedin className="h-3.5 w-3.5" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Create LinkedIn post</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )}
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => onReview(asset)}
+                              disabled={asset.status === "PROCESSING"}
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {asset.status === "PROCESSING" ? "Processing..." : "Review asset"}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -475,7 +553,6 @@ export function AssetTable({
             </TableBody>
           </Table>
         </div>
-      </div>
 
       {selectedAssetForPost && (
         <LinkedInPostGenerator

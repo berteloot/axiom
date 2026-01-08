@@ -285,6 +285,7 @@ model Asset {
   analyzedAt          DateTime? // When AI analysis was performed
   aiConfidence        Float? // Overall confidence score (0-1)
   dominantColor       String? // Dominant color hex code (e.g., "#FF5733")
+  inUse               Boolean  @default(false) // Whether the asset is currently being used
 
   // Relations
   account            Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)

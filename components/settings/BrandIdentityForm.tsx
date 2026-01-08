@@ -154,6 +154,66 @@ export function BrandIdentityForm({
   // Watch form values for reactive badge display
   const brandVoice = form.watch("brandVoice")
   const targetIndustries = form.watch("targetIndustries")
+  
+  // Auto-save: save form data automatically after changes (debounced)
+  const autoSaveTimeoutRef = React.useRef<NodeJS.Timeout | null>(null)
+  
+  // Watch all form values to detect changes
+  const competitors = form.watch("competitors")
+  const painClusters = form.watch("painClusters")
+  const keyDifferentiators = form.watch("keyDifferentiators")
+  const useCases = form.watch("useCases")
+  const roiClaims = form.watch("roiClaims")
+  const primaryICPRoles = form.watch("primaryICPRoles")
+  const websiteUrl = form.watch("websiteUrl")
+  const valueProposition = form.watch("valueProposition")
+  
+  React.useEffect(() => {
+    // Only auto-save if we have initialData (meaning brand context already exists)
+    if (!initialData || isLoading) {
+      return
+    }
+    
+    // Clear existing timeout
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current)
+    }
+    
+    // Set new timeout to save after 2 seconds of inactivity
+    autoSaveTimeoutRef.current = setTimeout(async () => {
+      try {
+        const currentData = form.getValues()
+        await onSubmit(currentData)
+        // Mark form as clean after successful save
+        form.reset(currentData, { keepValues: true, keepDirty: false })
+      } catch (error) {
+        console.error("Auto-save failed:", error)
+        // Don't show error to user for auto-save failures
+      }
+    }, 2000)
+    
+    // Cleanup timeout on unmount
+    return () => {
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current)
+      }
+    }
+  }, [
+    competitors,
+    painClusters,
+    keyDifferentiators,
+    useCases,
+    roiClaims,
+    primaryICPRoles,
+    brandVoice,
+    targetIndustries,
+    websiteUrl,
+    valueProposition,
+    initialData,
+    isLoading,
+    onSubmit, // Now safe since it's memoized with useCallback in parent
+  ])
+  
 
   // Fetch unified ICP targets on mount
   React.useEffect(() => {
@@ -762,10 +822,10 @@ export function BrandIdentityForm({
           id="competitors"
           value={form.watch("competitors")}
           onChange={(value) => form.setValue("competitors", value)}
-          placeholder="Type competitor name and press Enter"
+          placeholder="Type competitor domain (e.g., ey.com) and press Enter"
         />
         <p className="text-xs text-muted-foreground">
-          Your main competitors
+          Enter the competitor domain
         </p>
       </div>
 

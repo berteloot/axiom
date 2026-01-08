@@ -74,10 +74,13 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  let inUseValue: boolean | undefined;
+  
   try {
     const accountId = await requireAccountId(request);
 
     const body = await request.json();
+    inUseValue = body.inUse;
 
     // Validate request body
     const validationResult = updateAssetSchema.safeParse(body);
@@ -104,6 +107,7 @@ export async function PATCH(
       customCreatedAt,
       lastReviewedAt,
       expiryDate,
+      inUse,
     } = validationResult.data;
 
     // First verify the asset belongs to the current account
@@ -149,22 +153,30 @@ export async function PATCH(
       ? standardizeICPTargets(icpTargets)
       : undefined;
 
+    // Build update data object, conditionally including inUse if provided
+    const updateData: Record<string, any> = {
+      ...(title !== undefined && { title }),
+      ...(assetType !== undefined && { assetType }),
+      ...(extractedText !== undefined && { extractedText }),
+      ...(funnelStage !== undefined && { funnelStage }),
+      ...(standardizedIcpTargets !== undefined && { icpTargets: standardizedIcpTargets }),
+      ...(painClusters !== undefined && { painClusters }),
+      ...(outreachTip !== undefined && { outreachTip }),
+      ...(status !== undefined && { status }),
+      ...(customCreatedAt !== undefined && { customCreatedAt: customCreatedAt ? new Date(customCreatedAt) : null }),
+      ...(lastReviewedAt !== undefined && { lastReviewedAt: lastReviewedAt ? new Date(lastReviewedAt) : null }),
+      ...(expiryDate !== undefined && { expiryDate: expiryDate ? new Date(expiryDate) : null }),
+    };
+
+    // Only include inUse if explicitly provided (gracefully handle if column doesn't exist yet)
+    if (inUse !== undefined) {
+      updateData.inUse = inUse;
+    }
+
     // Update asset fields
     const asset = await prisma.asset.update({
       where: { id: params.id },
-      data: {
-        ...(title !== undefined && { title }),
-        ...(assetType !== undefined && { assetType }),
-        ...(extractedText !== undefined && { extractedText }),
-        ...(funnelStage !== undefined && { funnelStage }),
-        ...(standardizedIcpTargets !== undefined && { icpTargets: standardizedIcpTargets }),
-        ...(painClusters !== undefined && { painClusters }),
-        ...(outreachTip !== undefined && { outreachTip }),
-        ...(status !== undefined && { status }),
-        ...(customCreatedAt !== undefined && { customCreatedAt: customCreatedAt ? new Date(customCreatedAt) : null }),
-        ...(lastReviewedAt !== undefined && { lastReviewedAt: lastReviewedAt ? new Date(lastReviewedAt) : null }),
-        ...(expiryDate !== undefined && { expiryDate: expiryDate ? new Date(expiryDate) : null }),
-      },
+      data: updateData,
       include: {
         productLines: {
           include: {
@@ -238,6 +250,15 @@ export async function PATCH(
   } catch (error) {
     console.error("Error updating asset:", error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    const errorCode = (error as any)?.code || "";
+    
+    // Check if it's a missing column error (common Prisma/PostgreSQL error codes)
+    const isMissingColumnError = 
+      errorMessage.includes("column") && 
+      errorMessage.includes("does not exist") ||
+      errorMessage.includes("Unknown column") ||
+      errorCode === "P2021" || // Table does not exist
+      errorCode === "P2025"; // Record not found (sometimes used for schema issues)
     
     if (errorMessage.includes("No account selected")) {
       return NextResponse.json(
@@ -246,8 +267,25 @@ export async function PATCH(
       );
     }
     
+    // If inUse was being updated and column doesn't exist, return helpful error
+    if (isMissingColumnError && inUseValue !== undefined) {
+      console.error("Database migration required: 'inUse' column missing. Run migration script.");
+      return NextResponse.json(
+        { 
+          error: "Database migration required",
+          details: "The 'inUse' column is missing. Please run the migration script: scripts/add-in-use-field.sql",
+          code: "MIGRATION_REQUIRED"
+        },
+        { status: 500 }
+      );
+    }
+    
     return NextResponse.json(
-      { error: "Failed to update asset" },
+      { 
+        error: "Failed to update asset",
+        details: errorMessage,
+        ...(isMissingColumnError && { code: "SCHEMA_ERROR" })
+      },
       { status: 500 }
     );
   }
