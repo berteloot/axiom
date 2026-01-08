@@ -51,7 +51,6 @@ import {
 import { MultiSelectCombobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { WorkflowAssistant } from "./WorkflowAssistant";
 
 const STAGE_DISPLAY: Record<FunnelStage, string> = {
   TOFU_AWARENESS: "TOFU",
@@ -295,7 +294,6 @@ export function CreateContentWorkflow({
   const [isValidating, setIsValidating] = useState(false);
   const [selectedSources, setSelectedSources] = useState<Set<string>>(new Set());
   const [previewSource, setPreviewSource] = useState<{ url: string; title: string; content: string } | null>(null);
-  const [isAssistantOpen, setIsAssistantOpen] = useState(false);
 
   // Fetch product lines on mount
   useEffect(() => {
@@ -1145,16 +1143,6 @@ ${ideasText}
                 isLoadingIcp={isLoadingIcp}
                 selectedICPTargets={selectedICPTargets}
                 onICPTargetsChange={setSelectedICPTargets}
-              />
-              <WorkflowAssistant
-                gap={{
-                  ...selectedGap,
-                  icpTargets: selectedICPTargets.length > 0 ? selectedICPTargets : [selectedGap.icp],
-                  productLineId: selectedProductLineId,
-                }}
-                productLineName={selectedProductLineId ? productLines.find(pl => pl.id === selectedProductLineId)?.name : undefined}
-                isOpen={isAssistantOpen}
-                onToggle={() => setIsAssistantOpen(!isAssistantOpen)}
               />
             </>
           ) : currentStep === "trending-discovery" ? (

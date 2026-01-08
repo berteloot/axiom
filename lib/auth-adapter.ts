@@ -166,11 +166,20 @@ export function CustomPrismaAdapter(): Adapter {
         // First, let's see what tokens exist for this identifier
         const existingTokens = await prisma.verificationToken.findMany({
           where: { identifier },
+          orderBy: { expires: 'desc' },
         });
         console.log("🔧 [Adapter] Existing tokens for this identifier:", existingTokens.length);
         
         if (existingTokens.length === 0) {
           console.error("❌ [Adapter] No tokens found for identifier:", identifier);
+          console.warn("⚠️  [Adapter] WARNING: No tokens found in database for this identifier.");
+          console.warn("⚠️  [Adapter] Possible causes:");
+          console.warn("⚠️  [Adapter]   1. Token was never created (email send failed or adapter error)");
+          console.warn("⚠️  [Adapter]   2. Token already consumed by previous click");
+          console.warn("⚠️  [Adapter]   3. Token expired and was cleaned up");
+          console.warn("⚠️  [Adapter]   4. Email case mismatch (check exact email casing)");
+          console.warn("⚠️  [Adapter]   5. Database connection issue during token creation");
+          console.warn("⚠️  [Adapter] SOLUTION: Request a NEW sign-in link from /auth/signin");
           return null;
         }
         

@@ -140,6 +140,7 @@ export const authOptions: NextAuthOptions = {
             };
             await sgMail.send(msg);
             console.log("✅ Verification email sent via SendGrid to:", email);
+            console.log("📧 Verification URL in email:", url);
           } catch (error: any) {
             console.error("❌ SendGrid error:", error.message);
             console.error("SendGrid error details:", error.response?.body || error);
@@ -171,12 +172,18 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        // Get user from database to include verification status
-        const dbUser = await prisma.user.findUnique({
-          where: { email: user.email! }
-        })
-        if (dbUser) {
-          token.emailVerified = dbUser.emailVerified
+        try {
+          // Get user from database to include verification status
+          const dbUser = await prisma.user.findUnique({
+            where: { email: user.email! }
+          })
+          if (dbUser) {
+            token.emailVerified = dbUser.emailVerified
+          }
+        } catch (error) {
+          console.error("❌ [JWT Callback] Error fetching user from database:", error);
+          // Don't fail the JWT callback if database query fails
+          // The user will still be authenticated, just without emailVerified status
         }
       }
       return token
@@ -192,7 +199,15 @@ export const authOptions: NextAuthOptions = {
       // For passwordless email auth, clicking the email link IS the verification step
       // Don't block sign-in - the email link itself proves ownership
       // We mark email as verified in the signIn event instead
-      return true
+      try {
+        console.log("✅ [SignIn Callback] User signing in:", user.email);
+        return true;
+      } catch (error) {
+        console.error("❌ [SignIn Callback] Error during sign-in:", error);
+        // Return false to block sign-in on error, or true to allow
+        // For now, we'll allow it since the token verification already happened
+        return true;
+      }
     },
   },
   events: {
@@ -269,13 +284,21 @@ export const authOptions: NextAuthOptions = {
     async signIn({ user, account, profile }) {
       // Mark email as verified when user successfully signs in
       if (account?.provider === "email" && user.email) {
-        await prisma.user.update({
-          where: { email: user.email },
-          data: {
-            emailVerified: "VERIFIED",
-            emailVerifiedAt: new Date(),
-          }
-        })
+        try {
+          console.log("✅ [SignIn Event] Marking email as verified for:", user.email);
+          await prisma.user.update({
+            where: { email: user.email },
+            data: {
+              emailVerified: "VERIFIED",
+              emailVerifiedAt: new Date(),
+            }
+          });
+          console.log("✅ [SignIn Event] Email marked as verified");
+        } catch (error) {
+          console.error("❌ [SignIn Event] Error marking email as verified:", error);
+          // Don't throw - we don't want to block authentication if this fails
+          // The user can still sign in, we'll just mark it as verified later
+        }
       }
     },
   },
