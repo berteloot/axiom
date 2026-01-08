@@ -17,16 +17,46 @@ const openai = new OpenAI({
 // Request body validation schema
 const GenerateIdeasRequestSchema = z.object({
   gap: z.object({
-    icp: z.string().min(1, "ICP is required"),
+    icp: z.string().min(1, "ICP is required"), // Keep for backward compatibility
     stage: z.enum(["TOFU_AWARENESS", "MOFU_CONSIDERATION", "BOFU_DECISION", "RETENTION"]),
     painCluster: z.string().nullable().optional(),
     productLineId: z.string().optional(),
+    icpTargets: z.array(z.string()).optional(), // Allow multiple ICP targets
   }),
   includeTrendingTopics: z.boolean().optional().default(true),
+  mode: z.enum(["trendingOnly", "ideas", "both"]).optional().default("both"),
+  selectedSourceIds: z.array(z.string()).optional(), // Selected source IDs when generating ideas
+  selectedSources: z.array(z.object({
+    id: z.string().optional(),
+    url: z.string(),
+    title: z.string(),
+    content: z.string().optional(),
+    relevance: z.string().optional(),
+    sourceType: z.string().optional(),
+    isReputable: z.boolean().optional(),
+    publisher: z.string().nullable().optional(),
+    publishedDate: z.string().nullable().optional(),
+    excerpt: z.string().nullable().optional(),
+  })).optional(), // Full selected source objects when generating ideas (preserves sources for draft generation)
+});
+
+// Source schema (matches the structure from TrendingTopicsResult)
+const SourceSchema = z.object({
+  id: z.string().describe("Stable source identifier (e.g., 'src-sap-com-maint-timeline-0')"),
+  url: z.string(),
+  title: z.string(),
+  publisher: z.string().nullable().optional(),
+  publishedDate: z.string().nullable().optional(),
+  excerpt: z.string().nullable().optional(),
+  relevance: z.enum(["high", "medium", "low"]),
+  sourceType: z.enum(["consulting", "industry_media", "research", "other"]),
+  isReputable: z.boolean(),
+  whyReputable: z.string().nullable().optional(),
+  whyRelevant: z.string().nullable().optional(),
 });
 
 // Schema for content idea (painClusterAddressed will be constrained dynamically)
-const createContentIdeaSchema = (allowedPainClusters: string[]) => {
+const createContentIdeaSchema = (allowedPainClusters: string[], availableSourceIds: string[]) => {
   // Ensure we have at least one element for z.enum()
   if (allowedPainClusters.length === 0) {
     throw new Error("At least one pain cluster must be allowed");
@@ -42,19 +72,28 @@ const createContentIdeaSchema = (allowedPainClusters: string[]) => {
       "Sales_Deck",
       "Technical_Doc",
     ]),
-    title: z.string().describe("Proposed content title/concept"),
-    strategicRationale: z.string().describe("Why this content matters for this ICP at this stage"),
+    title: z.string().describe("Proposed content title/concept - make it ICP-specific"),
+    strategicRationale: z.string().describe("Why this content matters for this gap type and ICP"),
     trendingAngle: z.string().nullable().describe("How to leverage trending topics (if available)"),
-    keyMessage: z.string().describe("Core message this content should convey"),
+    keyMessage: z.string().describe("Core message this content should convey - ICP-native language"),
     painClusterAddressed: z.enum(allowedPainClusters as [string, ...string[]])
       .describe("Which pain cluster this addresses - must be one of the allowed clusters"),
     format: z.string().describe("Content format description"),
     priority: z.enum(["high", "medium", "low"]).describe("Strategic priority"),
+    sections: z.array(z.string()).nullable().optional().describe("Specific sections this content will include (e.g., 'timeline exposure (2027/2030), program overrun reality, downtime and business continuity')"),
+    sourcesToUse: z.array(z.string())
+      .nullable()
+      .optional()
+      .describe(`Array of source IDs to cite in this content. Must only reference source IDs from the provided sources list. Available IDs: ${availableSourceIds.length > 0 ? availableSourceIds.join(", ") : "none"}`),
+    citationMap: z.array(z.object({
+      claim: z.string().describe("A specific claim or statement that needs citation"),
+      sourceIds: z.array(z.string()).min(1).describe("Source IDs that support this claim (must reference IDs from sourcesToUse)"),
+    })).nullable().optional().describe("Map of key claims to their supporting source IDs. Each idea should have 2-4 citation mappings."),
   });
 };
 
 // Response schema factory - creates schema with dynamic pain cluster constraint
-const createContentIdeasResponseSchema = (allowedPainClusters: string[]) => z.object({
+const createContentIdeasResponseSchema = (allowedPainClusters: string[], availableSourceIds: string[]) => z.object({
   gap: z.object({
     icp: z.string(),
     stage: z.string(),
@@ -64,7 +103,9 @@ const createContentIdeasResponseSchema = (allowedPainClusters: string[]) => z.ob
   priorityRationale: z.string(),
   trendingContext: z.string().nullable(),
   trendingTopics: z.array(z.string()).nullable(),
-  ideas: z.array(createContentIdeaSchema(allowedPainClusters)).min(3).max(5),
+  sources: z.array(SourceSchema).min(3).max(5).describe("List of sources with IDs that ideas can reference"),
+  ideas: z.array(createContentIdeaSchema(allowedPainClusters, availableSourceIds)).min(3).max(5),
+  selectionGuidance: z.string().nullable().optional().describe("Which idea to pick first and why (e.g., 'Pick first: Idea #1 because it's the cleanest awareness asset and naturally tees up later MOFU content')"),
 });
 
 export async function POST(request: NextRequest) {
@@ -103,7 +144,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { gap, includeTrendingTopics } = validationResult.data;
+    const { gap, includeTrendingTopics, mode = "both", selectedSourceIds, selectedSources } = validationResult.data;
 
     // Fetch brand context
     const brandContext = await prisma.brandContext.findUnique({
@@ -120,6 +161,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Determine which ICPs to use - prefer icpTargets array, fallback to gap.icp
+    const icpTargets = gap.icpTargets && gap.icpTargets.length > 0 ? gap.icpTargets : [gap.icp];
+    const primaryICP = icpTargets[0] || gap.icp;
+
     // Fetch product line if specified
     let productLine = null;
     if (gap.productLineId) {
@@ -132,16 +177,33 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Fetch existing assets for context
+    // Fetch existing assets for context - check if any ICP matches
     const existingAssets = await prisma.asset.findMany({
       where: {
         accountId,
-        icpTargets: { has: gap.icp },
+        OR: icpTargets.map(icp => ({
+          icpTargets: { has: icp },
+        })),
         funnelStage: gap.stage, // Now properly validated as FunnelStage enum
       },
       take: 5,
       orderBy: { createdAt: "desc" },
     });
+
+    // Count assets in this specific gap to determine gap type
+    const assetsInThisGap = await prisma.asset.findMany({
+      where: {
+        accountId,
+        OR: icpTargets.map(icp => ({
+          icpTargets: { has: icp },
+        })),
+        funnelStage: gap.stage,
+        ...(gap.painCluster ? {
+          painClusters: { has: gap.painCluster },
+        } : {}),
+      },
+    });
+    const gapAssetCount = assetsInThisGap.length;
 
     // Check if user is admin/owner for API warnings
     const userRole = await getCurrentUserRole(request);
@@ -153,51 +215,151 @@ export async function POST(request: NextRequest) {
     const primaryPainCluster = gap.painCluster ?? brandContext.painClusters[0] ?? null;
     const primaryIndustry = brandContext.targetIndustries[0] ?? null;
     
-    let trendingData = null;
+    let trendingData: {
+      trendingTopics: string[];
+      results: Array<any>;
+      insights: string;
+      sourcesUsed: string[];
+      _apiWarnings?: Array<{ type: string; message: string; api: string }>;
+    } | null = null;
     const apiWarnings: Array<{ type: string; message: string; api: string }> = [];
     
     if (includeTrendingTopics) {
       try {
-        // Build search query with company context - prioritize industry and product line
-        let searchQuery = "";
+        // Build search query using ALL brand identity fields for maximum specificity
+        // CRITICAL: DO NOT include company-specific terms (product names, company names, domains)
+        // Priority: Pain clusters > Use cases > Industry > Generic domain terms > ICP context
+        const queryTerms: string[] = [];
         
-        // Include product line name if available (most specific context)
-        if (productLine && productLine.name) {
-          searchQuery = `${productLine.name} ${primaryPainCluster || gap.icp}`;
-        } else {
-          // Fall back to industry + pain cluster for specificity
-          if (primaryIndustry && primaryPainCluster) {
-            searchQuery = `${primaryIndustry} ${primaryPainCluster} solutions ${gap.icp}`;
-          } else if (primaryPainCluster) {
-            searchQuery = `${primaryPainCluster} solutions ${gap.icp}`;
-          } else if (primaryIndustry) {
-            searchQuery = `${gap.icp} ${primaryIndustry} ${gap.stage}`;
-          } else {
-            searchQuery = `${gap.icp} ${gap.stage}`;
+        // Extract company-specific terms to exclude from search query
+        const companyTerms: string[] = [];
+        if (brandContext.websiteUrl) {
+          try {
+            const urlObj = new URL(brandContext.websiteUrl);
+            const domain = urlObj.hostname.replace(/^www\./, '').split('.')[0]; // e.g., "leapgreat" from "leapgreat.com"
+            companyTerms.push(domain.toLowerCase());
+          } catch (e) {
+            // If URL parsing fails, try to extract manually
+            const match = brandContext.websiteUrl.match(/https?:\/\/(?:www\.)?([^\/]+)/);
+            if (match) {
+              const domain = match[1].split('.')[0].toLowerCase();
+              companyTerms.push(domain);
+            }
           }
         }
+        if (productLine?.name) {
+          companyTerms.push(productLine.name.toLowerCase());
+          // Also extract product name variations (remove trademarks, special chars)
+          const productNameVariations = productLine.name
+            .replace(/[™®©]/g, '')
+            .split(/[\s\-]+/)
+            .map(term => term.toLowerCase())
+            .filter(term => term.length > 2);
+          companyTerms.push(...productNameVariations);
+        }
+        console.log(`[Generate Ideas] Company-specific terms to exclude from search: ${companyTerms.join(", ")}`);
         
-        // Add value proposition keywords if available to narrow search
-        if (brandContext.valueProposition) {
-          const vpKeywords = brandContext.valueProposition
-            .split(/\s+/)
-            .filter(word => word.length > 4 && !['the', 'and', 'for', 'with', 'that', 'this'].includes(word.toLowerCase()))
+        // 1. Primary pain cluster (CRITICAL - most important for finding relevant external sources)
+        // DO NOT include product line name - it's too company-specific and will bias results
+        if (primaryPainCluster) {
+          queryTerms.push(primaryPainCluster);
+        }
+        
+        // 2. Product line value prop - extract GENERIC domain terms (NOT the product name itself)
+        if (productLine && productLine.valueProposition) {
+          // Extract key technical/domain terms from value prop (exclude product name and company terms)
+          const vpTerms = productLine.valueProposition
+            .split(/[\s,\-\(\)]+/)
+            .filter(word => word.length >= 4 && word.length <= 15)
+            .filter(word => {
+              const wordLower = word.toLowerCase();
+              // Exclude common words, company terms, and product name
+              return !['with', 'that', 'this', 'from', 'your', 'their', 'which', 'these', 'those', 'about', 'for', 'and', 'the', 'solutions', 'platform', 'system'].includes(wordLower)
+                && !companyTerms.some(ct => wordLower.includes(ct) || ct.includes(wordLower));
+            })
+            .slice(0, 3); // Get more terms since we're not using product name
+          queryTerms.push(...vpTerms);
+        }
+        
+        // 3. Use cases (specific implementation contexts) - EXCLUDE company-specific terms
+        if (brandContext.useCases && brandContext.useCases.length > 0) {
+          const topUseCase = brandContext.useCases[0];
+          // Extract domain-specific terms (avoid generic words and company-specific terms)
+          const useCaseTerms = topUseCase
+            .split(/[\s,\-\(\)]+/)
+            .filter(word => word.length >= 5 && word.length <= 20)
+            .filter(word => {
+              const wordLower = word.toLowerCase();
+              return !['management', 'solutions', 'services', 'platform', 'system', 'software', 'enterprise'].includes(wordLower)
+                && !companyTerms.some(ct => wordLower.includes(ct) || ct.includes(wordLower));
+            })
             .slice(0, 2);
-          if (vpKeywords.length > 0) {
-            searchQuery = `${searchQuery} ${vpKeywords.join(' ')}`;
+          if (useCaseTerms.length > 0) {
+            queryTerms.push(...useCaseTerms);
           }
         }
+        
+        // 4. Key differentiators (unique value terms) - EXCLUDE company-specific terms
+        if (brandContext.keyDifferentiators && brandContext.keyDifferentiators.length > 0) {
+          const topDiff = brandContext.keyDifferentiators[0];
+          const diffTerms = topDiff
+            .split(/[\s,\-\(\)]+/)
+            .filter(word => word.length >= 4 && word.length <= 15)
+            .filter(word => {
+              const wordLower = word.toLowerCase();
+              return !['powered', 'grade', 'interface', 'advanced', 'modern', 'enterprise'].includes(wordLower)
+                && !companyTerms.some(ct => wordLower.includes(ct) || ct.includes(wordLower));
+            })
+            .slice(0, 1);
+          if (diffTerms.length > 0) {
+            queryTerms.push(...diffTerms);
+          }
+        }
+        
+        // 5. Value proposition (extract key domain terms) - EXCLUDE company-specific terms
+        if (brandContext.valueProposition) {
+          const vpTerms = brandContext.valueProposition
+            .split(/[\s,\-\(\)]+/)
+            .filter(word => word.length >= 5 && word.length <= 18)
+            .filter(word => {
+              const wordLower = word.toLowerCase();
+              return !['the', 'and', 'for', 'with', 'that', 'this', 'your', 'their', 'provides', 'enables', 'helps'].includes(wordLower)
+                && !companyTerms.some(ct => wordLower.includes(ct) || ct.includes(wordLower));
+            })
+            .slice(0, 2);
+          if (vpTerms.length > 0) {
+            queryTerms.push(...vpTerms);
+          }
+        }
+        
+        // 6. Industry (fallback if we need more terms)
+        if (primaryIndustry && queryTerms.length < 5) {
+          queryTerms.push(primaryIndustry);
+        }
+        
+        // 7. ICP context (for persona-specific searches)
+        if (primaryICP && queryTerms.length < 6) {
+          // Extract role acronym if available
+          const icpMatch = primaryICP.match(/\(([A-Z]+)\)/);
+          if (icpMatch) {
+            queryTerms.push(icpMatch[1]);
+          }
+        }
+        
+        // Build final query - limit to most relevant terms (max 8 terms for focused search)
+        const searchQuery = queryTerms.slice(0, 8).join(" ");
 
         console.log(`[Generate Ideas] Searching trending topics with query: "${searchQuery}"`);
         console.log(`[Generate Ideas] Primary pain cluster: ${primaryPainCluster}`);
         console.log(`[Generate Ideas] Primary industry: ${primaryIndustry}`);
         console.log(`[Generate Ideas] Product line: ${productLine?.name || 'None'}`);
+        console.log(`[Generate Ideas] ICP targets: ${icpTargets.join(", ")}`);
 
         // Only search if we have meaningful context
         if (primaryPainCluster || primaryIndustry) {
           // Pass COMPLETE brand identity for comprehensive context
           trendingData = await searchTrendingTopics(searchQuery, {
-            icp: gap.icp,
+            icp: primaryICP, // Use primary ICP for search (first ICP if multiple)
             painCluster: primaryPainCluster || undefined,
             funnelStage: gap.stage,
             industry: primaryIndustry || undefined,
@@ -211,6 +373,7 @@ export async function POST(request: NextRequest) {
             useCases: brandContext.useCases.length > 0 ? brandContext.useCases : undefined,
             painClusters: brandContext.painClusters.length > 0 ? brandContext.painClusters : undefined, // All pain clusters
             competitors: brandContext.competitors.length > 0 ? brandContext.competitors : undefined,
+            websiteUrl: brandContext.websiteUrl || undefined, // Company's own website to exclude
             // Product line context if available
             productLineName: productLine?.name || undefined,
             productLineDescription: productLine?.description || undefined,
@@ -233,10 +396,32 @@ export async function POST(request: NextRequest) {
       } catch (error) {
         console.error("[Generate Ideas] ERROR discovering trending topics:", error);
         console.error("[Generate Ideas] Error details:", error instanceof Error ? error.message : String(error));
-        // Continue without trending topics
+        // Continue without trending topics - set to empty structure
+        trendingData = {
+          trendingTopics: [],
+          results: [],
+          insights: error instanceof Error ? `Trending topics discovery failed: ${error.message}` : "Trending topics discovery unavailable.",
+          sourcesUsed: [],
+        };
       }
     } else {
       console.log(`[Generate Ideas] Trending topics discovery skipped (includeTrendingTopics: false)`);
+      trendingData = {
+        trendingTopics: [],
+        results: [],
+        insights: "Trending topics discovery was skipped.",
+        sourcesUsed: [],
+      };
+    }
+
+    // Ensure trendingData is never null - initialize with empty structure if still null
+    if (!trendingData) {
+      trendingData = {
+        trendingTopics: [],
+        results: [],
+        insights: "Trending topics discovery unavailable.",
+        sourcesUsed: [],
+      };
     }
 
     // Build brand context string
@@ -284,12 +469,12 @@ ${productLine ? `9. **Product Line**: ${productLine.name} - Use product line con
 Do NOT generate generic ideas that could apply to any company. Ideas must show deep understanding of ALL brand identity factors.
 `;
 
-    const trendingContextText = trendingData && trendingData.trendingTopics.length > 0
+    const trendingContextText = trendingData && trendingData.trendingTopics && trendingData.trendingTopics.length > 0
       ? `
 TRENDING TOPICS DISCOVERY:
 - Trending Topics: ${trendingData.trendingTopics.join(", ")}
-- Strategic Insights: ${trendingData.insights}
-- Top Articles Found: ${trendingData.results.length} relevant sources
+- Strategic Insights: ${trendingData.insights || "No insights available"}
+- Top Articles Found: ${trendingData.results?.length || 0} relevant sources
 `
       : "";
 
@@ -310,16 +495,44 @@ EXISTING CONTENT CONTEXT:
 
     const systemPrompt = `You are a Senior B2B Content Strategist analyzing content gaps with strategic context.
 
+🔴 STRATEGIC GAP ANALYSIS (CRITICAL FIRST STEP):
+Before generating ideas, you MUST analyze the gap strategically:
+
+1. **Gap Type Identification**:
+   - If this is TOFU stage with 0 assets: This is an AWARENESS gap
+     → Content should NOT be "how to execute" or technical implementation
+     → Content should help the ICP understand: "What is the financial/business exposure if we keep the status quo?"
+     → Content should answer: "What decisions do I need to force now to avoid an ugly surprise later?"
+   - If this is MOFU stage: This is a CONSIDERATION gap
+     → Content should help evaluate solutions and compare options
+   - If this is BOFU stage: This is a DECISION gap
+     → Content should help make the final decision and justify the investment
+
+2. **ICP-Specific Content Requirements**:
+   - For CFO: Focus on financial exposure, risk, cost implications, ROI, business continuity
+   - For CTO/VP Engineering: Focus on technical feasibility, architecture, implementation
+   - For other ICPs: Adjust language and focus accordingly
+   - Content must be written in the ICP's native language (CFO = finance terms, not technical jargon)
+
+3. **Content Type Selection**:
+   - TOFU gaps need awareness content (explainers, risk maps, decision frameworks)
+   - MOFU gaps need consideration content (comparisons, case studies, ROI calculators)
+   - BOFU gaps need decision content (implementation guides, vendor comparisons)
+
 Your goal is to generate 3-5 high-quality content ideas that:
 1. **PRIMARY FOCUS: Solve the specific pain cluster(s)** - Each idea MUST directly address and solve the pain cluster(s) identified
-2. **USE ALL BRAND IDENTITY FACTORS** - Every idea must show understanding of ALL brand identity information (target industries, brand voice, ICP roles, value proposition, ROI claims, differentiators, use cases)
-3. Address the specific ICP persona's needs at that funnel stage
-4. Incorporate trending topics (if available) to ensure relevance and timeliness
-5. Align with the brand voice and leverage brand differentiators
-6. Reference value proposition, use cases, and ROI claims where relevant
-7. Be relevant to the company's target industries and business context
-8. Follow B2B content best practices (specific, data-driven, problem-focused)
-9. **Ensure all content references are current** - No dates older than ${cutoffDateStr} (8 months before today: ${todayStr})
+2. **MATCH THE GAP TYPE**: If TOFU with 0 assets, generate AWARENESS content, not execution content
+3. **BE ICP-NATIVE**: Use language and framing appropriate for the target ICP (e.g., CFO = financial terms, not technical)
+4. **INCLUDE SPECIFIC SECTIONS**: Each idea should list the specific sections it will include
+5. **REFERENCE SOURCES**: Each idea should specify which sources from trending discovery to use
+6. **FILL THE GAP STRATEGICALLY**: Content should naturally tee up later-stage content (if TOFU, should lead to MOFU)
+7. **USE ALL BRAND IDENTITY FACTORS** - Every idea must show understanding of ALL brand identity information (target industries, brand voice, ICP roles, value proposition, ROI claims, differentiators, use cases)
+8. Incorporate trending topics (if available) to ensure relevance and timeliness
+9. Align with the brand voice and leverage brand differentiators
+10. Reference value proposition, use cases, and ROI claims where relevant
+11. Be relevant to the company's target industries and business context
+12. Follow B2B content best practices (specific, data-driven, problem-focused)
+13. **Ensure all content references are current** - No dates older than ${cutoffDateStr} (8 months before today: ${todayStr})
 
 🔴 CRITICAL: Every content idea MUST solve the pain cluster(s). The pain cluster is the core problem your organization solves - the content must demonstrate HOW to solve it.
 
@@ -396,6 +609,43 @@ To write like a human, you must be willing to be asymmetric, occasionally flat, 
 ✅ DO use: Clear, direct language
 ✅ DO use: Industry-specific terminology when appropriate
 
+🔴 STRICT WRITING GUIDELINES (MANDATORY):
+
+Follow these strict guidelines for all content:
+
+1. **Tone & Style:**
+   - Use concise, direct language. Favor clarity over flourish.
+   - Avoid motivational filler, metaphors, and figurative language.
+   - Prioritize action-oriented, cause-and-effect statements.
+   - Maintain a professional, practical tone throughout. Avoid marketing hype.
+
+2. **Structure:**
+   - Begin each section with an immediately relevant statement. Skip thematic or philosophical intros.
+   - Use short paragraphs (2–5 sentences).
+   - Avoid bulleted lists unless absolutely necessary. Use structured prose.
+   - Vary sentence structure to avoid repetition and maintain flow.
+
+3. **Language Constraints:**
+   - Do not use or imply metaphors, symbolism, or imagery.
+   - **Prohibited words and phrases include:**
+     * "Unlock," "empower," "transform," "journey," "navigate," "explore," "embrace"
+     * "Cutting-edge," "dynamic," "realm," "landscape," "holistic," "game-changer," "future-ready"
+     * Similar abstractions and marketing buzzwords
+   - Avoid motivational phrases like "more than ever," "step into," or "a testament to."
+   - Never use constructions like "not just X, but Y."
+   - Avoid overused setups such as "In today's world…" or "It's essential to…"
+
+4. **Content Approach:**
+   - Stick to functional, factual, objective descriptions.
+   - Focus on practical processes, decision points, risks, and outcomes.
+   - If citing benefits or statistics, be specific and quantifiable.
+   - All examples and scenarios should reflect realistic professional situations.
+
+5. **Voice:**
+   - Write as if explaining to an experienced peer—not selling to a prospect.
+   - Keep the tone grounded, confident, and informed.
+   - No fluff, no filler.
+
 ${brandContextText}
 ${trendingContextText}
 ${existingAssetsText}`;
@@ -416,41 +666,190 @@ ${existingAssetsText}`;
       ? brandContext.painClusters
       : ["General Business Challenges"]; // Fallback if no pain clusters defined
 
-    // Create dynamic schemas with constrained pain clusters
-    const ContentIdeasResponseSchema = createContentIdeasResponseSchema(allowedPainClusters);
+    // Extract source IDs from trending data (if available)
+    // CRITICAL: If selectedSources (full objects) are provided, use those directly
+    // Otherwise, filter trendingData.results based on selectedSourceIds
+    let availableSources = trendingData?.results || [];
+    if (mode === "ideas" && selectedSources && selectedSources.length > 0) {
+      // Use the full source objects provided by the client (most reliable)
+      availableSources = selectedSources;
+      console.log(`[Generate Ideas] Using ${availableSources.length} selected source objects provided by client`);
+    } else if (mode === "ideas" && selectedSourceIds && selectedSourceIds.length > 0) {
+      // Fallback: Filter sources from trendingData based on selected IDs
+      availableSources = (trendingData?.results || []).filter((s: any) => {
+        const sourceId = s.id || `src-${s.url}`;
+        return selectedSourceIds.includes(sourceId) || selectedSourceIds.includes(s.url);
+      });
+      console.log(`[Generate Ideas] Filtered to ${availableSources.length} selected sources from ${trendingData?.results?.length || 0} total`);
+    }
+    
+    const availableSourceIds = availableSources.map((s: any) => s.id || `src-${s.url}`).filter(Boolean);
+    
+    // If mode is "trendingOnly", return early with just trending topics and sources
+    if (mode === "trendingOnly") {
+      const sourcesArray = (trendingData?.results || []).map((r: any) => ({
+        id: r.id || `src-${r.url}`,
+        url: r.url,
+        title: r.title,
+        publisher: r.publisher || null,
+        publishedDate: r.publishedDate || null,
+        excerpt: r.excerpt ? (r.excerpt.length > 500 ? r.excerpt.substring(0, 500) + "..." : r.excerpt) : null,
+        relevance: r.relevance || "medium",
+        sourceType: r.sourceType || "other",
+        isReputable: r.isReputable || false,
+        whyReputable: r.whyReputable || null,
+        whyRelevant: r.whyRelevant || null,
+      }));
+      
+      return NextResponse.json({
+        gap: {
+          icp: gap.icp,
+          stage: gap.stage,
+          painCluster: gap.painCluster || null,
+        },
+        strategicPriority: "medium" as const,
+        priorityRationale: "Trending discovery mode - ideas not generated",
+        trendingContext: trendingData?.insights || null,
+        trendingTopics: trendingData?.trendingTopics || [],
+        sources: sourcesArray,
+        ideas: [], // No ideas in trendingOnly mode
+        trendingSources: (trendingData?.results || []).map((r: any) => ({
+          id: r.id || `src-${r.url}`,
+          url: r.url,
+          title: r.title,
+          content: r.content ? (r.content.length > 800 ? r.content.substring(0, 800) + "..." : r.content) : "",
+          relevance: r.relevance,
+          sourceType: r.sourceType,
+          isReputable: r.isReputable,
+        })),
+        trendingInsights: trendingData?.insights || "",
+        sourceCountWarning: (trendingData as any)?.sourceCountWarning || undefined,
+        _apiWarnings: isAdmin && apiWarnings.length > 0 ? apiWarnings : undefined,
+      });
+    }
+    
+    // Create dynamic schemas with constrained pain clusters and available source IDs
+    const ContentIdeasResponseSchema = createContentIdeasResponseSchema(allowedPainClusters, availableSourceIds);
 
     // Build user prompt with safe fallbacks
     const primaryPainClusterDisplay = gap.painCluster || primaryPainCluster || "the identified pain cluster";
 
-    const userPrompt = `Generate 3-5 content ideas for this gap:
+    // Determine which ICPs to use for the prompt
+    const icpTargetsForPrompt = gap.icpTargets && gap.icpTargets.length > 0 ? gap.icpTargets : [gap.icp];
+    const icpDisplayText = icpTargetsForPrompt.length > 1 
+      ? `${icpTargetsForPrompt.join(", ")} (${icpTargetsForPrompt.length} ICPs)`
+      : icpTargetsForPrompt[0];
 
-GAP: ${gap.icp} - ${gap.stage}
-${gap.painCluster ? `PRIMARY PAIN CLUSTER TO SOLVE: ${gap.painCluster}` : ""}
-${brandContext.painClusters.length > 0 
-  ? `ALL ORGANIZATION PAIN CLUSTERS: ${brandContext.painClusters.join(", ")}`
+    // Build gap analysis context
+    const gapType = gapAssetCount === 0 
+      ? (gap.stage === "TOFU_AWARENESS" ? "AWARENESS gap (0 assets)" : gap.stage === "MOFU_CONSIDERATION" ? "CONSIDERATION gap (0 assets)" : "DECISION gap (0 assets)")
+      : `${gapAssetCount} existing asset(s)`;
+    
+    // Determine if this is a CFO TOFU awareness gap
+    const isCFO_TOFU_Awareness = gapAssetCount === 0 && 
+                                  gap.stage === "TOFU_AWARENESS" && 
+                                  (icpDisplayText.includes("CFO") || icpDisplayText.includes("Chief Financial Officer"));
+    
+    const gapTypeGuidance = gapAssetCount === 0 && gap.stage === "TOFU_AWARENESS"
+      ? isCFO_TOFU_Awareness
+        ? "This is a pure CFO AWARENESS gap (0 assets). Content MUST be finance-native and non-technical. Focus on: risk exposure, timelines (2027/2030), budget shock, business continuity, governance and decision gates, hidden cost categories. Content should NOT be 'how to execute a conversion.' It should help the CFO understand financial/business exposure and what decisions to force now. Asset types MUST be Blog_Post, Infographic, or Whitepaper only (NO Technical_Doc)."
+        : "This is a pure AWARENESS gap. Content should NOT be 'how to execute a conversion.' It should help the ICP understand financial/business exposure and what decisions to force now."
+      : gapAssetCount === 0 && gap.stage === "MOFU_CONSIDERATION"
+      ? "This is a CONSIDERATION gap. Content should help evaluate solutions and compare options."
+      : gapAssetCount === 0 && gap.stage === "BOFU_DECISION"
+      ? "This is a DECISION gap. Content should help make the final decision and justify the investment."
+      : "Content should add unique value beyond existing assets.";
+
+    // Build ICP-specific language guidance
+    const icpLanguageGuidance = icpDisplayText.includes("CFO") || icpDisplayText.includes("Chief Financial Officer")
+      ? "Use financial terms, risk language, cost implications, ROI, business continuity. Avoid technical jargon."
+      : icpDisplayText.includes("CTO") || icpDisplayText.includes("VP Engineering") || icpDisplayText.includes("Chief Technology Officer")
+      ? "Use technical terminology, architecture language, implementation details."
+      : "Use language appropriate for this ICP role.";
+
+    // Helper to extract domain from URL
+    const extractDomainFromUrl = (url: string): string => {
+      try {
+        const urlObj = new URL(url);
+        return urlObj.hostname.replace(/^www\./, "");
+      } catch {
+        const match = url.match(/https?:\/\/(?:www\.)?([^\/]+)/);
+        return match ? match[1] : url;
+      }
+    };
+
+    // Build sources list for reference with IDs (use filtered availableSources if selectedSourceIds provided)
+    const sourcesToShow = mode === "ideas" && selectedSourceIds && selectedSourceIds.length > 0
+      ? availableSources
+      : (trendingData?.results || []);
+      
+    const sourcesList = sourcesToShow && sourcesToShow.length > 0
+      ? sourcesToShow.slice(0, 5).map((source: any, i: number) => {
+          const sourceId = source.id || `src-${source.url}`;
+          return `  ${i + 1}. [ID: ${sourceId}] ${source.title} (${source.url})
+     - Publisher: ${source.publisher || extractDomainFromUrl(source.url) || "Unknown"}
+     - Published: ${source.publishedDate || "Date not available"}
+     - Relevance: ${source.relevance}
+     - Source type: ${source.sourceType || "other"}
+     - Reputable: ${source.isReputable ? "Yes" : "No"}
+     - Why Reputable: ${source.whyReputable || "Not specified"}
+     - Why Relevant: ${source.whyRelevant || "Not specified"}
+     - Excerpt: ${source.excerpt ? source.excerpt.substring(0, 200) + "..." : "No excerpt"}`
+        }).join("\n\n")
+      : "";
+
+    const userPrompt = `Analyze this gap strategically, then generate content ideas:
+
+GAP ANALYSIS:
+- ICP: ${icpDisplayText}
+- Funnel Stage: ${gap.stage}
+- Primary Pain Cluster: ${primaryPainClusterDisplay}
+- Current Assets in This Gap: ${gapAssetCount} (${gapType})
+
+🔴 STRATEGIC INSIGHT REQUIRED:
+${gapTypeGuidance}
+
+${sourcesList
+  ? `AVAILABLE SOURCES WITH IDs (You MUST reference these by ID in your ideas):
+${sourcesList}
+
+🔴 CRITICAL: When referencing sources in your ideas:
+1. Use ONLY the source IDs provided above (e.g., "src-sap-com-maint-timeline-0", NOT "SAP maintenance timeline")
+2. In "sourcesToUse", list the source IDs as an array of strings (e.g., ["src-sap-com-maint-timeline-0", "src-kyndryl-com-overrun-1"])
+3. In "citationMap", map each claim to the source IDs that support it:
+   - claim: "SAP states mainstream maintenance runs to end of 2027"
+   - sourceIds: ["src-sap-com-maint-timeline-0"]
+4. Every trending topic and every idea claim must be traceable to at least one source ID
+5. Do NOT invent source IDs or use free-text references`
   : ""}
 
-🔴 CRITICAL REQUIREMENT: Every content idea MUST solve the pain cluster(s). The content must:
+${trendingData && trendingData.trendingTopics && trendingData.trendingTopics.length > 0
+  ? `TRENDING TOPICS TO INCORPORATE:
+${trendingData.trendingTopics.map((topic, i) => `  ${i + 1}. ${topic}`).join("\n")}
+
+Frame these topics with ICP-specific angles (e.g., for CFO: "The migration decision is no longer a tech roadmap issue. It is a predictable cost and risk exposure with a date attached.")`
+  : ""}
+
+🔴 CRITICAL REQUIREMENTS:
+1. **Match the gap type**: ${gap.stage === "TOFU_AWARENESS" ? "Generate AWARENESS-focused content" : gap.stage === "MOFU_CONSIDERATION" ? "Generate CONSIDERATION-focused content" : "Generate DECISION-focused content"}
+2. **Be ${icpDisplayText}-native**: ${icpLanguageGuidance}
+3. **Include specific sections**: List exact sections for each idea (e.g., "timeline exposure (2027/2030), program overrun reality, downtime and business continuity")
+${sourcesList ? "4. **Reference sources**: Specify which sources from above to use in each idea" : "4. **Sources**: No specific sources available - generate ideas based on strategic gap analysis and brand identity"}
+5. **Fill the gap strategically**: Content should naturally lead to next-stage content
+
+Every content idea MUST solve the pain cluster(s). The content must:
 - Clearly identify the pain cluster as a problem
 - Explain the cost/impact of not solving it
 - Demonstrate HOW to solve it${productLine ? ` (using ${productLine.name}'s value proposition: ${productLine.valueProposition})` : ` (using our value proposition: ${brandContext.valueProposition || "Not specified"})`}
 - Reference our differentiators: ${brandContext.keyDifferentiators.join(", ") || "Not specified"}
 - Show how our use cases address it: ${brandContext.useCases.join(", ") || "Not specified"}
 ${productLine ? `- **CRITICAL**: This content is specifically for the "${productLine.name}" product line. Use the product line's value proposition and target ICPs (${productLine.specificICP.join(", ")}) when generating ideas.` : ""}
+${icpTargetsForPrompt.length > 1 ? `- **ICP TARGETS**: This content should target ${icpTargetsForPrompt.length} ICP roles: ${icpTargetsForPrompt.join(", ")}. The content should resonate with all these audiences.` : ""}
 
 🔴 DATE REQUIREMENT (CRITICAL):
 - Today's date: ${todayStr}
 - NO content should reference dates older than ${cutoffDateStr} (8 months before today)
 - All statistics, studies, reports, or examples must be from ${cutoffDateStr} or later
-- If referencing historical data, frame it in terms of recent trends or current context
-- Ensure all content ideas are timely and reference current/recent information only
-
-${trendingData && trendingData.trendingTopics.length > 0
-  ? `TRENDING TOPICS TO INCORPORATE:
-${trendingData.trendingTopics.map((topic, i) => `  ${i + 1}. ${topic}`).join("\n")}
-
-Use these trending topics to enhance relevance and timeliness. Show how trending topics connect to pain clusters and demonstrate solutions.`
-  : ""}
 
 REQUIREMENTS:
 - Generate 3-5 distinct content ideas
@@ -460,34 +859,37 @@ ${painClustersToAddress.length > 0
   : "- Focus on addressing the core business challenges for this ICP"}
 - Prioritize ideas that directly address: ${primaryPainClusterDisplay}
 - Ensure ideas are appropriate for ${gap.stage} stage
-- Target the ICP: ${gap.icp}
+- Target the ICP(s): ${icpDisplayText}${icpTargetsForPrompt.length > 1 ? ` (content should resonate with all ${icpTargetsForPrompt.length} ICPs)` : ""}
 - Leverage brand differentiators: ${brandContext.keyDifferentiators.join(", ") || "Not specified"}
 - Reference use cases where relevant: ${brandContext.useCases.join(", ") || "Not specified"}
-${trendingData && trendingData.trendingTopics.length > 0
-  ? "- Reference specific trending topics in at least 2-3 ideas, showing how they relate to solving pain clusters"
-  : ""}
 
 OUTPUT FORMAT:
 For each idea, provide:
-- Asset Type: [Type from enum]
-- Title: [Proposed title/concept]
-- Strategic Rationale: [Why this matters]
-${trendingData && trendingData.trendingTopics.length > 0
-  ? "- Trending Angle: [How to leverage trending topics]"
+- Asset Type: [Type from enum${isCFO_TOFU_Awareness ? " - MUST be Blog_Post, Infographic, or Whitepaper only (NO Technical_Doc)" : ""}]
+- Title: [Proposed title/concept - make it ${icpDisplayText}-specific]
+- Strategic Rationale: [Why this matters for this gap type and ICP]
+${trendingData && trendingData.trendingTopics && trendingData.trendingTopics.length > 0
+  ? "- Trending Angle: [How to leverage trending topics with ICP-specific framing]"
   : ""}
-- Key Message: [Core message]
+- Sections: [List specific sections${isCFO_TOFU_Awareness ? " - MUST include at least one of: timeline exposure, cost overrun risk, business continuity, governance and decision gates, hidden cost categories" : ""}. E.g., "timeline exposure (2027/2030), program overrun reality, downtime and business continuity"]
+${sourcesList ? "- Sources to Use: [Array of source IDs from above, e.g., ['src-sap-com-maint-timeline-0', 'src-kyndryl-com-overrun-1'] - MUST reference IDs, NOT free text]" : ""}
+${sourcesList ? "- Citation Map: [Array of {claim: string, sourceIds: string[]} objects. Each idea should have 2-4 citation mappings. Example: [{claim: 'SAP states mainstream maintenance runs to end of 2027', sourceIds: ['src-sap-com-maint-timeline-0']}]" : ""}
+- Key Message: [Core message - ${icpDisplayText}-native]
 - Pain Cluster Addressed: [Must be one of: ${allowedPainClusters.join(", ")}]
 - Format: [Content format description]
 - Priority: [high/medium/low based on strategic importance]
 
 Also provide:
 - Strategic Priority: Overall priority for this gap (high/medium/low)
-- Priority Rationale: Why this gap matters
-${trendingData && trendingData.trendingTopics.length > 0
+- Priority Rationale: Why this gap matters and what type of content is needed
+${trendingData && trendingData.trendingTopics && trendingData.trendingTopics.length > 0
   ? "- Trending Context: How trending topics relate to this gap"
-  : ""}`;
+  : ""}
+- Selection Guidance: Which idea to pick first and why (e.g., "Pick first: Idea #1 because it's the cleanest awareness asset and naturally tees up later MOFU content")`;
 
-    const completion = await openai.chat.completions.parse({
+    let completion;
+    try {
+      completion = await openai.chat.completions.parse({
       model: "gpt-4o-2024-08-06",
       messages: [
         { role: "system", content: systemPrompt },
@@ -496,29 +898,123 @@ ${trendingData && trendingData.trendingTopics.length > 0
       response_format: zodResponseFormat(ContentIdeasResponseSchema, "content_ideas"),
       temperature: 0.7,
     });
+    } catch (openaiError: any) {
+      console.error("[Generate Ideas] OpenAI API error:", openaiError);
+      console.error("[Generate Ideas] Error details:", openaiError?.message || String(openaiError));
+      throw new Error(`Failed to call OpenAI API: ${openaiError?.message || "Unknown error"}`);
+    }
+
+    if (!completion.choices || completion.choices.length === 0) {
+      console.error("[Generate Ideas] No choices returned from OpenAI");
+      throw new Error("AI did not return any choices");
+    }
 
     const result = completion.choices[0].message.parsed;
 
     if (!result) {
-      throw new Error("AI failed to generate content ideas");
+      // Log the raw response to debug
+      console.error("[Generate Ideas] AI failed to parse response");
+      console.error("[Generate Ideas] Raw message:", completion.choices[0].message);
+      console.error("[Generate Ideas] Refusal reason:", completion.choices[0].message.refusal);
+      if (completion.choices[0].message.content) {
+        console.error("[Generate Ideas] Unparsed content:", completion.choices[0].message.content);
+      }
+      throw new Error("AI failed to generate content ideas - response could not be parsed");
     }
+
+    // Validate that all source IDs referenced in ideas actually exist
+    const availableSourceIdsSet = new Set(availableSourceIds);
+    
+    // Ensure sections, sourcesToUse, and citationMap are properly handled (nullable optional fields)
+    // OpenAI may return undefined for optional fields, so we need to convert to null
+    const ideasWithDefaults = result.ideas.map((idea: any) => {
+      // Validate sourcesToUse IDs
+      if (idea.sourcesToUse && Array.isArray(idea.sourcesToUse)) {
+        const invalidIds = idea.sourcesToUse.filter((id: string) => !availableSourceIdsSet.has(id));
+        if (invalidIds.length > 0) {
+          console.warn(`[Generate Ideas] Invalid source IDs in idea "${idea.title}": ${invalidIds.join(", ")}`);
+          // Filter out invalid IDs
+          idea.sourcesToUse = idea.sourcesToUse.filter((id: string) => availableSourceIdsSet.has(id));
+        }
+      }
+      
+      // Validate citationMap source IDs
+      if (idea.citationMap && Array.isArray(idea.citationMap)) {
+        idea.citationMap = idea.citationMap.map((citation: any) => {
+          if (citation.sourceIds && Array.isArray(citation.sourceIds)) {
+            const invalidIds = citation.sourceIds.filter((id: string) => !availableSourceIdsSet.has(id));
+            if (invalidIds.length > 0) {
+              console.warn(`[Generate Ideas] Invalid source IDs in citation for idea "${idea.title}": ${invalidIds.join(", ")}`);
+              // Filter out invalid IDs
+              citation.sourceIds = citation.sourceIds.filter((id: string) => availableSourceIdsSet.has(id));
+            }
+          }
+          return citation;
+        }).filter((citation: any) => citation.sourceIds && citation.sourceIds.length > 0);
+      }
+      
+      const processed = {
+        ...idea,
+        sections: idea.sections !== undefined 
+          ? (Array.isArray(idea.sections) && idea.sections.length > 0 ? idea.sections : null)
+          : null,
+        sourcesToUse: idea.sourcesToUse !== undefined
+          ? (Array.isArray(idea.sourcesToUse) && idea.sourcesToUse.length > 0 ? idea.sourcesToUse : null)
+          : null,
+        citationMap: idea.citationMap !== undefined
+          ? (Array.isArray(idea.citationMap) && idea.citationMap.length > 0 ? idea.citationMap : null)
+          : null,
+      };
+      return processed;
+    });
+
+    // CRITICAL: Build sources array using availableSources (filtered selected sources) when mode is "ideas"
+    // This ensures only selected sources are returned and available for draft generation
+    const sourcesToReturn = mode === "ideas" && availableSources.length > 0
+      ? availableSources  // Use filtered selected sources
+      : (trendingData?.results || result.sources || []);  // Fallback to all sources
+    
+    const sourcesArray = sourcesToReturn.map((r: any) => ({
+      id: r.id || `src-${r.url}`,
+      url: r.url,
+      title: r.title,
+      publisher: r.publisher || null,
+      publishedDate: r.publishedDate || null,
+      excerpt: r.excerpt ? (r.excerpt.length > 500 ? r.excerpt.substring(0, 500) + "..." : r.excerpt) : null,
+      relevance: r.relevance || "medium",
+      sourceType: r.sourceType || "other",
+      isReputable: r.isReputable || false,
+      whyReputable: r.whyReputable || null,
+      whyRelevant: r.whyRelevant || null,
+    }));
 
     // Add trending topics data to response
     // Return excerpt only (capped at 800 chars) to avoid sending full content to client
+    // CRITICAL: trendingSources must include full content for draft generation
     const response = {
       ...result,
-      trendingTopics: trendingData?.trendingTopics || [],
-      trendingInsights: trendingData?.insights,
-      trendingSources: trendingData?.results?.map((r: any) => ({
+      ideas: ideasWithDefaults,
+      sources: sourcesArray,
+      trendingTopics: trendingData?.trendingTopics || result.trendingTopics || [],
+      trendingInsights: trendingData?.insights || "",
+      trendingSources: sourcesToReturn.map((r: any) => ({
+        id: r.id || `src-${r.url}`,
         url: r.url,
         title: r.title,
-        content: r.content ? (r.content.length > 800 ? r.content.substring(0, 800) + "..." : r.content) : "",
-        relevance: r.relevance,
-        sourceType: r.sourceType,
-        isReputable: r.isReputable,
-      })) || [],
+        content: r.content ? (r.content.length > 2000 ? r.content.substring(0, 2000) + "..." : r.content) : (r.excerpt || ""), // Include full content for draft generation (up to 2000 chars)
+        relevance: r.relevance || "medium",
+        sourceType: r.sourceType || "other",
+        isReputable: r.isReputable || false,
+        publisher: r.publisher || null,
+        publishedDate: r.publishedDate || null,
+        excerpt: r.excerpt ? (r.excerpt.length > 500 ? r.excerpt.substring(0, 500) + "..." : r.excerpt) : null,
+      })),
+      selectionGuidance: result.selectionGuidance || null,
+      sourceCountWarning: (trendingData as any)?.sourceCountWarning || undefined,
       _apiWarnings: isAdmin && apiWarnings.length > 0 ? apiWarnings : undefined, // Only include if admin and warnings exist
     };
+    
+    console.log(`[Generate Ideas] Returning response with ${response.trendingSources.length} sources for draft generation`);
 
     return NextResponse.json(response);
   } catch (error) {

@@ -79,6 +79,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Determine which ICPs to use - prefer icpTargets array, fallback to gap.icp
+    const icpTargets = gap.icpTargets && gap.icpTargets.length > 0 ? gap.icpTargets : [gap.icp];
+    const primaryICP = icpTargets[0] || gap.icp;
+    const icpDisplayText = icpTargets.length > 1 
+      ? `${icpTargets.join(", ")} (${icpTargets.length} ICPs)`
+      : icpTargets[0];
+
     // Fetch product line if specified
     let productLine = null;
     if (gap.productLineId) {
@@ -246,6 +253,43 @@ Because AI cannot experience the world, it attaches sensory words to abstract co
 SUMMARY:
 To write like a human, you must be willing to be asymmetric, occasionally flat, and grounded in physical reality. You must reject the algorithm's urge to "weave tapestries," "delve into topics," or create "quiet echoes." Write with the specific, messy reality of a being that has physically stood in a room, not a code that has statistically analyzed the concept of a room.
 
+🔴 STRICT WRITING GUIDELINES (MANDATORY):
+
+Follow these strict guidelines for all content:
+
+1. **Tone & Style:**
+   - Use concise, direct language. Favor clarity over flourish.
+   - Avoid motivational filler, metaphors, and figurative language.
+   - Prioritize action-oriented, cause-and-effect statements.
+   - Maintain a professional, practical tone throughout. Avoid marketing hype.
+
+2. **Structure:**
+   - Begin each section with an immediately relevant statement. Skip thematic or philosophical intros.
+   - Use short paragraphs (2–5 sentences).
+   - Avoid bulleted lists unless absolutely necessary. Use structured prose.
+   - Vary sentence structure to avoid repetition and maintain flow.
+
+3. **Language Constraints:**
+   - Do not use or imply metaphors, symbolism, or imagery.
+   - **Prohibited words and phrases include:**
+     * "Unlock," "empower," "transform," "journey," "navigate," "explore," "embrace"
+     * "Cutting-edge," "dynamic," "realm," "landscape," "holistic," "game-changer," "future-ready"
+     * Similar abstractions and marketing buzzwords
+   - Avoid motivational phrases like "more than ever," "step into," or "a testament to."
+   - Never use constructions like "not just X, but Y."
+   - Avoid overused setups such as "In today's world…" or "It's essential to…"
+
+4. **Content Approach:**
+   - Stick to functional, factual, objective descriptions.
+   - Focus on practical processes, decision points, risks, and outcomes.
+   - If citing benefits or statistics, be specific and quantifiable.
+   - All examples and scenarios should reflect realistic professional situations.
+
+5. **Voice:**
+   - Write as if explaining to an experienced peer—not selling to a prospect.
+   - Keep the tone grounded, confident, and informed.
+   - No fluff, no filler.
+
 ${brandContextText}
 
 ${seoDataText}`;
@@ -255,7 +299,7 @@ ${seoDataText}`;
 SELECTED IDEA:
 - Title/Concept: ${selectedIdea.title}
 - Asset Type: ${selectedIdea.assetType}
-- ICP: ${gap.icp}
+- ICP: ${icpDisplayText}${icpTargets.length > 1 ? ` (targeting ${icpTargets.length} ICP roles)` : ""}
 - Funnel Stage: ${gap.stage}
 - Pain Cluster: ${gap.painCluster || "General business challenges"}
 - Key Message: ${selectedIdea.keyMessage}
@@ -274,7 +318,7 @@ REQUIREMENTS:
 - Ensure all content is timely and references current/recent information only
 
 1. **Strategic Positioning**
-   - Explain why this content matters for ${gap.icp} at ${gap.stage} stage
+   - Explain why this content matters for ${icpDisplayText} at ${gap.stage} stage${icpTargets.length > 1 ? ` (the content should resonate with all ${icpTargets.length} ICP roles)` : ""}
    - **Detail EXACTLY how it solves the pain cluster**: ${gap.painCluster || brandContext.painClusters[0] || "General business challenges"}
    - Show how the value proposition addresses this pain: ${productLine ? `${productLine.name}'s value proposition: ${productLine.valueProposition}` : brandContext.valueProposition || "Not specified"}
    - Explain how differentiators solve it: ${brandContext.keyDifferentiators.join(", ") || "Not specified"}
@@ -319,7 +363,7 @@ REQUIREMENTS:
 
 3. **Tone & Style Guidelines**
    - Brand voice: ${brandVoiceText}
-   - Specific tone requirements for ${gap.icp}
+   - Specific tone requirements for ${icpDisplayText}${icpTargets.length > 1 ? ` (consider tone that appeals to all ${icpTargets.length} ICP roles)` : ""}
    - What to avoid (AI writing traps and generic marketing speak)
 
 4. **Success Metrics**

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Dialog,
@@ -48,6 +48,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { MultiSelectCombobox } from "@/components/ui/combobox";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { WorkflowAssistant } from "./WorkflowAssistant";
 
 const STAGE_DISPLAY: Record<FunnelStage, string> = {
   TOFU_AWARENESS: "TOFU",
@@ -61,6 +65,7 @@ interface Gap {
   stage: FunnelStage;
   painCluster?: string;
   productLineId?: string;
+  icpTargets?: string[]; // Allow multiple ICP targets (new feature)
 }
 
 interface ContentIdea {
@@ -72,6 +77,8 @@ interface ContentIdea {
   painClusterAddressed: string;
   format: string;
   priority: "high" | "medium" | "low";
+  sections?: string[];
+  sourcesToUse?: string[];
 }
 
 interface ContentIdeasResponse {
@@ -82,6 +89,7 @@ interface ContentIdeasResponse {
   trendingTopics?: string[];
   trendingInsights?: string;
   trendingSources?: Array<{ 
+    id?: string; // Source ID (new format)
     url: string; 
     title: string; 
     content: string; // Actual source content for draft generation
@@ -89,7 +97,22 @@ interface ContentIdeasResponse {
     sourceType?: string;
     isReputable?: boolean;
   }>;
+  sources?: Array<{ // Alternative sources array (from trendingOnly mode)
+    id: string;
+    url: string;
+    title: string;
+    publisher?: string | null;
+    publishedDate?: string | null;
+    excerpt?: string | null;
+    relevance: string;
+    sourceType: string;
+    isReputable: boolean;
+    whyReputable?: string | null;
+    whyRelevant?: string | null;
+    content?: string; // Optional content for preview
+  }>;
   ideas: ContentIdea[];
+  selectionGuidance?: string;
   _apiWarnings?: Array<{ type: string; message: string; api: string }>; // Admin-only
 }
 
@@ -148,7 +171,7 @@ interface ContentDraft {
   message?: string;
 }
 
-type WorkflowStep = "gap-selection" | "trending-discovery" | "idea-generation" | "idea-selection" | "brief-review" | "draft-generation" | "draft-review" | "complete";
+type WorkflowStep = "gap-selection" | "input-validation" | "trending-discovery" | "source-selection" | "idea-generation" | "idea-selection" | "brief-review" | "draft-generation" | "draft-review" | "complete";
 
 interface CreateContentWorkflowProps {
   open: boolean;
@@ -163,16 +186,35 @@ export function CreateContentWorkflow({
 }: CreateContentWorkflowProps) {
   // Reset state when dialog opens with a new gap
   const [currentStep, setCurrentStep] = useState<WorkflowStep>(
-    initialGap ? "trending-discovery" : "gap-selection"
+    initialGap ? "input-validation" : "gap-selection"
   );
   const [selectedGap, setSelectedGap] = useState<Gap | null>(initialGap || null);
 
-  // Reset workflow when initialGap changes or dialog opens
+  // Track previous values to detect actual changes and prevent infinite loops
+  const prevOpenRef = useRef(open);
+  const prevGapKeyRef = useRef<string | null>(null);
+  
+  // Create a stable key from gap to detect actual changes (not just reference changes)
+  const getGapKey = (gap: Gap | undefined): string | null => {
+    if (!gap) return null;
+    return `${gap.icp}|${gap.stage}|${gap.painCluster || ""}|${gap.productLineId || ""}`;
+  };
+  
+  // Reset workflow when dialog opens or when initialGap actually changes
   useEffect(() => {
-    if (open) {
+    const currentGapKey = getGapKey(initialGap);
+    const gapChanged = currentGapKey !== prevGapKeyRef.current;
+    const dialogJustOpened = open && !prevOpenRef.current;
+    
+    // Only reset when:
+    // 1. Dialog just opened, OR
+    // 2. Dialog is open AND the gap actually changed (not just object reference)
+    if (open && (dialogJustOpened || gapChanged)) {
+      prevGapKeyRef.current = currentGapKey;
+      
       if (initialGap) {
         setSelectedGap(initialGap);
-        setCurrentStep("trending-discovery");
+        setCurrentStep("input-validation");
       } else {
         setSelectedGap(null);
         setCurrentStep("gap-selection");
@@ -184,18 +226,41 @@ export function CreateContentWorkflow({
       setContentBrief(null);
       setContentDraft(null);
       setError(null);
-      setApiWarnings([]); // Reset API warnings
+      setApiWarnings([]);
       setIsDiscoveringTrends(false);
       setIsGeneratingIdeas(false);
       setIsGeneratingBrief(false);
       setIsGeneratingDraft(false);
+      setIsValidating(false);
+      setValidationResult(null);
+      setSelectedSources(new Set<string>());
+      setPreviewSource(null);
     }
-  }, [open, initialGap]);
+    
+    // Track previous open state
+    prevOpenRef.current = open;
+    
+    // If dialog closes, reset the gap key so it will detect changes on next open
+    if (!open) {
+      prevGapKeyRef.current = null;
+    }
+  }, [open, initialGap?.icp, initialGap?.stage, initialGap?.painCluster, initialGap?.productLineId]); // Only depend on primitive values
   const [isDiscoveringTrends, setIsDiscoveringTrends] = useState(false);
   const [trendingData, setTrendingData] = useState<{
     topics: string[];
     insights: string;
-    sources: Array<{ url: string; title: string; relevance: string }>;
+    sources: Array<{ 
+      id?: string;
+      url: string; 
+      title: string; 
+      relevance: string;
+      content?: string | null;
+      excerpt?: string | null;
+      sourceType?: string;
+      isReputable?: boolean;
+      publisher?: string | null;
+      publishedDate?: string | null;
+    }>;
   } | null>(null);
   const [isGeneratingIdeas, setIsGeneratingIdeas] = useState(false);
   const [contentIdeas, setContentIdeas] = useState<ContentIdeasResponse | null>(null);
@@ -214,6 +279,23 @@ export function CreateContentWorkflow({
   const [selectedProductLineId, setSelectedProductLineId] = useState<string | undefined>(
     initialGap?.productLineId
   );
+  const [icpOptions, setIcpOptions] = useState<string[]>([]);
+  const [isLoadingIcp, setIsLoadingIcp] = useState(true);
+  const [selectedICPTargets, setSelectedICPTargets] = useState<string[]>(
+    initialGap?.icpTargets || (initialGap?.icp ? [initialGap.icp] : [])
+  );
+  const [validationResult, setValidationResult] = useState<{
+    isValid: boolean;
+    missingCriticalFields: string[];
+    missingOptionalFields: string[];
+    suggestions: Array<{ field: string; message: string; required: boolean }>;
+    canProceed: boolean;
+    currentContext: any;
+  } | null>(null);
+  const [isValidating, setIsValidating] = useState(false);
+  const [selectedSources, setSelectedSources] = useState<Set<string>>(new Set());
+  const [previewSource, setPreviewSource] = useState<{ url: string; title: string; content: string } | null>(null);
+  const [isAssistantOpen, setIsAssistantOpen] = useState(false);
 
   // Fetch product lines on mount
   useEffect(() => {
@@ -231,17 +313,104 @@ export function CreateContentWorkflow({
     fetchProductLines();
   }, []);
 
-  // Update selected product line when initialGap changes
+  // Fetch ICP targets on mount
+  useEffect(() => {
+    const fetchIcpTargets = async () => {
+      setIsLoadingIcp(true);
+      try {
+        const response = await fetch("/api/icp-targets");
+        if (response.ok) {
+          const data = await response.json();
+          setIcpOptions(data.icpTargets || []);
+        }
+      } catch (error) {
+        console.error("Error fetching ICP targets:", error);
+      } finally {
+        setIsLoadingIcp(false);
+      }
+    };
+    fetchIcpTargets();
+  }, []);
+
+  // Update selected product line and ICP targets when initialGap changes
   useEffect(() => {
     if (initialGap?.productLineId) {
       setSelectedProductLineId(initialGap.productLineId);
+    }
+    if (initialGap?.icpTargets) {
+      setSelectedICPTargets(initialGap.icpTargets);
+    } else if (initialGap?.icp) {
+      setSelectedICPTargets([initialGap.icp]);
     }
   }, [initialGap]);
 
   const handleGapSelect = (gap: Gap) => {
     setSelectedGap(gap);
     setError(null);
-    setCurrentStep("trending-discovery");
+    setCurrentStep("input-validation");
+  };
+
+  // Validate context before searching
+  const handleValidateContext = async () => {
+    if (!selectedGap) return;
+
+    setIsValidating(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/content/validate-context", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ gap: selectedGap }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to validate context");
+      }
+
+      const result = await response.json();
+      setValidationResult(result);
+
+      if (result.canProceed) {
+        // Auto-proceed to trending discovery if validation passes
+        setCurrentStep("trending-discovery");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to validate context");
+    } finally {
+      setIsValidating(false);
+    }
+  };
+
+  // Handle source selection toggle (supports both URL and ID)
+  const handleSourceToggle = (identifier: string) => {
+    setSelectedSources((prev) => {
+      const next = new Set(prev);
+      // Support both URL-based (legacy) and ID-based (new) selection
+      // Check if identifier exists in the set (could be URL or ID)
+      const exists = Array.from(next).some(id => id === identifier || id.includes(identifier) || identifier.includes(id));
+      if (exists) {
+        // Remove all matching identifiers
+        Array.from(next).forEach(id => {
+          if (id === identifier || id.includes(identifier) || identifier.includes(id)) {
+            next.delete(id);
+          }
+        });
+      } else {
+        next.add(identifier);
+      }
+      return next;
+    });
+  };
+
+  // Handle proceeding from source selection
+  const handleProceedFromSourceSelection = () => {
+    if (selectedSources.size === 0) {
+      setError("Please select at least one source to proceed");
+      return;
+    }
+    setCurrentStep("idea-generation");
   };
 
   const handleDiscoverTrendingTopics = async () => {
@@ -254,13 +423,16 @@ export function CreateContentWorkflow({
       const gapWithProductLine = {
         ...selectedGap,
         productLineId: selectedProductLineId,
+        icpTargets: selectedICPTargets.length > 0 ? selectedICPTargets : [selectedGap.icp],
       };
+      // Use "trendingOnly" mode to get only trending topics and sources, not ideas
       const response = await fetch("/api/content/generate-ideas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           gap: gapWithProductLine,
           includeTrendingTopics: true,
+          mode: "trendingOnly", // Only return trending topics and sources
         }),
       });
 
@@ -270,20 +442,53 @@ export function CreateContentWorkflow({
       }
 
       const data: ContentIdeasResponse = await response.json();
+      
+      // Ensure we have the required data structure
+      if (!data) {
+        throw new Error("No data returned from trending topics discovery");
+      }
+      
       setTrendingData({
         topics: data.trendingTopics || [],
-        insights: data.trendingInsights || "",
-        sources: data.trendingSources || [],
+        insights: data.trendingInsights || data.trendingContext || "",
+        sources: (data.trendingSources || data.sources || []).map((s: any) => ({
+          id: s.id,
+          url: s.url || "",
+          title: (s.title && typeof s.title === 'string' && s.title.trim()) ? s.title.trim() : "Untitled Source",
+          content: s.content || s.excerpt || "",
+          relevance: s.relevance || "medium",
+          sourceType: s.sourceType || "other",
+          isReputable: s.isReputable || false,
+          excerpt: s.excerpt || undefined,
+          publisher: s.publisher || undefined,
+          publishedDate: s.publishedDate || undefined,
+        })).filter((s: any) => s.url), // Filter out sources without URLs
       });
-      setContentIdeas(data);
       
       // Collect API warnings for admin display
       if (isAdmin && (data as any)._apiWarnings) {
         setApiWarnings((data as any)._apiWarnings);
       }
       
-      setCurrentStep("idea-generation");
+      // Auto-select all reputable sources by default
+      const sourcesToSelect = data.trendingSources || data.sources || [];
+      const defaultSelected = new Set<string>(
+        sourcesToSelect
+          .filter((s: any) => s.isReputable)
+          .map((s: any) => (s.id || s.url) as string) // Use source ID if available, fallback to URL
+      );
+      setSelectedSources(defaultSelected);
+      
+      // Only move to source selection if we have sources
+      if (sourcesToSelect.length > 0) {
+        setCurrentStep("source-selection");
+      } else {
+        // If no sources found, show error but allow skip
+        setError("No sources found. You can skip trending discovery and generate ideas directly.");
+        setCurrentStep("idea-generation");
+      }
     } catch (err) {
+      console.error("Error in handleDiscoverTrendingTopics:", err);
       setError(err instanceof Error ? err.message : "Failed to discover trending topics");
       // Continue to idea generation even if trending topics fail
       setCurrentStep("idea-generation");
@@ -302,13 +507,31 @@ export function CreateContentWorkflow({
       const gapWithProductLine = {
         ...selectedGap,
         productLineId: selectedProductLineId,
+        icpTargets: selectedICPTargets.length > 0 ? selectedICPTargets : [selectedGap.icp],
       };
+      
+      // Get selected source IDs (prefer IDs over URLs for new format)
+      const selectedSourceIds = Array.from(selectedSources);
+      
+      // CRITICAL: Also pass the full selected source objects to ensure they're available for draft generation
+      // This ensures sources are preserved through the workflow
+      const selectedSourceObjects = trendingData?.sources?.filter((s: any) => {
+        const sourceId = s.id || `src-${s.url}`;
+        return selectedSources.has(sourceId) || selectedSources.has(s.url);
+      }) || [];
+      
+      console.log(`[Content Workflow] Generating ideas with ${selectedSourceIds.length} selected source IDs`);
+      console.log(`[Content Workflow] - Selected source objects: ${selectedSourceObjects.length}`);
+      
       const response = await fetch("/api/content/generate-ideas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           gap: gapWithProductLine,
           includeTrendingTopics: !!trendingData,
+          mode: "ideas", // Generate ideas only, using selected sources if available
+          selectedSourceIds: selectedSourceIds.length > 0 ? selectedSourceIds : undefined, // Pass selected source IDs
+          selectedSources: selectedSourceObjects.length > 0 ? selectedSourceObjects : undefined, // Pass full source objects for preservation
         }),
       });
 
@@ -318,6 +541,36 @@ export function CreateContentWorkflow({
       }
 
       const data: ContentIdeasResponse = await response.json();
+      
+      // CRITICAL: Preserve sources from trending discovery if API didn't return them
+      // This ensures sources are available for draft generation
+      if (!data.trendingSources || data.trendingSources.length === 0) {
+        // Use sources from trendingData if available (from initial discovery)
+        if (trendingData?.sources && trendingData.sources.length > 0) {
+          data.trendingSources = trendingData.sources.map((s: any) => ({
+            id: s.id,
+            url: s.url,
+            title: s.title || "Untitled Source",
+            content: s.content || s.excerpt || "",
+            relevance: s.relevance || "medium",
+            sourceType: s.sourceType || "other",
+            isReputable: s.isReputable || false,
+            publisher: s.publisher || null,
+            publishedDate: s.publishedDate || null,
+            excerpt: s.excerpt || null,
+          }));
+          console.log(`[Content Workflow] Preserved ${data.trendingSources.length} sources from trending discovery into contentIdeas`);
+        }
+      } else {
+        // Ensure trendingSources has all necessary fields for draft generation
+        data.trendingSources = data.trendingSources.map((s: any) => ({
+          ...s,
+          content: s.content || s.excerpt || "",
+          title: s.title || "Untitled Source",
+        }));
+        console.log(`[Content Workflow] Received ${data.trendingSources.length} sources from API in contentIdeas response`);
+      }
+      
       setContentIdeas(data);
       setCurrentStep("idea-selection");
     } catch (err) {
@@ -330,6 +583,7 @@ export function CreateContentWorkflow({
   const handleSelectIdea = async (idea: ContentIdea) => {
     // Don't allow selection if already generating
     if (isGeneratingBrief) return;
+    if (!selectedGap) return;
     
     // Set selected idea immediately for visual feedback
     setSelectedIdea(idea);
@@ -340,6 +594,7 @@ export function CreateContentWorkflow({
       const gapWithProductLine = {
         ...selectedGap,
         productLineId: selectedProductLineId,
+        icpTargets: selectedICPTargets.length > 0 ? selectedICPTargets : [selectedGap.icp],
       };
       const response = await fetch("/api/content/generate-brief", {
         method: "POST",
@@ -379,17 +634,54 @@ export function CreateContentWorkflow({
     setIsGeneratingDraft(true);
     setError(null);
 
-    // Log sources being sent to draft generation
-    const sourcesToSend = contentIdeas?.trendingSources?.filter((s: any) => s.isReputable) || [];
-    console.log(`[Content Workflow] Generating draft with ${sourcesToSend.length} reputable sources`);
+    // CRITICAL: Get sources from multiple possible locations
+    // 1. Try contentIdeas.trendingSources (from idea generation - should have selected sources)
+    // 2. Fallback to trendingData.sources (from initial discovery)
+    // 3. Use selected sources that match either location
+    const allAvailableSources = (contentIdeas?.trendingSources || trendingData?.sources || []) as Array<{
+      id?: string;
+      url: string;
+      title: string;
+      content?: string;
+      relevance?: string;
+      sourceType?: string;
+      isReputable?: boolean;
+      publisher?: string | null;
+      publishedDate?: string | null;
+      excerpt?: string | null;
+    }>;
+    
+    console.log(`[Content Workflow] All available sources count: ${allAvailableSources.length}`);
+    console.log(`[Content Workflow] - From contentIdeas.trendingSources: ${contentIdeas?.trendingSources?.length || 0}`);
+    console.log(`[Content Workflow] - From trendingData.sources: ${trendingData?.sources?.length || 0}`);
+    console.log(`[Content Workflow] - Selected source identifiers: ${Array.from(selectedSources).join(", ")}`);
+    
+    // Only use SELECTED sources (user's choice)
+    // Support both URL-based (legacy) and ID-based (new) selection
+    const sourcesToSend = allAvailableSources.filter((s: any) => {
+      const sourceId = s.id || `src-${s.url}`;
+      const matchesId = selectedSources.has(sourceId);
+      const matchesUrl = selectedSources.has(s.url);
+      return matchesId || matchesUrl;
+    });
+    
+    console.log(`[Content Workflow] Generating draft with ${sourcesToSend.length} selected sources (from ${allAvailableSources.length} total available sources)`);
+    console.log(`[Content Workflow] - Selected sources: ${sourcesToSend.map(s => s.id || s.url).join(", ")}`);
+    
+    // If no sources selected, allow draft generation to proceed with server-side sourcing
+    // This prevents the skip path from dead-ending
     if (sourcesToSend.length === 0) {
-      console.warn(`[Content Workflow] WARNING: No sources found! Available sources:`, contentIdeas?.trendingSources?.length || 0);
+      console.warn(`[Content Workflow] WARNING: No sources selected - proceeding with server-side sourcing`);
+      console.warn(`[Content Workflow] - Available source IDs: ${allAvailableSources.map(s => s.id || s.url).join(", ")}`);
+      console.warn(`[Content Workflow] - Selected identifiers: ${Array.from(selectedSources).join(", ")}`);
+      // Don't return error, let the server handle sourcing
     }
 
     try {
       const gapWithProductLine = {
         ...selectedGap,
         productLineId: selectedProductLineId,
+        icpTargets: selectedICPTargets.length > 0 ? selectedICPTargets : [selectedGap.icp],
       };
       const response = await fetch("/api/content/generate-draft", {
         method: "POST",
@@ -430,15 +722,31 @@ export function CreateContentWorkflow({
     }
   };
 
+  // Escape HTML entities to prevent injection
+  const escapeHtml = (text: string): string => {
+    const map: Record<string, string> = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#039;",
+    };
+    return text.replace(/[&<>"']/g, (m) => map[m]);
+  };
+
   const handleExportPDF = (content: string, title: string) => {
     // Create a simple HTML document and trigger print
     const printWindow = window.open("", "_blank");
     if (printWindow) {
+      // Escape HTML entities to prevent injection
+      const escapedTitle = escapeHtml(title);
+      const escapedContent = escapeHtml(content);
+      
       printWindow.document.write(`
         <!DOCTYPE html>
         <html>
           <head>
-            <title>${title}</title>
+            <title>${escapedTitle}</title>
             <style>
               body { font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; line-height: 1.6; }
               h1 { color: #333; border-bottom: 2px solid #333; padding-bottom: 10px; }
@@ -447,8 +755,8 @@ export function CreateContentWorkflow({
             </style>
           </head>
           <body>
-            <h1>${title}</h1>
-            <pre>${content}</pre>
+            <h1>${escapedTitle}</h1>
+            <pre>${escapedContent}</pre>
           </body>
         </html>
       `);
@@ -458,8 +766,8 @@ export function CreateContentWorkflow({
   };
 
   const handleExportDOCX = async (content: string, title: string) => {
-    // For DOCX export, we'd need a library like docx
-    // For now, create a simple text file download
+    // Note: This is currently a text file export, not a real DOCX
+    // TODO: Implement proper DOCX export using a library like docx or mammoth
     const blob = new Blob([content], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -539,10 +847,27 @@ ${ideasText}
     setIsGeneratingDraft(false);
   };
 
-  const getStepNumber = (step: WorkflowStep): number => {
-    const steps: WorkflowStep[] = [
+  // Canonical steps array - single source of truth
+  const getWorkflowSteps = (): WorkflowStep[] => {
+    if (initialGap) {
+      // Skip gap-selection if initialGap is provided
+      return [
+        "input-validation",
+        "trending-discovery",
+        "source-selection",
+        "idea-generation",
+        "idea-selection",
+        "brief-review",
+        "draft-generation",
+        "draft-review",
+        "complete",
+      ];
+    }
+    return [
       "gap-selection",
+      "input-validation",
       "trending-discovery",
+      "source-selection",
       "idea-generation",
       "idea-selection",
       "brief-review",
@@ -550,11 +875,22 @@ ${ideasText}
       "draft-review",
       "complete",
     ];
+  };
+
+  const getStepNumber = (step: WorkflowStep): number => {
+    const steps = getWorkflowSteps();
     return steps.indexOf(step) + 1;
   };
 
   const getTotalSteps = (): number => {
-    return initialGap ? 7 : 8;
+    return getWorkflowSteps().length;
+  };
+  
+  const getStepLabels = (): string[] => {
+    if (initialGap) {
+      return ["Validate", "Search", "Sources", "Ideas", "Select", "Brief", "Draft", "Review", "Complete"];
+    }
+    return ["Gap", "Validate", "Search", "Sources", "Ideas", "Select", "Brief", "Draft", "Review", "Complete"];
   };
 
   return (
@@ -572,12 +908,11 @@ ${ideasText}
 
         {/* Progress Indicator */}
         <div className="flex items-center gap-2 mb-6">
-          {[1, 2, 3, 4, 5, 6, 7].map((step) => {
-            const stepNames = initialGap
-              ? ["Trending", "Ideas", "Select", "Brief", "Draft", "Review", "Complete"]
-              : ["Gap", "Trending", "Ideas", "Select", "Brief", "Draft", "Review"];
-            const isActive = getStepNumber(currentStep) >= step;
-            const isCurrent = getStepNumber(currentStep) === step;
+          {getWorkflowSteps().map((step, index) => {
+            const stepNumber = index + 1;
+            const stepLabels = getStepLabels();
+            const isActive = getStepNumber(currentStep) >= stepNumber;
+            const isCurrent = getStepNumber(currentStep) === stepNumber;
 
             return (
               <div key={step} className="flex items-center flex-1">
@@ -592,14 +927,14 @@ ${ideasText}
                     {isActive && !isCurrent ? (
                       <CheckCircle2 className="h-4 w-4" />
                     ) : (
-                      step
+                      stepNumber
                     )}
                   </div>
                   <span className="text-xs mt-1 text-center text-muted-foreground">
-                    {stepNames[step - 1]}
+                    {stepLabels[index]}
                   </span>
                 </div>
-                {step < getTotalSteps() && (
+                {stepNumber < getTotalSteps() && (
                   <div
                     className={`h-0.5 flex-1 mx-2 ${
                       isActive ? "bg-primary" : "bg-muted"
@@ -640,47 +975,188 @@ ${ideasText}
             />
           )}
 
-          {currentStep === "trending-discovery" && selectedGap ? (
-            <TrendingDiscoveryStep
+          {currentStep === "input-validation" && selectedGap && (
+            <InputValidationStep
               gap={selectedGap}
-              isDiscovering={isDiscoveringTrends}
-              trendingData={trendingData}
-              onDiscover={handleDiscoverTrendingTopics}
-              onSkip={async () => {
-                setCurrentStep("idea-generation");
-                // Generate ideas without trending topics
-                setIsGeneratingIdeas(true);
-                setError(null);
-                try {
-                  const gapWithProductLine = {
-                    ...selectedGap,
-                    productLineId: selectedProductLineId,
-                  };
-                  const response = await fetch("/api/content/generate-ideas", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      gap: gapWithProductLine,
-                      includeTrendingTopics: false,
-                    }),
-                  });
-                  if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error || "Failed to generate content ideas");
-                  }
-                  const data: ContentIdeasResponse = await response.json();
-                  setContentIdeas(data);
-                  setCurrentStep("idea-selection");
-                } catch (err) {
-                  setError(err instanceof Error ? err.message : "Failed to generate content ideas");
-                } finally {
-                  setIsGeneratingIdeas(false);
-                }
-              }}
-              productLines={productLines}
-              selectedProductLineId={selectedProductLineId}
-              onProductLineChange={setSelectedProductLineId}
+              isValidating={isValidating}
+              validationResult={validationResult}
+              onValidate={handleValidateContext}
+              onProceed={() => setCurrentStep("trending-discovery")}
             />
+          )}
+
+          {currentStep === "source-selection" && (() => {
+            const availableSources = trendingData?.sources || contentIdeas?.trendingSources || [];
+            
+            if (!availableSources || availableSources.length === 0) {
+              return (
+                <div className="space-y-4">
+                  <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>No Sources Available</AlertTitle>
+                    <AlertDescription>
+                      No valid sources were found. You can proceed to generate ideas without selecting sources.
+                    </AlertDescription>
+                  </Alert>
+                  <Button onClick={() => setCurrentStep("idea-generation")} className="w-full">
+                    Proceed to Generate Ideas
+                  </Button>
+                </div>
+              );
+            }
+            
+            const validSources = availableSources
+              .filter((s: any) => s && s.url && typeof s.url === 'string')
+              .map((s: any) => ({
+                id: s.id || `src-${s.url}`,
+                url: s.url || "",
+                title: (s.title && typeof s.title === 'string' && s.title.trim()) ? s.title.trim() : "Untitled Source",
+                content: s.content || s.excerpt || "",
+                relevance: s.relevance || "medium",
+                sourceType: s.sourceType || "other",
+                isReputable: s.isReputable || false,
+              }));
+            
+            if (validSources.length === 0) {
+              return (
+                <div className="space-y-4">
+                  <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>No Valid Sources</AlertTitle>
+                    <AlertDescription>
+                      All sources were filtered out. You can proceed to generate ideas without selecting sources.
+                    </AlertDescription>
+                  </Alert>
+                  <Button onClick={() => setCurrentStep("idea-generation")} className="w-full">
+                    Proceed to Generate Ideas
+                  </Button>
+                </div>
+              );
+            }
+            
+            return (
+              <SourceSelectionStep
+                sources={validSources}
+                selectedSources={selectedSources}
+                onSourceToggle={handleSourceToggle}
+                onPreview={(source) => setPreviewSource(source)}
+                onProceed={handleProceedFromSourceSelection}
+              />
+            );
+          })()}
+
+          {previewSource && (
+            <Dialog open={!!previewSource} onOpenChange={() => setPreviewSource(null)}>
+              <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center justify-between">
+                    <span>Article Preview</span>
+                    <a
+                      href={previewSource.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-primary hover:underline flex items-center gap-1"
+                    >
+                      Open Original
+                      <ExternalLink className="h-4 w-4" />
+                    </a>
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="p-4 bg-muted rounded-md">
+                    <p className="text-xs font-medium mb-2">Full Content:</p>
+                    <div className="prose prose-sm max-w-none">
+                      <p className="text-sm whitespace-pre-wrap">{previewSource.content}</p>
+                    </div>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+          )}
+
+          {currentStep === "trending-discovery" && selectedGap ? (
+            <>
+              <TrendingDiscoveryStep
+                gap={selectedGap}
+                isDiscovering={isDiscoveringTrends}
+                trendingData={trendingData}
+                onDiscover={handleDiscoverTrendingTopics}
+                onSkip={async () => {
+                  // When skipping trending discovery, generate ideas immediately
+                  // and allow draft generation to use server-side sourcing if no sources are selected
+                  setCurrentStep("idea-generation");
+                  setIsGeneratingIdeas(true);
+                  setError(null);
+                  try {
+                    if (!selectedGap) return;
+                    const gapWithProductLine = {
+                      ...selectedGap,
+                      productLineId: selectedProductLineId,
+                      icpTargets: selectedICPTargets.length > 0 ? selectedICPTargets : [selectedGap.icp],
+                    };
+                    const response = await fetch("/api/content/generate-ideas", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        gap: gapWithProductLine,
+                        includeTrendingTopics: false,
+                        mode: "ideas", // Generate ideas only, no trending topics
+                      }),
+                    });
+                    if (!response.ok) {
+                      const errorData = await response.json();
+                      throw new Error(errorData.error || "Failed to generate content ideas");
+                    }
+                    const data: ContentIdeasResponse = await response.json();
+                    setContentIdeas(data);
+                    
+                    // If sources are available, auto-select top N reputable ones for skip path
+                    if (data.trendingSources && data.trendingSources.length > 0) {
+                      const reputableSources = data.trendingSources
+                        .filter((s: any) => s.isReputable)
+                        .slice(0, 3); // Select top 3 reputable sources
+                      
+                      if (reputableSources.length > 0) {
+                        const autoSelected = new Set(
+                          reputableSources.map((s: any) => s.url)
+                        );
+                        setSelectedSources(autoSelected);
+                      } else {
+                        // If no reputable sources, select top 3 by relevance
+                        const topSources = data.trendingSources
+                          .filter((s: any) => s.relevance === "high" || s.relevance === "medium")
+                          .slice(0, 3)
+                          .map((s: any) => s.url);
+                        setSelectedSources(new Set(topSources));
+                      }
+                    }
+                    
+                    setCurrentStep("idea-selection");
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : "Failed to generate content ideas");
+                  } finally {
+                    setIsGeneratingIdeas(false);
+                  }
+                }}
+                productLines={productLines}
+                selectedProductLineId={selectedProductLineId}
+                onProductLineChange={setSelectedProductLineId}
+                icpOptions={icpOptions}
+                isLoadingIcp={isLoadingIcp}
+                selectedICPTargets={selectedICPTargets}
+                onICPTargetsChange={setSelectedICPTargets}
+              />
+              <WorkflowAssistant
+                gap={{
+                  ...selectedGap,
+                  icpTargets: selectedICPTargets.length > 0 ? selectedICPTargets : [selectedGap.icp],
+                  productLineId: selectedProductLineId,
+                }}
+                productLineName={selectedProductLineId ? productLines.find(pl => pl.id === selectedProductLineId)?.name : undefined}
+                isOpen={isAssistantOpen}
+                onToggle={() => setIsAssistantOpen(!isAssistantOpen)}
+              />
+            </>
           ) : currentStep === "trending-discovery" ? (
             <div className="space-y-4 text-center py-8">
               <p className="text-sm text-muted-foreground">
@@ -703,7 +1179,8 @@ ${ideasText}
             <IdeaSelectionStep
               ideas={contentIdeas.ideas}
               trendingTopics={contentIdeas.trendingTopics}
-              trendingSources={contentIdeas.trendingSources}
+              trendingSources={contentIdeas.trendingSources || trendingData?.sources || []}
+              selectionGuidance={contentIdeas.selectionGuidance}
               onSelectIdea={handleSelectIdea}
               isGeneratingBrief={isGeneratingBrief}
               selectedIdea={selectedIdea}
@@ -771,11 +1248,17 @@ ${ideasText}
                   setCurrentStep("brief-review");
                 } else if (currentStep === "draft-review") {
                   setCurrentStep("draft-generation");
+                } else if (currentStep === "idea-generation") {
+                  setCurrentStep("source-selection");
+                } else if (currentStep === "source-selection") {
+                  setCurrentStep("trending-discovery");
                 } else if (currentStep === "trending-discovery") {
-                  setCurrentStep(initialGap ? "trending-discovery" : "gap-selection");
+                  setCurrentStep("input-validation");
+                } else if (currentStep === "input-validation") {
+                  setCurrentStep(initialGap ? "input-validation" : "gap-selection");
                 }
               }}
-              disabled={currentStep === "gap-selection" || currentStep === "trending-discovery"}
+              disabled={currentStep === "gap-selection" || (currentStep === "input-validation" && initialGap !== null)}
             >
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back
@@ -823,6 +1306,319 @@ function GapSelectionStep({
   );
 }
 
+function InputValidationStep({
+  gap,
+  isValidating,
+  validationResult,
+  onValidate,
+  onProceed,
+}: {
+  gap: Gap;
+  isValidating: boolean;
+  validationResult: {
+    isValid: boolean;
+    missingCriticalFields: string[];
+    missingOptionalFields: string[];
+    suggestions: Array<{ field: string; message: string; required: boolean }>;
+    canProceed: boolean;
+    currentContext: any;
+  } | null;
+  onValidate: () => Promise<void>;
+  onProceed: () => void;
+}) {
+  useEffect(() => {
+    if (!validationResult && !isValidating) {
+      onValidate();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [validationResult, isValidating]);
+
+  if (isValidating || !validationResult) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
+          <p className="text-sm text-muted-foreground">
+            Validating available information...
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-lg font-semibold mb-2">Prepare Search Context</h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          We need to verify we have enough information to find relevant articles for your business.
+        </p>
+      </div>
+
+      {/* Show current context */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Current Information</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <span className="font-medium">ICP:</span>{" "}
+              <Badge variant={gap.icp ? "default" : "secondary"}>
+                {gap.icp || "Missing"}
+              </Badge>
+            </div>
+            <div>
+              <span className="font-medium">Stage:</span>{" "}
+              <Badge variant="default">{STAGE_DISPLAY[gap.stage]}</Badge>
+            </div>
+            <div>
+              <span className="font-medium">Pain Cluster:</span>{" "}
+              <Badge variant={gap.painCluster ? "default" : "secondary"}>
+                {gap.painCluster || "Missing"}
+              </Badge>
+            </div>
+            <div>
+              <span className="font-medium">Industry:</span>{" "}
+              <Badge variant={validationResult.currentContext?.industry ? "default" : "destructive"}>
+                {validationResult.currentContext?.industry || "CRITICAL: Missing"}
+              </Badge>
+            </div>
+            <div>
+              <span className="font-medium">Value Prop:</span>{" "}
+              <Badge variant={validationResult.currentContext?.valueProposition ? "default" : "destructive"}>
+                {validationResult.currentContext?.valueProposition ? "✓ Set" : "CRITICAL: Missing"}
+              </Badge>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Show missing fields */}
+      {validationResult.missingCriticalFields.length > 0 && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Critical Information Missing</AlertTitle>
+          <AlertDescription className="mt-2 space-y-2">
+            <p className="text-sm">
+              We need the following information to find relevant articles. Please update your brand identity settings:
+            </p>
+            <ul className="list-disc list-inside space-y-1 text-sm">
+              {validationResult.missingCriticalFields.map((field) => (
+                <li key={field}>{field}</li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Show optional fields */}
+      {validationResult.missingOptionalFields.length > 0 && (
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Optional Information</AlertTitle>
+          <AlertDescription className="mt-2">
+            <p className="text-sm mb-2">
+              Additional information that will improve search quality:
+            </p>
+            <ul className="list-disc list-inside space-y-1 text-sm">
+              {validationResult.missingOptionalFields.map((field) => (
+                <li key={field}>{field}</li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Proceed button */}
+      <div className="flex gap-2">
+        <Button
+          onClick={onProceed}
+          disabled={!validationResult.canProceed}
+          className="flex-1"
+        >
+          {validationResult.canProceed ? (
+            <>
+              Proceed to Search
+              <ArrowRight className="h-4 w-4 ml-2" />
+            </>
+          ) : (
+            "Complete Required Fields First (Update Brand Identity)"
+          )}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function SourceSelectionStep({
+  sources,
+  selectedSources,
+  onSourceToggle,
+  onPreview,
+  onProceed,
+}: {
+  sources: Array<{
+    url: string;
+    title: string;
+    content: string;
+    relevance: string;
+    sourceType?: string;
+    isReputable?: boolean;
+  }>;
+  selectedSources: Set<string>;
+  onSourceToggle: (identifier: string) => void; // Supports both ID and URL
+  onPreview: (source: { url: string; title: string; content: string }) => void;
+  onProceed: () => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-lg font-semibold mb-2">Select Research Sources</h3>
+        <p className="text-sm text-muted-foreground mb-2">
+          Review the articles found and select which sources should be used in your content.
+          Click on any source to preview its content.
+        </p>
+        <p className="text-xs text-muted-foreground mb-4">
+          <strong>Selected:</strong> {selectedSources.size} of {sources.length} sources
+        </p>
+      </div>
+
+      {/* Source list with checkboxes */}
+      <div className="space-y-3 max-h-[500px] overflow-y-auto">
+        {sources.filter((source) => source.url).map((source, idx) => {
+          // Support both ID-based (new) and URL-based (legacy) selection
+          const sourceId = (source as any).id || source.url;
+          const isSelected = selectedSources.has(sourceId) || selectedSources.has(source.url);
+          const contentPreview = source.content?.substring(0, 300) || "No content preview available";
+          const sourceTitle = source.title || "Untitled Source"; // Handle empty titles
+
+          return (
+            <Card
+              key={sourceId || `source-${idx}`}
+              className={`cursor-pointer transition-all ${
+                isSelected ? "border-primary border-2 bg-primary/5" : ""
+              }`}
+              onClick={() => onSourceToggle(sourceId)}
+            >
+              <CardContent className="p-4">
+                <div className="flex items-start gap-3">
+                  {/* Checkbox */}
+                  <div className="mt-1 shrink-0">
+                    <Checkbox
+                      checked={isSelected}
+                      onCheckedChange={() => onSourceToggle(sourceId)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </div>
+
+                  {/* Source content */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-sm font-medium break-words">{sourceTitle}</h4>
+                        <a
+                          href={source.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-xs text-primary hover:underline flex items-center gap-1 mt-1 break-all"
+                        >
+                          {source.url}
+                          <ExternalLink className="h-3 w-3 shrink-0" />
+                        </a>
+                      </div>
+                      <div className="flex flex-wrap gap-1 shrink-0">
+                        <Badge variant={source.isReputable ? "default" : "secondary"} className="text-xs">
+                          {source.sourceType || "source"}
+                        </Badge>
+                        <Badge
+                          variant={
+                            source.relevance === "high"
+                              ? "default"
+                              : source.relevance === "medium"
+                              ? "secondary"
+                              : "outline"
+                          }
+                          className="text-xs"
+                        >
+                          {source.relevance}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    {/* Content preview */}
+                    <div className="mt-2 p-2 bg-muted/50 rounded text-xs text-muted-foreground">
+                      <p className="line-clamp-3">{contentPreview}...</p>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex gap-2 mt-3">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onPreview({
+                            url: source.url,
+                            title: sourceTitle,
+                            content: source.content || "",
+                          });
+                        }}
+                      >
+                        <FileText className="h-3 w-3 mr-1" />
+                        Preview Full Content
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          window.open(source.url, "_blank", "noopener,noreferrer");
+                        }}
+                      >
+                        <ExternalLink className="h-3 w-3 mr-1" />
+                        Open in New Tab
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      {/* Selection summary */}
+      <Card className="bg-primary/5 border-primary/20">
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">
+                {selectedSources.size} source{selectedSources.size !== 1 ? "s" : ""} selected
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {selectedSources.size === 0
+                  ? "Select at least one source to proceed"
+                  : selectedSources.size < 3
+                  ? "Consider selecting 2-3 sources for better content quality"
+                  : "Ready to generate content"}
+              </p>
+            </div>
+            <Button
+              onClick={onProceed}
+              disabled={selectedSources.size === 0}
+            >
+              Proceed with Selected Sources
+              <ArrowRight className="h-4 w-4 ml-2" />
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 function TrendingDiscoveryStep({
   gap,
   isDiscovering,
@@ -832,6 +1628,10 @@ function TrendingDiscoveryStep({
   productLines,
   selectedProductLineId,
   onProductLineChange,
+  icpOptions,
+  isLoadingIcp,
+  selectedICPTargets,
+  onICPTargetsChange,
 }: {
   gap: Gap;
   isDiscovering: boolean;
@@ -841,6 +1641,10 @@ function TrendingDiscoveryStep({
   productLines: ProductLine[];
   selectedProductLineId?: string;
   onProductLineChange: (productLineId: string | undefined) => void;
+  icpOptions: string[];
+  isLoadingIcp: boolean;
+  selectedICPTargets: string[];
+  onICPTargetsChange: (icpTargets: string[]) => void;
 }) {
   return (
     <div className="space-y-4">
@@ -861,10 +1665,31 @@ function TrendingDiscoveryStep({
             Gap Context
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2">
-          <div className="flex items-center gap-2">
-            <Badge variant="outline">ICP</Badge>
-            <span className="text-sm">{gap.icp}</span>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Badge variant="outline">ICP Targets</Badge>
+            </div>
+            <MultiSelectCombobox
+              options={icpOptions}
+              value={selectedICPTargets}
+              onChange={onICPTargetsChange}
+              placeholder={isLoadingIcp ? "Loading job titles..." : "Select target audience..."}
+              searchPlaceholder="Search ICP targets..."
+              emptyText="No ICP targets found"
+              disabled={isLoadingIcp}
+              creatable={true}
+              createText="Add as custom ICP"
+            />
+            {selectedICPTargets.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-2">
+                {selectedICPTargets.map((icp, idx) => (
+                  <Badge key={idx} variant="secondary" className="text-xs">
+                    {icp}
+                  </Badge>
+                ))}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <Badge variant="outline">Stage</Badge>
@@ -877,13 +1702,15 @@ function TrendingDiscoveryStep({
             </div>
           )}
           {productLines.length > 0 && (
-            <div className="flex items-center gap-2">
-              <Badge variant="outline">Product Line</Badge>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Badge variant="outline">Product Line</Badge>
+              </div>
               <Select
                 value={selectedProductLineId || "none"}
                 onValueChange={(value) => onProductLineChange(value === "none" ? undefined : value)}
               >
-                <SelectTrigger className="w-[200px]">
+                <SelectTrigger className="w-full max-w-[300px]">
                   <SelectValue placeholder="Select product line (optional)" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1055,6 +1882,7 @@ function IdeaSelectionStep({
   ideas,
   trendingTopics,
   trendingSources,
+  selectionGuidance,
   onSelectIdea,
   isGeneratingBrief,
   selectedIdea,
@@ -1068,6 +1896,7 @@ function IdeaSelectionStep({
     sourceType?: string;
     isReputable?: boolean;
   }>;
+  selectionGuidance?: string;
   onSelectIdea: (idea: ContentIdea) => void;
   isGeneratingBrief: boolean;
   selectedIdea: ContentIdea | null;
@@ -1123,6 +1952,20 @@ function IdeaSelectionStep({
                 </p>
               </div>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {selectionGuidance && (
+        <Card className="border-primary/20 bg-primary/5">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Lightbulb className="h-4 w-4 text-primary" />
+              Selection Guidance
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">{selectionGuidance}</p>
           </CardContent>
         </Card>
       )}
@@ -1292,6 +2135,28 @@ function IdeaSelectionStep({
                     Trending Angle
                   </p>
                   <p className="text-sm break-words overflow-wrap-anywhere">{idea.trendingAngle}</p>
+                </div>
+              )}
+              {idea.sections && idea.sections.length > 0 && (
+                <div className="w-full overflow-hidden">
+                  <p className="text-xs font-medium text-muted-foreground mb-1">
+                    Sections
+                  </p>
+                  <ul className="text-sm break-words overflow-wrap-anywhere list-disc list-inside space-y-0.5">
+                    {idea.sections.map((section, idx) => (
+                      <li key={idx} className="text-muted-foreground">{section}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {idea.sourcesToUse && idea.sourcesToUse.length > 0 && (
+                <div className="w-full overflow-hidden">
+                  <p className="text-xs font-medium text-muted-foreground mb-1">
+                    Sources to Use
+                  </p>
+                  <p className="text-sm break-words overflow-wrap-anywhere text-muted-foreground italic">
+                    {idea.sourcesToUse.join(", ")}
+                  </p>
                 </div>
               )}
               <div className="w-full overflow-hidden">
@@ -1865,7 +2730,7 @@ function CompleteStep({
           content: draft.content,
           assetType: idea.assetType,
           funnelStage: gap.stage,
-          icpTargets: [gap.icp],
+          icpTargets: gap.icpTargets && gap.icpTargets.length > 0 ? gap.icpTargets : [gap.icp],
           painClusters: gap.painCluster ? [gap.painCluster] : [],
           sources: allSources,
         }),

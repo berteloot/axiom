@@ -69,10 +69,11 @@ const GenerateDraftRequestSchema = z.object({
     priority: z.enum(["high", "medium", "low"]).optional(),
   }),
   gap: z.object({
-    icp: z.string().min(1, "ICP is required"),
+    icp: z.string().min(1, "ICP is required"), // Keep for backward compatibility
     stage: z.enum(["TOFU_AWARENESS", "MOFU_CONSIDERATION", "BOFU_DECISION", "RETENTION"]),
     painCluster: z.string().nullable().optional(),
     productLineId: z.string().optional(),
+    icpTargets: z.array(z.string()).optional(), // Allow multiple ICP targets
   }),
   trendingSources: z.array(
     z.object({
@@ -111,7 +112,9 @@ async function generateContentRecommendations(
   brief: any,
   idea: any,
   gap: any,
-  accountId: string
+  accountId: string,
+  icpTargets?: string[],
+  icpDisplayText?: string
 ) {
   // Fetch brand context for recommendations
   const brandContext = await prisma.brandContext.findUnique({
@@ -184,6 +187,12 @@ Provide recommendations including:
 6. Next steps to get started`;
   }
 
+  // Determine ICP display text for all prompts
+  const finalIcpTargets = icpTargets || (gap.icpTargets && gap.icpTargets.length > 0 ? gap.icpTargets : [gap.icp]);
+  const finalIcpDisplayText = icpDisplayText || (finalIcpTargets.length > 1 
+    ? `${finalIcpTargets.join(", ")} (${finalIcpTargets.length} ICPs)`
+    : finalIcpTargets[0] || gap.icp);
+
   try {
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-2024-08-06",
@@ -203,7 +212,7 @@ STRATEGIC BRIEF:
 - Asset Type: ${assetTypeName}
 - Why This Matters: ${brief.strategicPositioning.whyThisMatters}
 - Pain Cluster: ${brief.strategicPositioning.painClusterAddress}
-- Target ICP: ${gap.icp}
+- Target ICP: ${finalIcpDisplayText}${finalIcpTargets.length > 1 ? ` (content should resonate with all ${finalIcpTargets.length} ICP roles)` : ""}
 - Funnel Stage: ${gap.stage}
 - Key Sections: ${brief.contentStructure.recommendedSections.map((s: any) => s.title).join(", ")}
 - Estimated Word Count: ${brief.contentStructure.totalEstimatedWords}
@@ -462,6 +471,14 @@ export async function POST(request: NextRequest) {
 
     const { brief, idea, gap, trendingSources: providedSources } = validationResult.data;
 
+    // Determine which ICPs to use - prefer icpTargets array, fallback to gap.icp
+    // This must be defined early so it's available in all code paths
+    const icpTargets = gap.icpTargets && gap.icpTargets.length > 0 ? gap.icpTargets : [gap.icp];
+    const primaryICP = icpTargets[0] || gap.icp;
+    const icpDisplayText = icpTargets.length > 1 
+      ? `${icpTargets.join(", ")} (${icpTargets.length} ICPs)`
+      : icpTargets[0];
+
     console.log(`[Content Draft] Generating draft for: ${idea.title}`);
     console.log(`[Content Draft] Asset type: ${idea.assetType}, Target words: ${brief.contentStructure.totalEstimatedWords}`);
     console.log(`[Content Draft] Provided sources count: ${providedSources?.length || 0}`);
@@ -479,7 +496,9 @@ export async function POST(request: NextRequest) {
         brief,
         idea,
         gap,
-        accountId
+        accountId,
+        icpTargets,
+        icpDisplayText
       );
       
       return NextResponse.json({
@@ -844,6 +863,43 @@ To write like a human, you must be willing to be asymmetric, occasionally flat, 
 ✅ DO use: Clear, direct language
 ✅ DO cite sources for all data/statistics
 
+🔴 STRICT WRITING GUIDELINES (MANDATORY):
+
+Follow these strict guidelines for all content:
+
+1. **Tone & Style:**
+   - Use concise, direct language. Favor clarity over flourish.
+   - Avoid motivational filler, metaphors, and figurative language.
+   - Prioritize action-oriented, cause-and-effect statements.
+   - Maintain a professional, practical tone throughout. Avoid marketing hype.
+
+2. **Structure:**
+   - Begin each section with an immediately relevant statement. Skip thematic or philosophical intros.
+   - Use short paragraphs (2–5 sentences).
+   - Avoid bulleted lists unless absolutely necessary. Use structured prose.
+   - Vary sentence structure to avoid repetition and maintain flow.
+
+3. **Language Constraints:**
+   - Do not use or imply metaphors, symbolism, or imagery.
+   - **Prohibited words and phrases include:**
+     * "Unlock," "empower," "transform," "journey," "navigate," "explore," "embrace"
+     * "Cutting-edge," "dynamic," "realm," "landscape," "holistic," "game-changer," "future-ready"
+     * Similar abstractions and marketing buzzwords
+   - Avoid motivational phrases like "more than ever," "step into," or "a testament to."
+   - Never use constructions like "not just X, but Y."
+   - Avoid overused setups such as "In today's world…" or "It's essential to…"
+
+4. **Content Approach:**
+   - Stick to functional, factual, objective descriptions.
+   - Focus on practical processes, decision points, risks, and outcomes.
+   - If citing benefits or statistics, be specific and quantifiable.
+   - All examples and scenarios should reflect realistic professional situations.
+
+5. **Voice:**
+   - Write as if explaining to an experienced peer—not selling to a prospect.
+   - Keep the tone grounded, confident, and informed.
+   - No fluff, no filler.
+
 ${brandContextText}
 ${sourcesText}
 ${seoInstructions}`;
@@ -956,7 +1012,7 @@ ${JSON.stringify(brief, null, 2)}
 SELECTED IDEA:
 - Title: ${idea.title}
 - Asset Type: ${idea.assetType}
-- ICP: ${gap.icp}
+- ICP: ${icpDisplayText}${icpTargets.length > 1 ? ` (${icpTargets.length} ICP roles)` : ""}
 - Funnel Stage: ${gap.stage}
 - Pain Cluster: ${defaultPainCluster}
 
@@ -1030,7 +1086,7 @@ REQUIREMENTS:
    - If you find yourself finishing too quickly, add more depth, examples, and detail to reach the target
    - The content should be comprehensive and thorough, not brief or summarized
 7. **Brand Voice**: ${brandVoiceText}
-8. **ICP Focus**: Write for ${gap.icp}
+8. **ICP Focus**: Write for ${icpDisplayText}${icpTargets.length > 1 ? ` (ensure content resonates with all ${icpTargets.length} ICP roles)` : ""}
 
 🔴 FINAL REMINDER (READ THIS CAREFULLY): 
 - **If you don't see a statistic in the source content extracts above, you CANNOT use it** - Use generic language instead

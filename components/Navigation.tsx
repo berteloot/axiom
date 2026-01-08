@@ -73,6 +73,7 @@ export function Navigation() {
               alt="AXIOM Logo" 
               width={87} 
               height={40} 
+              priority
               className="shrink-0 h-8 sm:h-10 w-auto object-contain"
             />
             <span className="text-lg sm:text-xl font-semibold truncate font-roboto-condensed text-brand-orange">AXIOM</span>

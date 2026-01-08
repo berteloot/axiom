@@ -20,13 +20,15 @@ import {
   TrendingUp,
   Target,
   AlertTriangle,
-  Upload
+  Upload,
+  Sparkles
 } from "lucide-react";
 import { CriticalGapsModal, CriticalGap } from "@/components/dashboard/CriticalGapsModal";
 import { SaveSearchButton } from "@/components/smart-collections";
 import DownloadReportButton from "@/components/reports/DownloadReportButton";
 import { useAccount } from "@/lib/account-context";
 import { PPCCampaignBuilder } from "@/components/ppc/PPCCampaignBuilder";
+import { ContentAssistant } from "@/components/content/ContentAssistant";
 
 const STAGES: FunnelStage[] = [
   "TOFU_AWARENESS",
@@ -115,6 +117,7 @@ export default function DashboardClient() {
   const [isDraftingSequence, setIsDraftingSequence] = useState(false);
   const [isBulkEditModalOpen, setIsBulkEditModalOpen] = useState(false);
   const [isCriticalGapsModalOpen, setIsCriticalGapsModalOpen] = useState(false);
+  const [isAssistantOpen, setIsAssistantOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("strategy");
   const [brandContext, setBrandContext] = useState<BrandContext | null>(null);
   
@@ -688,6 +691,15 @@ export default function DashboardClient() {
               className="w-full sm:w-auto"
             />
             <Button
+              variant="outline"
+              onClick={() => setIsAssistantOpen(true)}
+              className="w-full sm:w-auto min-h-[44px] sm:min-h-0"
+              size="lg"
+            >
+              <Sparkles className="h-4 w-4 sm:mr-2" />
+              <span className="sm:inline">Ask Assistant</span>
+            </Button>
+            <Button
               onClick={() => setIsUploadModalOpen(true)}
               className="w-full sm:w-auto min-h-[44px] sm:min-h-0"
               size="lg"
@@ -901,6 +913,11 @@ export default function DashboardClient() {
         onOpenChange={setIsCriticalGapsModalOpen}
         gaps={kpis.criticalGapsList || []}
         totalAssets={kpis.totalAssets}
+      />
+
+      <ContentAssistant
+        open={isAssistantOpen}
+        onOpenChange={setIsAssistantOpen}
       />
     </div>
   );
