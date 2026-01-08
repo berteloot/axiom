@@ -67,12 +67,18 @@ export function CampaignExport({
           ? assets.find((a) => a.id === assignedAssetId)
           : null;
 
+        // For PPC campaigns, we need actual landing page URLs, not S3 storage URLs
+        // S3 URLs are private markdown files and won't work as public landing pages
+        // Landing page URLs should be configured based on your website structure
+        // Leave empty for user to fill in manually, or configure based on asset ID
+        const landingPageUrl = ""; // User must configure landing page URLs
+
         rows.push([
           "PPC Campaign", // Campaign name
           groupName, // Ad Group
           kw.keyword, // Keyword
           kw.matchType || "phrase", // Match Type
-          asset?.s3Url || asset?.title || "—", // Landing Page
+          landingPageUrl, // Landing Page (placeholder - user must configure)
           kw.cpc.toFixed(2), // Max CPC
           kw.volume.toString(), // Search Volume
           kw.competition, // Competition
@@ -121,7 +127,8 @@ export function CampaignExport({
             landingPage: {
               assetId: assignedAssetId || null,
               assetTitle: asset?.title || null,
-              assetUrl: asset?.s3Url || null,
+              assetUrl: null, // S3 URLs are private - configure public landing page URLs
+              note: "S3 URLs are private markdown files. Configure public landing page URLs based on your website structure.",
             },
           };
         }),
@@ -220,6 +227,23 @@ export function CampaignExport({
           </CardContent>
         </Card>
       )}
+
+      {/* Landing Page URL Note */}
+      <Card className="border-yellow-500/30 bg-yellow-500/5">
+        <CardHeader>
+          <CardTitle className="text-base text-yellow-700 dark:text-yellow-400">
+            ⚠️ Landing Page URLs
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            <strong>Important:</strong> The exported CSV has blank landing page URLs. S3 storage URLs are private markdown files and cannot be used as public landing pages.
+          </p>
+          <p className="text-sm text-muted-foreground mt-2">
+            Before importing into Google Ads, configure landing page URLs based on your website structure (e.g., <code className="text-xs bg-muted px-1 py-0.5 rounded">https://yourwebsite.com/resources/[asset-title]</code>).
+          </p>
+        </CardContent>
+      </Card>
 
       {/* Export Options */}
       <div className="grid gap-4 md:grid-cols-2">

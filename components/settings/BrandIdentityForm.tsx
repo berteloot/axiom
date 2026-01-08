@@ -157,6 +157,8 @@ export function BrandIdentityForm({
   
   // Auto-save: save form data automatically after changes (debounced)
   const autoSaveTimeoutRef = React.useRef<NodeJS.Timeout | null>(null)
+  const isAutoSavingRef = React.useRef(false)
+  const lastSavedDataRef = React.useRef<string | null>(null)
   
   // Watch all form values to detect changes
   const competitors = form.watch("competitors")
@@ -170,7 +172,16 @@ export function BrandIdentityForm({
   
   React.useEffect(() => {
     // Only auto-save if we have initialData (meaning brand context already exists)
-    if (!initialData || isLoading) {
+    if (!initialData || isLoading || isAutoSavingRef.current) {
+      return
+    }
+    
+    // Get current form data
+    const currentData = form.getValues()
+    const currentDataString = JSON.stringify(currentData)
+    
+    // Skip if data hasn't actually changed
+    if (lastSavedDataRef.current === currentDataString) {
       return
     }
     
@@ -181,14 +192,24 @@ export function BrandIdentityForm({
     
     // Set new timeout to save after 2 seconds of inactivity
     autoSaveTimeoutRef.current = setTimeout(async () => {
+      // Prevent multiple simultaneous saves
+      if (isAutoSavingRef.current) {
+        return
+      }
+      
+      isAutoSavingRef.current = true
+      
       try {
-        const currentData = form.getValues()
-        await onSubmit(currentData)
-        // Mark form as clean after successful save
-        form.reset(currentData, { keepValues: true, keepDirty: false })
+        const dataToSave = form.getValues()
+        await onSubmit(dataToSave)
+        
+        // Update last saved data reference (no form.reset to avoid re-renders)
+        lastSavedDataRef.current = JSON.stringify(dataToSave)
       } catch (error) {
         console.error("Auto-save failed:", error)
         // Don't show error to user for auto-save failures
+      } finally {
+        isAutoSavingRef.current = false
       }
     }, 2000)
     
@@ -212,7 +233,27 @@ export function BrandIdentityForm({
     initialData,
     isLoading,
     onSubmit, // Now safe since it's memoized with useCallback in parent
+    // Note: form is stable from useForm and doesn't need to be in dependencies
   ])
+  
+  // Initialize lastSavedDataRef when initialData changes
+  React.useEffect(() => {
+    if (initialData) {
+      const initialDataString = JSON.stringify({
+        brandVoice: initialData?.brandVoice || [],
+        competitors: initialData?.competitors || [],
+        targetIndustries: initialData?.targetIndustries || [],
+        websiteUrl: initialData?.websiteUrl || "",
+        valueProposition: initialData?.valueProposition || "",
+        painClusters: initialData?.painClusters || [],
+        keyDifferentiators: initialData?.keyDifferentiators || [],
+        primaryICPRoles: initialData?.primaryICPRoles || [],
+        useCases: initialData?.useCases || [],
+        roiClaims: initialData?.roiClaims || [],
+      })
+      lastSavedDataRef.current = initialDataString
+    }
+  }, [initialData])
   
 
   // Fetch unified ICP targets on mount
@@ -264,6 +305,8 @@ export function BrandIdentityForm({
 
   const handleSubmit = form.handleSubmit(async (data) => {
     await onSubmit(data)
+    // Update last saved data reference after manual save
+    lastSavedDataRef.current = JSON.stringify(data)
   })
 
   const [isAnalyzing, setIsAnalyzing] = React.useState(false)
