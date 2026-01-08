@@ -260,40 +260,114 @@ function determineSourceReputability(source: {
 }
 
 /**
- * Cap total source text budget and trim individual sources
- * Returns array of sources with trimmed content
+ * Fetch full content from source URLs using Jina Reader
+ * This ensures we have the complete document for context
  */
-function prepareSourceExcerpts(
+async function fetchFullSourceContent(
+  sources: Array<{ url: string; content?: string; [key: string]: any }>
+): Promise<Array<{ content: string; url: string; [key: string]: any }>> {
+  const JINA_READER_URL = "https://r.jina.ai";
+  const JINA_API_KEY = process.env.JINA_API_KEY;
+  
+  if (!JINA_API_KEY) {
+    console.warn("[Content Draft] JINA_API_KEY not set, using provided source content only");
+    return sources
+      .filter((s): s is { url: string; content: string; [key: string]: any } => 
+        !!(s.content && s.content.trim().length > 50)
+      )
+      .map(s => ({ ...s, content: s.content.trim() }));
+  }
+
+  const sourcesWithFullContent: Array<{ content: string; url: string; [key: string]: any } | null> = await Promise.all(
+    sources.map(async (source) => {
+      // If we already have substantial content (>1000 chars), use it
+      if (source.content && source.content.trim().length > 1000) {
+        return { ...source, content: source.content.trim() } as { content: string; url: string; [key: string]: any };
+      }
+
+      // Otherwise, fetch full content from Jina Reader
+      try {
+        const normalizedUrl = source.url.startsWith("http") 
+          ? source.url 
+          : `https://${source.url}`;
+        
+        const jinaUrl = `${JINA_READER_URL}/${normalizedUrl}`;
+        console.log(`[Content Draft] Fetching full content from: ${jinaUrl.substring(0, 100)}...`);
+        
+        const response = await fetch(jinaUrl, {
+          headers: {
+            "Authorization": `Bearer ${JINA_API_KEY}`,
+            "Accept": "text/plain",
+            "X-With-Generated-Alt": "true",
+          },
+        });
+
+        if (response.ok) {
+          const fullContent = await response.text();
+          if (fullContent && fullContent.trim().length > 100) {
+            console.log(`[Content Draft] Fetched ${fullContent.length} chars from ${source.url}`);
+            return { ...source, content: fullContent.trim() } as { content: string; url: string; [key: string]: any };
+          }
+        } else {
+          console.warn(`[Content Draft] Failed to fetch content from ${source.url}: ${response.status}`);
+        }
+      } catch (error) {
+        console.error(`[Content Draft] Error fetching content from ${source.url}:`, error);
+      }
+
+      // Fallback to existing content if fetch fails
+      if (source.content && source.content.trim().length > 50) {
+        return { ...source, content: source.content.trim() } as { content: string; url: string; [key: string]: any };
+      }
+      
+      return null;
+    })
+  );
+
+  return sourcesWithFullContent.filter(
+    (s): s is { content: string; url: string; [key: string]: any } => s !== null
+  );
+}
+
+/**
+ * Prepare source content for prompt - uses full documents as context
+ * Returns array of sources with full or substantial content (minimal truncation)
+ */
+function prepareSourceContent(
   sources: Array<{ content?: string; [key: string]: any }>,
-  maxTotalChars: number = 10000,
-  maxPerSourceChars: number = 800
+  maxTotalChars: number = 80000, // Increased from 10k to 80k
+  maxPerSourceChars: number = 15000 // Increased from 800 to 15k per source
 ): Array<{ content: string; [key: string]: any }> {
   let totalChars = 0;
   const prepared: Array<{ content: string; [key: string]: any }> = [];
 
   for (const source of sources) {
-    if (!source.content || source.content.trim().length < 50) {
+    if (!source.content || source.content.trim().length < 100) {
       continue;
     }
 
     const remainingBudget = maxTotalChars - totalChars;
-    if (remainingBudget <= 0) {
+    if (remainingBudget <= 5000) { // Leave some buffer
+      console.warn(`[Content Draft] Reaching source content budget limit, truncating remaining sources`);
       break;
     }
 
     const sourceContent = source.content.trim();
     const maxForThisSource = Math.min(maxPerSourceChars, remainingBudget);
-    const excerpt = sourceContent.length > maxForThisSource
-      ? sourceContent.substring(0, maxForThisSource) + "\n[Content truncated...]"
+    
+    // Only truncate if significantly over limit (preserve full context when possible)
+    const content = sourceContent.length > maxForThisSource
+      ? sourceContent.substring(0, maxForThisSource) + `\n\n[Content truncated after ${maxForThisSource} characters. Full document has ${sourceContent.length} characters total.]`
       : sourceContent;
 
-    totalChars += excerpt.length;
+    totalChars += content.length;
     prepared.push({
       ...source,
-      content: excerpt,
+      content,
     });
   }
 
+  console.log(`[Content Draft] Prepared ${prepared.length} sources with ${totalChars} total characters`);
   return prepared;
 }
 
@@ -496,11 +570,15 @@ ${productLineContext}
       (s) => s.content && s.content.trim().length > 50
     );
 
-    // Cap total source text budget to avoid token blow-up
-    const preparedSources = prepareSourceExcerpts(
-      reputableSourcesWithContent,
-      10000, // Max 10k chars total
-      800    // Max 800 chars per source
+    // Fetch full content from source URLs to use entire documents as context
+    console.log(`[Content Draft] Fetching full content for ${reputableSourcesWithContent.length} reputable sources...`);
+    const sourcesWithFullContent = await fetchFullSourceContent(reputableSourcesWithContent);
+
+    // Prepare source content - use full documents as background context (not just excerpts)
+    const preparedSources = prepareSourceContent(
+      sourcesWithFullContent,
+      80000, // Max 80k chars total (increased from 10k)
+      15000  // Max 15k chars per source (increased from 800)
     );
 
     const sourcesText = reputableSourcesAll.length > 0
@@ -516,16 +594,41 @@ SOURCE ${i + 1}:
 `).join("\n")}
 
 ${preparedSources.length > 0 ? `
-REPUTABLE SOURCES WITH EXTRACTED CONTENT (THE ONLY PLACE YOU MAY TAKE FACTS/STATS FROM):
+REPUTABLE SOURCES WITH FULL DOCUMENT CONTENT (USE AS BACKGROUND CONTEXT):
+
+🔴 CRITICAL: USE FULL DOCUMENTS AS CONTEXT
+These are the COMPLETE documents retrieved from the sources. Use them as:
+1. **Background Context** - Understand the full topic, industry trends, and domain knowledge
+2. **Fact Extraction** - Extract specific statistics, data points, and claims
+3. **Understanding** - Grasp the complete narrative, context, and insights from each source
+4. **Integration** - Weave insights from the full document into your content naturally
+
+🔴 CRITICAL: SOURCE RELEVANCE CHECK REQUIRED
+Before using any source below, verify it's relevant to:
+- Industry: ${brandContext.targetIndustries.join(", ") || "Not specified"}
+- Pain Cluster: ${defaultPainCluster || "Not specified"}
+- Company Context: ${brandContext.valueProposition || "Not specified"}
+
+If a source is NOT relevant (e.g., education grants for tech companies), DO NOT USE IT.
+
 ${preparedSources.map((s, i) => `
-EXTRACT ${i + 1}:
+📄 FULL DOCUMENT ${i + 1}:
 - Title: ${s.title}
 - URL: ${s.url}
 - Type: ${s.sourceType}
-- Content Extract:
+- Full Content (Use the ENTIRE document as background context):
 ${s.content}
+
+🔴 RELEVANCE CHECK: Does this relate to ${brandContext.targetIndustries[0] || "the company's industry"} and ${defaultPainCluster || "the pain cluster"}? Only use if YES.
+
+Read the FULL document above. Understand:
+- What the complete article/document is about
+- Key themes and insights throughout the entire document
+- How it relates to the pain cluster and industry context
+- What facts, statistics, or insights you can extract from the full content
+
 ---
-`).join("\n")}
+`).join("\n\n")}
 ` : `
 ⚠️ NONE OF THE REPUTABLE SOURCES INCLUDED USABLE CONTENT EXTRACTS.
 You must NOT include specific statistics, numbers, or named case studies.
@@ -533,11 +636,13 @@ Use generic language and put any specific claims into factCheckNotes.
 `}
 
 🔴 CRITICAL RULES FOR USING SOURCES:
-1. **ONLY cite statistics, data, or facts that appear in the content extracts above**
-2. **If a statistic is NOT in the extracts, DO NOT use it** - Mark it for fact-checking instead
-3. **If you want to reference a general trend but don't have a specific number in the extracts, use generic language**
-4. **When citing, use publication names from the source titles**
-5. **NEVER invent case studies** - If sources don't mention a company, don't create it
+1. **READ THE FULL DOCUMENTS** - Don't just skim. Understand the complete context, narrative, and insights from each full document above
+2. **USE DOCUMENTS AS BACKGROUND KNOWLEDGE** - The full documents above give you deep context about the topic, industry trends, and domain knowledge. Use this understanding to write informed content
+3. **EXTRACT FACTS FROM FULL CONTENT** - Statistics, data points, and specific claims should come from the full documents above
+4. **INTEGRATE INSIGHTS NATURALLY** - Weave insights, themes, and understanding from the full documents into your content naturally
+5. **CITE SPECIFICALLY** - When citing, reference the full document and use publication names from the source titles
+6. **NEVER invent case studies** - If sources don't mention a company, don't create it
+7. **UNDERSTAND THE COMPLETE CONTEXT** - The full documents help you understand the topic deeply. Use this understanding, not just isolated facts
 `
       : `
 ⚠️ NO REPUTABLE SOURCES PROVIDED
@@ -585,15 +690,40 @@ The content must be optimized for search while remaining valuable and readable f
 `
       : "";
 
-    const systemPrompt = `You are a Senior B2B Content Writer creating a complete, publication-ready content draft.
+    const systemPrompt = `You are a Senior B2B Content Writer creating a complete, publication-ready content draft for a SPECIFIC COMPANY.
+
+🔴 CRITICAL: UNDERSTAND THE COMPANY CONTEXT FIRST
+Before writing anything, you MUST understand:
+1. **What industry/domain does this company operate in?** ${brandContext.targetIndustries.join(", ") || "Not specified"}
+2. **What does the company actually do?** ${brandContext.valueProposition || "Not specified"}
+3. **What problems do they solve?** ${painClustersText}
+4. **Who is the target audience?** ${primaryICPRolesText}
+${productLine ? `
+5. **What specific product is this content for?** ${productLine.name}
+   - Product Description: ${productLine.description || "Not specified"}
+   - Product Value Prop: ${productLine.valueProposition || "Not specified"}
+   - Target ICPs: ${productLine.specificICP.join(", ")}
+` : ""}
+
+🔴 CRITICAL: SOURCE RELEVANCE CHECK
+Before using ANY source, ask yourself:
+1. "Does this source relate to ${brandContext.targetIndustries.join(", ") || "the company's industry"}?"
+2. "Does this source discuss ${defaultPainCluster || "the pain cluster"} or related topics?"
+3. "Would someone in ${primaryICPRolesText || "the target audience"} find this relevant?"
+4. "Does this source help explain what ${brandContext.valueProposition ? "the company" : "they"} actually does?"
+
+If the answer to these questions is NO, DO NOT USE THE SOURCE - it's not relevant.
+Example: A Department of Education grant application is NOT relevant for a company doing SAP transformations in the technology industry.
 
 🔴 CRITICAL: WEB SEARCH & SOURCE REQUIREMENTS:
 - This content MUST be backed by reputable sources found through web search
 - ALL statistics, data points, and claims MUST be supported by the provided source URLs
+- Sources MUST be RELEVANT to the company's industry and pain clusters
 - You MUST include ALL reputable source URLs in the sources array
 - Source URLs are essential for credibility and fact-checking
 - If sources are provided, you MUST use them and cite them properly
 - Never create content without proper source attribution
+- DO NOT use sources that are irrelevant to the company's business
 
 🔴 CRITICAL: DATE REQUIREMENT (NO EXCEPTIONS):
 - Today's date: ${todayStr}
@@ -604,30 +734,53 @@ The content must be optimized for search while remaining valuable and readable f
 - Ensure all content is timely and references current/recent information only
 
 🔴 CRITICAL FACT-CHECKING RULES (MANDATORY - NO EXCEPTIONS):
-1. **NEVER make up facts, statistics, or numbers** - ONLY use data that appears in the source content extracts provided below
-2. **NEVER invent case studies, company names, or examples** - If a source doesn't mention "Company X", you CANNOT create it
-3. **NEVER infer statistics from source content** - If a source says "many companies struggle", you CANNOT turn that into "60% of companies"
-4. **If you don't have a specific fact in the source content, you MUST:**
+1. **USE FULL DOCUMENTS AS CONTEXT** - The complete documents above provide full context. Read them thoroughly to understand the topic deeply
+2. **NEVER make up facts, statistics, or numbers** - ONLY use data that appears in the full source documents provided above
+3. **NEVER invent case studies, company names, or examples** - If a source doesn't mention "Company X", you CANNOT create it
+4. **NEVER infer statistics from source content** - If a source says "many companies struggle", you CANNOT turn that into "60% of companies"
+5. **UNDERSTAND BEFORE CITING** - Use the full documents to understand the topic completely, then extract specific facts. Don't just grab isolated quotes
+6. **If you don't have a specific fact in the full source documents, you MUST:**
    - Remove the specific claim (no fake percentages)
    - Mark it for fact-checking in the factCheckNotes
    - Use generic language ONLY ("many companies" instead of "73% of companies")
-5. **Source verification process:**
-   - Before citing ANY statistic, verify it appears in the source content extracts
+7. **Source verification process:**
+   - Before citing ANY statistic, verify it appears in the full source documents above
+   - Search through the entire document content, not just the beginning
    - If it's not there, DON'T use it
    - If you're unsure, mark it for fact-checking
-6. **Case study rules:**
+8. **Case study rules:**
    - If sources mention a real company with real results, you can reference it
    - If sources don't mention specific companies, DO NOT create "Company X" examples
    - Use generic examples instead ("A logistics company" not "Company X")
-7. **Be transparent** - Mark ALL claims that aren't directly from source content
+9. **Be transparent** - Mark ALL claims that aren't directly from source content
+10. **USE CONTEXT FROM FULL DOCUMENTS** - The full documents provide rich context. Use this understanding to write content that shows deep knowledge of the topic, not just surface-level facts
 
 Your goal is to create a complete, publication-ready content draft that:
-1. **Solves the pain cluster(s)** - Clearly demonstrates how to solve the identified pain cluster
-2. Follows the content brief structure exactly
-3. Uses brand voice consistently
-4. Includes source citations for all data/statistics
-5. **MUST include ALL reputable sources provided in the sources array** - Even if you didn't cite them directly
-6. Is ready for immediate use (with fact-checking of marked items)
+1. **Demonstrates deep understanding of the company's business** - Write as if you understand what ${brandContext.valueProposition ? "the company" : "they"} actually does in ${brandContext.targetIndustries[0] || "their industry"}
+2. **Solves the pain cluster(s)** - Clearly demonstrates how to solve ${defaultPainCluster || "the identified pain cluster"} in the context of ${brandContext.targetIndustries[0] || "the company's industry"}
+3. **Uses full source documents as background knowledge** - The complete documents provided above give you deep context. Use this understanding throughout your content, not just isolated facts
+4. **Integrates insights naturally** - Weave understanding from the full documents into your narrative naturally, showing deep knowledge of the topic
+5. **Uses relevant sources only** - Only cite sources that relate to the company's industry and pain clusters
+6. Follows the content brief structure exactly
+7. Uses brand voice consistently
+8. Includes source citations for all data/statistics (ONLY from relevant sources)
+9. **MUST include ALL RELEVANT reputable sources provided in the sources array** - Exclude sources that don't relate to the company's business
+10. Is ready for immediate use (with fact-checking of marked items)
+
+🔴 CRITICAL: USE FULL DOCUMENTS AS CONTEXT
+The complete documents provided above are not just for extracting facts. They are your SOURCE OF UNDERSTANDING:
+- **Read the FULL documents** - Understand the complete narrative, context, and insights
+- **Use them as background knowledge** - The full documents inform your understanding of the topic
+- **Integrate insights naturally** - Weave themes, trends, and understanding from the full documents throughout your content
+- **Show deep knowledge** - Your content should demonstrate that you've read and understood the complete source documents
+- **Don't just quote** - Use understanding from the full documents to write informed content that shows deep domain knowledge
+
+🔴 CRITICAL: AVOID GENERIC CONTENT
+- DO NOT just string together words related to the pain cluster
+- DO NOT write content that could apply to any company in any industry
+- DO write content that shows understanding of ${brandContext.targetIndustries[0] || "the company's industry"} and ${brandContext.valueProposition ? "what the company does" : "their business"}
+- DO write as if you understand the specific challenges in ${brandContext.targetIndustries[0] || "this industry"} related to ${defaultPainCluster || "this pain cluster"}
+- DO use the full documents above as your knowledge base - they give you the context to write informed content
 
 🔴 CRITICAL: The "sources" array in your response MUST include every reputable source that was provided to you above. This is mandatory - do not omit any sources.
 
@@ -838,9 +991,11 @@ REQUIREMENTS:
    ${productLine ? `- **CRITICAL**: This content is specifically for the "${productLine.name}" product line. Use the product line's value proposition (${productLine.valueProposition}) when explaining how to solve the pain cluster.` : ""}
 
 3. **Source Citations** (CRITICAL - EDITORIAL BEST PRACTICES): 
-   - **ONLY cite statistics/facts that appear in the source content extracts above**
-   - **VERIFY BEFORE CITING**: Before writing any statistic, check if it appears in the source content extracts
-   - **If a statistic is NOT in the source content, DO NOT use it** - Use generic language instead
+   - **USE FULL DOCUMENTS AS CONTEXT**: Read and understand the complete documents provided above. Use them as background knowledge to write informed content
+   - **ONLY cite statistics/facts that appear in the full source documents above**
+   - **VERIFY BEFORE CITING**: Before writing any statistic, search through the complete document content, not just the beginning
+   - **If a statistic is NOT in the full source documents, DO NOT use it** - Use generic language instead
+   - **INTEGRATE UNDERSTANDING**: Use the full context from the documents to write content that shows deep knowledge, not just isolated facts
    
    **EDITORIAL CITATION FORMAT (MANDATORY):**
    - **For verbatim quotes**: Use quotation marks and cite: "[exact quote]" (Source Publication Name, Year if available)
@@ -951,7 +1106,8 @@ ${isNonTextContent
 
     console.log(`[Content Draft] Generating ${idea.assetType} targeting ${targetWords} words with max_tokens: ${maxTokens}`);
     console.log(`[Content Draft] SEO Keywords - Primary: "${primaryKeyword}", Secondary: ${secondaryKeywords.join(", ")}`);
-    console.log(`[Content Draft] Reputable sources: ${reputableSourcesAll.length} total, ${preparedSources.length} with content extracts`);
+    console.log(`[Content Draft] Reputable sources: ${reputableSourcesAll.length} total, ${preparedSources.length} with full document content`);
+    console.log(`[Content Draft] Total source content: ${preparedSources.reduce((sum, s) => sum + (s.content?.length || 0), 0)} characters`);
     
     const completion = await openai.chat.completions.parse({
       model: "gpt-4o-2024-08-06",

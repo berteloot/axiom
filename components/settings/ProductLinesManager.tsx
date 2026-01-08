@@ -66,6 +66,7 @@ export function ProductLinesManager({
   const [deleteId, setDeleteId] = React.useState<string | null>(null)
   const [isDeleting, setIsDeleting] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  const [viewingICPs, setViewingICPs] = React.useState<ProductLine | null>(null)
 
   const handleAdd = async (data: ProductLineFormData) => {
     setIsAdding(true)
@@ -244,7 +245,14 @@ export function ProductLinesManager({
                               </Badge>
                             ))}
                             {line.specificICP.length > 2 && (
-                              <Badge variant="secondary" className="text-xs">
+                              <Badge 
+                                variant="secondary" 
+                                className="text-xs cursor-pointer hover:bg-secondary/80 transition-colors"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setViewingICPs(line)
+                                }}
+                              >
                                 +{line.specificICP.length - 2}
                               </Badge>
                             )}
@@ -308,6 +316,36 @@ export function ProductLinesManager({
         onOpenChange={setIsReviewModalOpen}
         onEdit={handleEditFromReview}
       />
+
+      {/* ICP Targets View Dialog */}
+      <Dialog 
+        open={!!viewingICPs} 
+        onOpenChange={(open) => {
+          if (!open) {
+            setViewingICPs(null)
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Target Audience - {viewingICPs?.name}</DialogTitle>
+            <DialogDescription>
+              All ICP targets for this product line
+            </DialogDescription>
+          </DialogHeader>
+          {viewingICPs && viewingICPs.specificICP && viewingICPs.specificICP.length > 0 && (
+            <div className="space-y-2 max-h-[400px] overflow-y-auto">
+              <div className="flex flex-wrap gap-2">
+                {viewingICPs.specificICP.map((icp, index) => (
+                  <Badge key={index} variant="secondary" className="text-sm">
+                    {icp}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>

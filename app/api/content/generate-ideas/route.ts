@@ -158,29 +158,64 @@ export async function POST(request: NextRequest) {
     
     if (includeTrendingTopics) {
       try {
-        // Build search query with safe fallbacks
-        const searchQuery = primaryPainCluster
-          ? `${primaryPainCluster} solutions ${gap.icp}`
-          : primaryIndustry
-          ? `${gap.icp} ${primaryIndustry} ${gap.stage}`
-          : `${gap.icp} ${gap.stage}`;
+        // Build search query with company context - prioritize industry and product line
+        let searchQuery = "";
+        
+        // Include product line name if available (most specific context)
+        if (productLine && productLine.name) {
+          searchQuery = `${productLine.name} ${primaryPainCluster || gap.icp}`;
+        } else {
+          // Fall back to industry + pain cluster for specificity
+          if (primaryIndustry && primaryPainCluster) {
+            searchQuery = `${primaryIndustry} ${primaryPainCluster} solutions ${gap.icp}`;
+          } else if (primaryPainCluster) {
+            searchQuery = `${primaryPainCluster} solutions ${gap.icp}`;
+          } else if (primaryIndustry) {
+            searchQuery = `${gap.icp} ${primaryIndustry} ${gap.stage}`;
+          } else {
+            searchQuery = `${gap.icp} ${gap.stage}`;
+          }
+        }
+        
+        // Add value proposition keywords if available to narrow search
+        if (brandContext.valueProposition) {
+          const vpKeywords = brandContext.valueProposition
+            .split(/\s+/)
+            .filter(word => word.length > 4 && !['the', 'and', 'for', 'with', 'that', 'this'].includes(word.toLowerCase()))
+            .slice(0, 2);
+          if (vpKeywords.length > 0) {
+            searchQuery = `${searchQuery} ${vpKeywords.join(' ')}`;
+          }
+        }
 
         console.log(`[Generate Ideas] Searching trending topics with query: "${searchQuery}"`);
         console.log(`[Generate Ideas] Primary pain cluster: ${primaryPainCluster}`);
         console.log(`[Generate Ideas] Primary industry: ${primaryIndustry}`);
+        console.log(`[Generate Ideas] Product line: ${productLine?.name || 'None'}`);
 
         // Only search if we have meaningful context
         if (primaryPainCluster || primaryIndustry) {
+          // Pass COMPLETE brand identity for comprehensive context
           trendingData = await searchTrendingTopics(searchQuery, {
             icp: gap.icp,
             painCluster: primaryPainCluster || undefined,
             funnelStage: gap.stage,
             industry: primaryIndustry || undefined,
+            // Complete brand identity context
+            brandVoice: brandContext.brandVoice.length > 0 ? brandContext.brandVoice.join(", ") : undefined,
+            primaryICPRoles: brandContext.primaryICPRoles.length > 0 ? brandContext.primaryICPRoles : undefined,
+            targetIndustries: brandContext.targetIndustries.length > 0 ? brandContext.targetIndustries : undefined,
             valueProposition: brandContext.valueProposition || undefined,
-            keyDifferentiators: brandContext.keyDifferentiators,
-            useCases: brandContext.useCases,
-            painClusters: brandContext.painClusters, // All pain clusters for context
-            competitors: brandContext.competitors, // Exclude competitor blogs
+            roiClaims: brandContext.roiClaims.length > 0 ? brandContext.roiClaims : undefined,
+            keyDifferentiators: brandContext.keyDifferentiators.length > 0 ? brandContext.keyDifferentiators : undefined,
+            useCases: brandContext.useCases.length > 0 ? brandContext.useCases : undefined,
+            painClusters: brandContext.painClusters.length > 0 ? brandContext.painClusters : undefined, // All pain clusters
+            competitors: brandContext.competitors.length > 0 ? brandContext.competitors : undefined,
+            // Product line context if available
+            productLineName: productLine?.name || undefined,
+            productLineDescription: productLine?.description || undefined,
+            productLineValueProp: productLine?.valueProposition || undefined,
+            productLineICPs: productLine?.specificICP && productLine.specificICP.length > 0 ? productLine.specificICP : undefined,
           });
           
           console.log(`[Generate Ideas] Trending data received:`);
@@ -221,15 +256,32 @@ PRODUCT LINE CONTEXT (THIS IS THE SPECIFIC PRODUCT THIS CONTENT IS FOR):
       : "";
 
     const brandContextText = `
+🔴 COMPLETE BRAND IDENTITY (YOU MUST USE ALL OF THIS):
 BRAND IDENTITY:
 - Brand Voice: ${brandVoiceText}
-- Primary ICP Roles: ${brandContext.primaryICPRoles.join(", ")}
-- Pain Clusters: ${brandContext.painClusters.join(", ")}
+- Primary ICP Roles: ${brandContext.primaryICPRoles.join(", ") || "Not specified"}
+- Target Industries: ${brandContext.targetIndustries.join(", ") || "Not specified"}
+- Pain Clusters: ${brandContext.painClusters.join(", ") || "Not specified"}
 - Value Proposition: ${brandContext.valueProposition || "Not specified"}
 - ROI Claims: ${brandContext.roiClaims.join(", ") || "Not specified"}
-- Key Differentiators: ${brandContext.keyDifferentiators.join(", ")}
-- Use Cases: ${brandContext.useCases.join(", ")}
+- Key Differentiators: ${brandContext.keyDifferentiators.join(", ") || "Not specified"}
+- Use Cases: ${brandContext.useCases.join(", ") || "Not specified"}
+- Competitors (EXCLUDE): ${brandContext.competitors.join(", ") || "None specified"}
 ${productLineContext}
+
+🔴 CRITICAL: USE ALL BRAND IDENTITY FACTORS
+When generating content ideas, you MUST consider ALL of the above brand identity information:
+1. **Target Industries**: Ideas must be relevant to ${brandContext.targetIndustries.join(", ") || "the company's target industries"}
+2. **Brand Voice**: Ideas must match the ${brandVoiceText} tone
+3. **Primary ICP Roles**: Ideas must resonate with ${brandContext.primaryICPRoles.join(", ") || "the target ICP roles"}
+4. **Pain Clusters**: Ideas MUST solve ${brandContext.painClusters.join(", ") || "the identified pain clusters"}
+5. **Value Proposition**: Ideas must align with "${brandContext.valueProposition || "the company's value proposition"}"
+6. **ROI Claims**: Reference ${brandContext.roiClaims.join(", ") || "ROI claims"} where relevant
+7. **Key Differentiators**: Leverage ${brandContext.keyDifferentiators.join(", ") || "differentiators"} to stand out
+8. **Use Cases**: Connect to ${brandContext.useCases.join(", ") || "use cases"} where applicable
+${productLine ? `9. **Product Line**: ${productLine.name} - Use product line context above` : ""}
+
+Do NOT generate generic ideas that could apply to any company. Ideas must show deep understanding of ALL brand identity factors.
 `;
 
     const trendingContextText = trendingData && trendingData.trendingTopics.length > 0
@@ -260,14 +312,28 @@ EXISTING CONTENT CONTEXT:
 
 Your goal is to generate 3-5 high-quality content ideas that:
 1. **PRIMARY FOCUS: Solve the specific pain cluster(s)** - Each idea MUST directly address and solve the pain cluster(s) identified
-2. Address the specific ICP persona's needs at that funnel stage
-3. Incorporate trending topics (if available) to ensure relevance and timeliness
-4. Align with the brand voice and leverage brand differentiators
-5. Reference value proposition and use cases where relevant
-6. Follow B2B content best practices (specific, data-driven, problem-focused)
-7. **Ensure all content references are current** - No dates older than ${cutoffDateStr} (8 months before today: ${todayStr})
+2. **USE ALL BRAND IDENTITY FACTORS** - Every idea must show understanding of ALL brand identity information (target industries, brand voice, ICP roles, value proposition, ROI claims, differentiators, use cases)
+3. Address the specific ICP persona's needs at that funnel stage
+4. Incorporate trending topics (if available) to ensure relevance and timeliness
+5. Align with the brand voice and leverage brand differentiators
+6. Reference value proposition, use cases, and ROI claims where relevant
+7. Be relevant to the company's target industries and business context
+8. Follow B2B content best practices (specific, data-driven, problem-focused)
+9. **Ensure all content references are current** - No dates older than ${cutoffDateStr} (8 months before today: ${todayStr})
 
 🔴 CRITICAL: Every content idea MUST solve the pain cluster(s). The pain cluster is the core problem your organization solves - the content must demonstrate HOW to solve it.
+
+🔴 CRITICAL: COMPREHENSIVE BRAND IDENTITY USAGE
+Do NOT generate generic ideas. Every idea must show deep understanding of:
+- The company's target industries (${brandContext.targetIndustries.join(", ") || "specified in brand identity"})
+- The brand voice (${brandVoiceText})
+- The primary ICP roles (${brandContext.primaryICPRoles.join(", ") || "specified in brand identity"})
+- The value proposition (${brandContext.valueProposition || "specified in brand identity"})
+- The key differentiators (${brandContext.keyDifferentiators.join(", ") || "specified in brand identity"})
+- The use cases (${brandContext.useCases.join(", ") || "specified in brand identity"})
+${productLine ? `- The product line context (${productLine.name})` : ""}
+
+Ideas that don't show understanding of ALL these factors are NOT acceptable.
 
 🔴 DATE REQUIREMENT: All content ideas must reference current/recent information only. No dates older than ${cutoffDateStr} should be mentioned.
 

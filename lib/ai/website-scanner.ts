@@ -663,11 +663,21 @@ export async function searchTrendingTopics(
     painCluster?: string;
     funnelStage?: string;
     industry?: string;
+    // Complete brand identity context
+    brandVoice?: string;
+    primaryICPRoles?: string[];
+    targetIndustries?: string[];
     valueProposition?: string;
+    roiClaims?: string[];
     keyDifferentiators?: string[];
     useCases?: string[];
     painClusters?: string[]; // All pain clusters from brand identity
     competitors?: string[]; // Competitor names to exclude
+    // Product line context
+    productLineName?: string;
+    productLineDescription?: string;
+    productLineValueProp?: string;
+    productLineICPs?: string[];
   }
 ): Promise<TrendingTopicsResult> {
   if (!JINA_API_KEY) {
@@ -675,38 +685,81 @@ export async function searchTrendingTopics(
   }
 
   try {
-    // Build enhanced search query with context - prioritize pain clusters
+    // Build enhanced search query with context - prioritize industry and product context
     let searchQuery = query;
     if (context) {
       const contextParts: string[] = [];
+      
+      // CRITICAL: Include industry FIRST for domain specificity
+      if (context.industry) {
+        // Extract key industry terms (avoid overly long industry names)
+        const industryTerms = context.industry
+          .split(/[,\s&]/)
+          .filter(term => term.length > 3)
+          .slice(0, 2);
+        contextParts.push(...industryTerms);
+      }
       
       // Primary: Pain clusters (both specific and all from brand)
       if (context.painCluster) {
         contextParts.push(context.painCluster);
       }
       if (context.painClusters && context.painClusters.length > 0) {
-        // Add other relevant pain clusters
+        // Add other relevant pain clusters (limit to avoid noise)
         const otherPainClusters = context.painClusters
           .filter(pc => pc !== context.painCluster)
-          .slice(0, 2); // Add up to 2 more pain clusters
+          .slice(0, 1); // Only add 1 additional to keep query focused
         contextParts.push(...otherPainClusters);
       }
       
-      // Secondary: ICP and industry context
-      if (context.icp) contextParts.push(`for ${context.icp}`);
-      if (context.industry) contextParts.push(`in ${context.industry}`);
+      // Secondary: ICP context
+      if (context.icp) {
+        // Extract role keywords (e.g., "CFO" from "Chief Financial Officer (CFO)")
+        const icpMatch = context.icp.match(/\(([A-Z]+)\)/);
+        if (icpMatch) {
+          contextParts.push(icpMatch[1]); // Add acronym
+        }
+        contextParts.push(context.icp); // Add full role
+      }
       
-      // Tertiary: Brand differentiators and use cases (if relevant)
+      // Tertiary: Use cases (more specific than differentiators)
+      if (context.useCases && context.useCases.length > 0) {
+        const topUseCase = context.useCases[0];
+        // Extract key terms from use case (limit length)
+        if (topUseCase && topUseCase.length < 40) {
+          const useCaseTerms = topUseCase
+            .split(/\s+/)
+            .filter(word => word.length > 4 && !['management', 'solutions', 'services'].includes(word.toLowerCase()))
+            .slice(0, 2);
+          if (useCaseTerms.length > 0) {
+            contextParts.push(...useCaseTerms);
+          }
+        }
+      }
+      
+      // Add product line context if available (most specific)
+      if (context.productLineName) {
+        contextParts.push(context.productLineName);
+      }
+      
+      // Add key differentiators if they contain important domain terms
       if (context.keyDifferentiators && context.keyDifferentiators.length > 0) {
-        // Add top differentiator if it relates to the pain cluster
         const topDifferentiator = context.keyDifferentiators[0];
         if (topDifferentiator && topDifferentiator.length < 30) {
-          contextParts.push(topDifferentiator);
+          const diffTerms = topDifferentiator
+            .split(/\s+/)
+            .filter(word => word.length > 4 && !['powered', 'grade', 'interface'].includes(word.toLowerCase()))
+            .slice(0, 1);
+          if (diffTerms.length > 0) {
+            contextParts.push(...diffTerms);
+          }
         }
       }
       
       if (contextParts.length > 0) {
-        searchQuery = `${query} ${contextParts.join(" ")}`;
+        // Limit total context parts to avoid overly long queries (max 10 terms to include more brand context)
+        const limitedContext = contextParts.slice(0, 10);
+        searchQuery = `${query} ${limitedContext.join(" ")}`;
       }
     }
 
@@ -821,6 +874,36 @@ export async function searchTrendingTopics(
           role: "system",
           content: `You are a B2B Content Strategist analyzing search results to identify trending topics and insights.
 
+🔴 CRITICAL: UNDERSTAND COMPLETE BRAND IDENTITY CONTEXT
+Before analyzing sources, you MUST understand the complete brand identity:
+
+COMPANY BRAND IDENTITY (CRITICAL CONTEXT):
+${context?.brandVoice ? `- Brand Voice: ${context.brandVoice}` : ""}
+${context?.primaryICPRoles && context.primaryICPRoles.length > 0 ? `- Primary ICP Roles: ${context.primaryICPRoles.join(", ")}` : ""}
+${context?.targetIndustries && context.targetIndustries.length > 0 ? `- Target Industries: ${context.targetIndustries.join(", ")}` : ""}
+${context?.industry ? `- Primary Industry: ${context.industry}` : ""}
+${context?.valueProposition ? `- Value Proposition: ${context.valueProposition}` : ""}
+${context?.roiClaims && context.roiClaims.length > 0 ? `- ROI Claims: ${context.roiClaims.join(", ")}` : ""}
+${context?.keyDifferentiators && context.keyDifferentiators.length > 0 ? `- Key Differentiators: ${context.keyDifferentiators.join(", ")}` : ""}
+${context?.useCases && context.useCases.length > 0 ? `- Use Cases: ${context.useCases.join(", ")}` : ""}
+${context?.painClusters && context.painClusters.length > 0 ? `- All Pain Clusters: ${context.painClusters.join(", ")}` : ""}
+${context?.painCluster ? `- Primary Pain Cluster: ${context.painCluster}` : ""}
+${context?.competitors && context.competitors.length > 0 ? `- Competitors (EXCLUDE): ${context.competitors.join(", ")}` : ""}
+${context?.productLineName ? `
+PRODUCT LINE CONTEXT (MOST SPECIFIC):
+- Product Line Name: ${context.productLineName}
+${context.productLineDescription ? `- Description: ${context.productLineDescription}` : ""}
+${context.productLineValueProp ? `- Value Proposition: ${context.productLineValueProp}` : ""}
+${context.productLineICPs && context.productLineICPs.length > 0 ? `- Target ICPs: ${context.productLineICPs.join(", ")}` : ""}
+` : ""}
+
+🔴 CRITICAL: USE ALL BRAND IDENTITY INFORMATION
+You MUST consider ALL of the above brand identity information when:
+1. Determining source relevance
+2. Identifying trending topics
+3. Assessing if topics align with the company
+4. Filtering sources that don't match the company's context
+
 🔴 CRITICAL SOURCE FILTERING RULES:
 1. **EXCLUDE competitor blogs** - Never use content from: ${context?.competitors?.join(", ") || "competitor websites"}
 2. **PRIORITIZE reputable sources**:
@@ -841,19 +924,47 @@ Extract from the search results:
 2. For each result:
    - Use the EXACT URL from the search result
    - Use the EXACT title from the search result
-   - Relevance assessment (high/medium/low)
+   - Relevance assessment (high/medium/low) - based on ALL brand identity factors
    - Source type classification (consulting, industry_media, research, other)
    - Reputability assessment (true for consulting firms, established media, research orgs)
-3. Strategic insights for content creation based on trending topics
+3. Strategic insights for content creation based on trending topics AND brand identity alignment
 4. List of reputable sources used (URLs only, excluding competitor blogs)
 
+🔴 CRITICAL: COMPREHENSIVE RELEVANCE FILTERING
+Sources MUST be relevant to ALL of the following brand identity factors:
+1. Industry/Domain: ${context?.targetIndustries?.join(", ") || context?.industry || "Not specified"}
+2. Pain Cluster(s): ${context?.painClusters?.join(", ") || context?.painCluster || "Not specified"}
+3. ICP Context: ${context?.primaryICPRoles?.join(", ") || context?.icp || "Not specified"}
+4. Value Proposition: ${context?.valueProposition || "Not specified"}
+5. Use Cases: ${context?.useCases?.join(", ") || "Not specified"}
+${context?.productLineName ? `6. Product Line: ${context.productLineName}` : ""}
+
+EXCLUDE sources that:
+- Are from completely different industries/domains (e.g., education grants for tech companies)
+- Don't mention or relate to the pain cluster(s) identified
+- Don't align with the company's value proposition or use cases
+- Are too generic and don't connect to the company's specific context
+- Could confuse the reader about what the company actually does
+- Don't match the brand voice or target ICP roles
+
 Focus on:
-- Topics that relate to solving pain clusters (especially: ${context?.painCluster || "the identified pain cluster"})
-- Topics that align with B2B content strategy and the organization's value proposition
-- Current industry conversations about solving these specific problems
-- Actionable insights for content creators
-- How trending topics connect to pain cluster solutions
-- Avoid generic or overly broad topics
+- Topics that relate to solving pain clusters (especially: ${context?.painCluster || context?.painClusters?.join(", ") || "the identified pain cluster"})
+- Topics that align with B2B content strategy and the organization's COMPLETE value proposition
+- Current industry conversations about solving these specific problems IN THE COMPANY'S TARGET INDUSTRIES
+- Actionable insights for content creators that are relevant to the company's domain, use cases, and differentiators
+- How trending topics connect to pain cluster solutions IN THE COMPANY'S CONTEXT (considering all brand identity factors)
+- Avoid generic or overly broad topics that don't connect to the company's business
+
+🔴 CRITICAL: COMPREHENSIVE BRAND IDENTITY RELEVANCE CHECK
+Before marking a source as relevant, ask:
+1. "Does this source relate to ${context?.targetIndustries?.join(" or ") || context?.industry || "the company's industry"}?"
+2. "Does it discuss ${context?.painClusters?.join(" or ") || context?.painCluster || "the pain cluster"}?"
+3. "Does it align with the company's value proposition: ${context?.valueProposition || "Not specified"}?"
+4. "Is it relevant to ${context?.primaryICPRoles?.join(" or ") || context?.icp || "the target ICP"}?"
+5. "Does it relate to the company's use cases: ${context?.useCases?.join(", ") || "Not specified"}?"
+${context?.productLineName ? `6. "Is it relevant to ${context.productLineName}?"` : ""}
+
+If the answer to ALL of these is not YES, mark it as low relevance or exclude it.
 
 Return structured data matching the schema.`,
         },
@@ -861,29 +972,60 @@ Return structured data matching the schema.`,
           role: "user",
           content: `Analyze these search results for trending topics related to: "${query}"
 
-Context:
+🔴 COMPLETE BRAND IDENTITY CONTEXT (USE ALL OF THIS):
 ${context ? `
-- ICP: ${context.icp || "Not specified"}
-- Primary Pain Cluster: ${context.painCluster || "Not specified"}
-- All Pain Clusters: ${context.painClusters?.join(", ") || "Not specified"}
-- Industry: ${context.industry || "Not specified"}
-- Value Proposition: ${context.valueProposition || "Not specified"}
-- Key Differentiators: ${context.keyDifferentiators?.join(", ") || "Not specified"}
-- Use Cases: ${context.useCases?.join(", ") || "Not specified"}
-- Competitors to EXCLUDE: ${context.competitors?.join(", ") || "None specified"}
+COMPANY BRAND IDENTITY:
+${context.brandVoice ? `- Brand Voice: ${context.brandVoice}` : ""}
+${context.primaryICPRoles && context.primaryICPRoles.length > 0 ? `- Primary ICP Roles: ${context.primaryICPRoles.join(", ")}` : ""}
+${context.targetIndustries && context.targetIndustries.length > 0 ? `- Target Industries: ${context.targetIndustries.join(", ")}` : ""}
+${context.industry ? `- Primary Industry: ${context.industry}` : ""}
+${context.valueProposition ? `- Value Proposition: ${context.valueProposition}` : ""}
+${context.roiClaims && context.roiClaims.length > 0 ? `- ROI Claims: ${context.roiClaims.join(", ")}` : ""}
+${context.keyDifferentiators && context.keyDifferentiators.length > 0 ? `- Key Differentiators: ${context.keyDifferentiators.join(", ")}` : ""}
+${context.useCases && context.useCases.length > 0 ? `- Use Cases: ${context.useCases.join(", ")}` : ""}
+${context.painClusters && context.painClusters.length > 0 ? `- All Pain Clusters: ${context.painClusters.join(", ")}` : ""}
+${context.painCluster ? `- Primary Pain Cluster: ${context.painCluster}` : ""}
+${context.icp ? `- Content ICP: ${context.icp}` : ""}
+${context.competitors && context.competitors.length > 0 ? `- Competitors to EXCLUDE: ${context.competitors.join(", ")}` : ""}
+${context.productLineName ? `
+PRODUCT LINE (MOST SPECIFIC CONTEXT):
+- Product Line Name: ${context.productLineName}
+${context.productLineDescription ? `- Description: ${context.productLineDescription}` : ""}
+${context.productLineValueProp ? `- Value Proposition: ${context.productLineValueProp}` : ""}
+${context.productLineICPs && context.productLineICPs.length > 0 ? `- Target ICPs: ${context.productLineICPs.join(", ")}` : ""}
+` : ""}
 ` : "No additional context"}
+
+🔴 CRITICAL: COMPREHENSIVE RELEVANCE CHECK IS MANDATORY
+Before marking ANY source as relevant or including it, you MUST verify against ALL brand identity factors:
+1. **Industry Match**: Does this source relate to ${context?.targetIndustries?.join(" or ") || context?.industry || "the company's target industries"}?
+2. **Pain Cluster Match**: Does it discuss ${context?.painClusters?.join(" or ") || context?.painCluster || "the pain cluster(s)"}?
+3. **Value Prop Alignment**: Would someone researching ${context?.valueProposition || "the company's value proposition"} find this relevant?
+4. **ICP Relevance**: Is it relevant to ${context?.primaryICPRoles?.join(" or ") || context?.icp || "the target ICP roles"}?
+5. **Use Case Connection**: Does it relate to ${context?.useCases?.join(" or ") || "the company's use cases"}?
+${context?.productLineName ? `6. **Product Line Relevance**: Is it relevant to ${context.productLineName} and its context?` : ""}
+7. **Differentiator Connection**: Does it align with how ${context?.keyDifferentiators?.join(" or ") || "the company"} differentiates?
+
+EXCLUDE sources if they DON'T match the above criteria:
+- They're from completely different industries (e.g., education grants for tech companies)
+- They don't mention or relate to the pain cluster(s), use cases, or value proposition
+- They're too generic and could confuse readers about what the company does
+- They're clearly irrelevant despite being "reputable" (reputable ≠ relevant)
+- They don't align with the company's target ICP roles or brand voice
 
 🔴 CRITICAL: 
 - EXCLUDE any results from competitor websites: ${context?.competitors?.join(", ") || "None"}
-- PRIORITIZE reputable sources (consulting firms, industry media, research organizations)
-- Only include sources that add credibility to the content
+- PRIORITIZE reputable AND RELEVANT sources that align with ALL brand identity factors
+- Only include sources that add credibility AND are relevant to the COMPLETE company context
 - Use the EXACT URLs provided in each search result - do NOT modify them
+- If a source is reputable but doesn't match brand identity, exclude it or mark it as low relevance
 
 Focus on finding trending topics that:
-1. Relate to solving the pain cluster(s): ${context?.painCluster || context?.painClusters?.join(", ") || "Not specified"}
-2. Connect to the organization's value proposition and differentiators
-3. Show current industry conversations about these problems
-4. Come from reputable, credible sources
+1. Relate to solving the pain cluster(s) IN ${context?.targetIndustries?.join(" or ") || context?.industry || "the company's target industries"}: ${context?.painClusters?.join(", ") || context?.painCluster || "Not specified"}
+2. Connect to the organization's COMPLETE value proposition, use cases, and differentiators
+3. Show current industry conversations about these problems IN THE RELEVANT TARGET INDUSTRIES
+4. Come from reputable, credible sources THAT ARE RELEVANT TO ALL BRAND IDENTITY FACTORS
+5. Align with the company's brand voice and target ICP roles
 
 Search Results (EACH HAS A URL FIELD - USE IT EXACTLY):
 ${searchResultsForAnalysis}`,
@@ -952,14 +1094,56 @@ ${searchResultsForAnalysis}`,
       };
     });
 
-    // Post-process: remove competitor results
+    // Post-process: remove competitor results AND filter for relevance
     const competitorTerms = (context?.competitors ?? [])
       .map(c => c.toLowerCase().trim())
       .filter(Boolean);
 
+    // Build relevance keywords from context
+    const relevanceKeywords: string[] = [];
+    if (context?.industry) {
+      // Extract key industry terms for relevance checking
+      const industryTerms = context.industry
+        .split(/[,\s&]/)
+        .filter(term => term.length > 3 && !['and', 'services', 'management'].includes(term.toLowerCase()))
+        .slice(0, 3);
+      relevanceKeywords.push(...industryTerms.map(t => t.toLowerCase()));
+    }
+    if (context?.painCluster) {
+      const painTerms = context.painCluster
+        .split(/\s+/)
+        .filter(term => term.length > 3)
+        .slice(0, 2);
+      relevanceKeywords.push(...painTerms.map(t => t.toLowerCase()));
+    }
+    if (context?.valueProposition) {
+      // Extract key terms from value proposition
+      const vpTerms = context.valueProposition
+        .split(/\s+/)
+        .filter(term => term.length > 5 && !['help', 'achieve', 'through', 'using', 'their'].includes(term.toLowerCase()))
+        .slice(0, 2);
+      relevanceKeywords.push(...vpTerms.map(t => t.toLowerCase()));
+    }
+
     const filteredResults = fixedResults.filter(r => {
       const haystack = `${r.url} ${r.title} ${r.content}`.toLowerCase();
+      
+      // Exclude competitors
       if (competitorTerms.some(t => t && haystack.includes(t))) return false;
+      
+      // Relevance check: If we have context keywords, ensure source mentions at least one
+      if (relevanceKeywords.length > 0) {
+        const hasRelevance = relevanceKeywords.some(keyword => 
+          haystack.includes(keyword)
+        );
+        
+        // If source is marked as reputable but not relevant, still include it but mark as potentially less relevant
+        // Only exclude if it's clearly irrelevant (no keywords match AND low relevance score from AI)
+        if (!hasRelevance && r.relevance === 'low' && !r.isReputable) {
+          return false; // Exclude low-relevance non-reputable sources
+        }
+      }
+      
       return true;
     });
 
