@@ -2,7 +2,7 @@
 
 import { getSession } from "next-auth/react";
 import { useEffect, useState, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,20 +18,24 @@ function SignInForm() {
   const [countdown, setCountdown] = useState(0);
   const [checkingSession, setCheckingSession] = useState(true);
   const [redirecting, setRedirecting] = useState(false);
-  const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
 
   useEffect(() => {
-    // Check if user is already signed in
+    // Check if user is already signed in (only on mount)
     let mounted = true;
     const checkSession = async () => {
+      // Skip if already redirecting
+      if (redirecting) {
+        setCheckingSession(false);
+        return;
+      }
       try {
         const session = await getSession();
-        if (mounted && session) {
+        if (mounted && session && !redirecting) {
           setRedirecting(true);
-          // Use replace to avoid back button issues
-          router.replace(callbackUrl);
+          // Use full page navigation for consistency
+          window.location.href = callbackUrl;
         }
       } catch (err) {
         console.error("Session check error:", err);
@@ -43,7 +47,8 @@ function SignInForm() {
     };
     checkSession();
     return () => { mounted = false; };
-  }, [router, callbackUrl]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
 
   // Countdown timer for resend
   useEffect(() => {
@@ -99,10 +104,10 @@ function SignInForm() {
       const data = await response.json();
 
       if (response.ok) {
-        // Redirect to dashboard or callback URL
+        // Use full page navigation to ensure session cookie is properly loaded
+        // This avoids the redirect loop that happens with React Router
         setRedirecting(true);
-        router.replace(callbackUrl);
-        router.refresh(); // Refresh to pick up new session
+        window.location.href = callbackUrl;
       } else {
         setError(data.error || "Invalid code. Please try again.");
       }
