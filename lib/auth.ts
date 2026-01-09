@@ -70,9 +70,13 @@ export const authOptions: NextAuthOptions = {
         url,
         provider: { from },
       }) {
+      console.log("📧 [EmailProvider] ========================================");
       console.log("📧 [EmailProvider] sendVerificationRequest called for:", email);
       console.log("📧 [EmailProvider] URL provided by NextAuth:", url);
       console.log("📧 [EmailProvider] Email will be sent from:", EMAIL_FROM);
+      console.log("📧 [EmailProvider] NOTE: NextAuth should have called createVerificationToken BEFORE this");
+      console.log("📧 [EmailProvider] Check logs above for 'createVerificationToken' logs");
+      console.log("📧 [EmailProvider] ========================================");
       
       // Log token hashing for verification (as suggested by ChatGPT)
       const rawTokenFromUrl = url.match(/token=([^&]+)/)?.[1];
@@ -263,6 +267,13 @@ export const authOptions: NextAuthOptions = {
       console.log("🔄 [Redirect Callback] Called");
       console.log("🔄 [Redirect Callback] URL:", url);
       console.log("🔄 [Redirect Callback] Base URL:", baseUrl);
+      
+      // If redirecting to error page, allow it (don't override)
+      if (url.includes("/auth/error")) {
+        console.log("⚠️  [Redirect Callback] NextAuth is redirecting to error page - allowing it");
+        console.log("⚠️  [Redirect Callback] This suggests authentication failed");
+        return url;
+      }
       
       // If url is relative, make it absolute
       if (url.startsWith("/")) {

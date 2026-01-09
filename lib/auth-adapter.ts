@@ -141,7 +141,8 @@ export function CustomPrismaAdapter(): Adapter {
     // Note: NextAuth v4 hashes tokens BEFORE passing them to this method
     // So the token parameter is already hashed - we store it as-is
     async createVerificationToken({ identifier, expires, token }) {
-      console.log("🔧 [Adapter] createVerificationToken called");
+      console.log("🔧 [Adapter] ========================================");
+      console.log("🔧 [Adapter] createVerificationToken CALLED BY NEXTAUTH");
       console.log("🔧 [Adapter] Identifier (email):", identifier);
       console.log("🔧 [Adapter] Stored token (hashed, first 20 chars):", token?.substring(0, 20));
       console.log("🔧 [Adapter] Token length:", token?.length);
@@ -149,6 +150,7 @@ export function CustomPrismaAdapter(): Adapter {
       console.log("🔧 [Adapter] Expires at:", expires);
       console.log("🔧 [Adapter] Current time:", new Date().toISOString());
       console.log("🔧 [Adapter] Time until expiry:", Math.round((new Date(expires).getTime() - Date.now()) / 1000 / 60), "minutes");
+      console.log("🔧 [Adapter] ========================================");
       
       try {
         // Delete any existing tokens for this identifier first
