@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { hashToken } from "@/lib/token-utils";
 import { encode } from "next-auth/jwt";
+import { randomUUID } from "crypto";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -119,20 +120,29 @@ export async function POST(request: NextRequest) {
     }
 
     // Create JWT token (30 days expiry)
+    // The token MUST match the format NextAuth expects for session creation
     const maxAge = 30 * 24 * 60 * 60; // 30 days in seconds
+    const now = Math.floor(Date.now() / 1000);
     const token = await encode({
       token: {
+        // Core identity fields (required for session.user)
         sub: user.id,
         email: user.email,
+        name: user.name || null,
+        picture: user.image || null,
+        // Custom fields for our app
         emailVerified: user.emailVerified,
-        iat: Math.floor(Date.now() / 1000),
-        exp: Math.floor(Date.now() / 1000) + maxAge,
+        // Standard JWT fields
+        iat: now,
+        exp: now + maxAge,
+        jti: randomUUID(), // Unique token ID
       },
       secret: NEXTAUTH_SECRET!,
       maxAge,
     });
 
     console.log("[Verify Code] JWT created for user:", user.id);
+    console.log("[Verify Code] JWT includes: sub, email, name, picture, emailVerified");
 
     // Create response with session cookie
     const response = NextResponse.json({
@@ -145,19 +155,25 @@ export async function POST(request: NextRequest) {
     });
 
     // Set the session cookie (NextAuth compatible)
-    const cookieName = process.env.NODE_ENV === "production" 
+    const isProduction = process.env.NODE_ENV === "production";
+    const cookieName = isProduction 
       ? "__Secure-next-auth.session-token"
       : "next-auth.session-token";
 
+    console.log("[Verify Code] Setting cookie:", cookieName);
+    console.log("[Verify Code] NODE_ENV:", process.env.NODE_ENV);
+    console.log("[Verify Code] Is Production:", isProduction);
+
     response.cookies.set(cookieName, token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: isProduction,
       sameSite: "lax",
       path: "/",
       maxAge: maxAge,
     });
 
-    console.log("[Verify Code] Session cookie set, auth complete");
+    console.log("[Verify Code] ✅ Session cookie set successfully");
+    console.log("[Verify Code] Cookie settings: httpOnly=true, secure=" + isProduction + ", sameSite=lax, path=/, maxAge=" + maxAge);
 
     return response;
   } catch (error: any) {
