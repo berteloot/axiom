@@ -40,6 +40,8 @@ interface KeywordWithMatches extends KeywordResult {
   adGroupSuggestion?: string;
   matchType?: "broad" | "phrase" | "exact";
   estimatedMonthlySpend?: number;
+  bidRecommendation?: number; // Recommended bid based on CPC and competition
+  valueScore?: number; // 0-100 score combining volume, CPC, and competition
 }
 
 /**
@@ -288,14 +290,110 @@ function suggestMatchType(keyword: KeywordResult): "broad" | "phrase" | "exact" 
 }
 
 /**
- * Calculate estimated monthly spend
+ * Calculate estimated monthly spend based on DataForSEO best practices
+ * Uses competition_index to estimate realistic CTR based on ad position
+ * Per DataForSEO: Position 1-2 = 5% CTR, Position 3-5 = 2% CTR, Position 6+ = 0.5% CTR
+ * Higher competition = harder to reach top positions = lower CTR
  */
 function estimateMonthlySpend(keyword: KeywordResult): number {
-  // Estimate based on: Volume × CTR × CPC
-  // Assuming average CTR: 2% for position 3-5, 5% for position 1-2
-  // Conservative estimate: 1% CTR
-  const estimatedClicks = keyword.volume * 0.01;
+  if (keyword.volume === 0 || keyword.cpc === 0) return 0;
+  
+  const competitionIndex = keyword.competition_index ?? 0;
+  
+  // Estimate CTR based on competition index
+  // High competition (0.7-1.0) = harder to rank high = lower CTR (position 6+)
+  // Medium competition (0.4-0.7) = can reach mid positions = medium CTR (position 3-5)
+  // Low competition (<0.4) = easier to rank high = higher CTR (position 1-2)
+  let estimatedCTR: number;
+  if (competitionIndex >= 0.7) {
+    // High competition - expect position 6+ = 0.5% CTR
+    estimatedCTR = 0.005;
+  } else if (competitionIndex >= 0.4) {
+    // Medium competition - expect position 3-5 = 2% CTR
+    estimatedCTR = 0.02;
+  } else {
+    // Low competition - expect position 1-2 = 5% CTR
+    estimatedCTR = 0.05;
+  }
+  
+  const estimatedClicks = keyword.volume * estimatedCTR;
   return estimatedClicks * keyword.cpc;
+}
+
+/**
+ * Calculate recommended bid amount based on DataForSEO best practices
+ * Higher competition requires higher bids to achieve good ad positions
+ * Recommended bid = CPC × (1 + competition_index multiplier)
+ */
+function calculateBidRecommendation(keyword: KeywordResult): number {
+  if (keyword.cpc === 0) return 0;
+  
+  const competitionIndex = keyword.competition_index ?? 0;
+  
+  // Base bid is the CPC
+  // For high competition (0.7+), bid 20-30% above CPC to compete
+  // For medium competition (0.4-0.7), bid 10-15% above CPC
+  // For low competition (<0.4), bid at or slightly above CPC
+  let bidMultiplier: number;
+  if (competitionIndex >= 0.7) {
+    bidMultiplier = 1.25; // Bid 25% above CPC for high competition
+  } else if (competitionIndex >= 0.4) {
+    bidMultiplier = 1.125; // Bid 12.5% above CPC for medium competition
+  } else {
+    bidMultiplier = 1.05; // Bid 5% above CPC for low competition
+  }
+  
+  return keyword.cpc * bidMultiplier;
+}
+
+/**
+ * Calculate value score (0-100) combining volume, CPC, and competition
+ * Per DataForSEO best practices: Prioritize keywords with good volume (>200),
+ * reasonable CPC, and manageable competition
+ * Formula: (volume_score × 0.4) + (cpc_score × 0.3) + (competition_efficiency × 0.3)
+ */
+function calculateValueScore(keyword: KeywordResult): number {
+  // Volume score (0-40 points): Reward volume > 200 (DataForSEO recommendation)
+  // Volume 200+ = full points, 100-199 = 75%, 50-99 = 50%, <50 = 25%
+  let volumeScore = 0;
+  if (keyword.volume >= 200) {
+    volumeScore = 40;
+  } else if (keyword.volume >= 100) {
+    volumeScore = 30;
+  } else if (keyword.volume >= 50) {
+    volumeScore = 20;
+  } else if (keyword.volume > 0) {
+    volumeScore = 10;
+  }
+  
+  // CPC score (0-30 points): Higher CPC indicates commercial intent
+  // CPC > $5 = full points, $2-5 = 75%, $1-2 = 50%, <$1 = 25%
+  let cpcScore = 0;
+  if (keyword.cpc >= 5) {
+    cpcScore = 30;
+  } else if (keyword.cpc >= 2) {
+    cpcScore = 22.5;
+  } else if (keyword.cpc >= 1) {
+    cpcScore = 15;
+  } else if (keyword.cpc > 0) {
+    cpcScore = 7.5;
+  }
+  
+  // Competition efficiency (0-30 points): Lower competition = better value
+  // Competition index 0-0.3 = full points, 0.3-0.5 = 75%, 0.5-0.7 = 50%, 0.7+ = 25%
+  const competitionIndex = keyword.competition_index ?? 0.5; // Default to medium if unknown
+  let competitionScore = 0;
+  if (competitionIndex <= 0.3) {
+    competitionScore = 30;
+  } else if (competitionIndex <= 0.5) {
+    competitionScore = 22.5;
+  } else if (competitionIndex <= 0.7) {
+    competitionScore = 15;
+  } else {
+    competitionScore = 7.5;
+  }
+  
+  return Math.round(volumeScore + cpcScore + competitionScore);
 }
 
 export async function POST(request: NextRequest) {
@@ -821,8 +919,29 @@ export async function POST(request: NextRequest) {
     const keywordStrings = allKeywords.map(k => k.keyword);
     const intentMap = await fetchSearchIntent(keywordStrings);
 
+    // Filter keywords per DataForSEO best practices:
+    // - Minimum volume > 200 for meaningful traffic (DataForSEO recommendation)
+    // - Must have valid CPC > 0 (commercial intent)
+    // Keep low volume keywords (<200) if they have high CPC (commercial intent) or low competition
+    const filteredKeywords = allKeywords.filter((keyword) => {
+      // Keep if volume > 200 (DataForSEO recommendation)
+      if (keyword.volume >= 200) return true;
+      
+      // Keep if low volume but high CPC (>$5) - indicates strong commercial intent
+      if (keyword.cpc >= 5 && keyword.volume > 0) return true;
+      
+      // Keep if low volume but low competition (<0.4) - easier to rank
+      const competitionIndex = keyword.competition_index ?? 0.5;
+      if (competitionIndex < 0.4 && keyword.volume > 0) return true;
+      
+      // Filter out everything else
+      return false;
+    });
+    
+    console.log(`[PPC Campaign] Filtered: ${allKeywords.length} total → ${filteredKeywords.length} after applying DataForSEO best practices (volume >200 or high CPC/low competition)`);
+
     // Score each keyword against each asset
-    const keywordsWithMatches: KeywordWithMatches[] = allKeywords.map((keyword) => {
+    const keywordsWithMatches: KeywordWithMatches[] = filteredKeywords.map((keyword) => {
       const searchIntent = intentMap.get(keyword.keyword.toLowerCase());
       
       const assetMatches: AssetMatch[] = relevantAssets.map((asset) => {
@@ -852,6 +971,8 @@ export async function POST(request: NextRequest) {
 
       const matchType = suggestMatchType(keyword);
       const estimatedMonthlySpend = estimateMonthlySpend(keyword);
+      const bidRecommendation = calculateBidRecommendation(keyword);
+      const valueScore = calculateValueScore(keyword);
 
       return {
         ...keyword,
@@ -861,7 +982,20 @@ export async function POST(request: NextRequest) {
         adGroupSuggestion,
         matchType,
         estimatedMonthlySpend,
+        bidRecommendation,
+        valueScore,
       };
+    });
+
+    // Sort keywords by value score (best keywords first) per DataForSEO best practices
+    keywordsWithMatches.sort((a, b) => {
+      const scoreA = a.valueScore || 0;
+      const scoreB = b.valueScore || 0;
+      if (scoreA !== scoreB) {
+        return scoreB - scoreA; // Higher value score first
+      }
+      // Tiebreaker: prefer higher volume
+      return (b.volume || 0) - (a.volume || 0);
     });
 
     // Group keywords into ad groups

@@ -5,8 +5,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Asset } from "@/lib/types";
-import { CheckCircle2, XCircle, TrendingUp, DollarSign } from "lucide-react";
+import { CheckCircle2, XCircle, TrendingUp, Info } from "lucide-react";
 
 interface AssetMatch {
   assetId: string;
@@ -26,10 +27,13 @@ interface KeywordWithMatches {
   volume: number;
   cpc: number;
   competition: string;
+  competition_index?: number;
   searchIntent?: SearchIntent;
   assetMatches: AssetMatch[];
   recommendedAssetId?: string;
   estimatedMonthlySpend?: number;
+  bidRecommendation?: number;
+  valueScore?: number;
 }
 
 interface KeywordAssetMatrixProps {
@@ -81,7 +85,7 @@ export function KeywordAssetMatrix({
     }
   };
 
-  // Sort keywords by recommended match or best score
+  // Sort keywords by value score (DataForSEO best practices) and match quality
   const sortedKeywords = [...keywords].sort((a, b) => {
     const aHasAssignment = assignedKeywords.has(a.keyword);
     const bHasAssignment = assignedKeywords.has(b.keyword);
@@ -89,9 +93,22 @@ export function KeywordAssetMatrix({
       return aHasAssignment ? -1 : 1;
     }
     
+    // Primary sort: Value Score (DataForSEO best practices)
+    const aValueScore = a.valueScore || 0;
+    const bValueScore = b.valueScore || 0;
+    if (aValueScore !== bValueScore) {
+      return bValueScore - aValueScore;
+    }
+    
+    // Secondary sort: Asset match score
     const aBestScore = a.assetMatches[0]?.score || 0;
     const bBestScore = b.assetMatches[0]?.score || 0;
-    return bBestScore - aBestScore;
+    if (aBestScore !== bBestScore) {
+      return bBestScore - aBestScore;
+    }
+    
+    // Tertiary sort: Volume
+    return (b.volume || 0) - (a.volume || 0);
   });
 
   return (
@@ -103,6 +120,8 @@ export function KeywordAssetMatrix({
             Assign the best landing page (asset) for each keyword. High match scores indicate better alignment.
             <span className="block mt-1 text-xs">
               Volume = Average monthly search volume (12-month average). CPC = Cost per click in selected currency.
+              <br />Keywords are filtered per DataForSEO best practices (volume ≥200 or high CPC/low competition).
+              <br />Value Score combines volume, CPC, and competition to prioritize opportunities.
             </span>
           </p>
         </div>
@@ -130,6 +149,45 @@ export function KeywordAssetMatrix({
               </TableHead>
               <TableHead className="w-24">Competition</TableHead>
               <TableHead className="w-32">Intent</TableHead>
+              <TableHead className="w-28 text-right">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="flex items-center justify-end gap-1 cursor-help">
+                        <span className="text-sm font-medium">Value Score</span>
+                        <Info className="h-3 w-3 text-muted-foreground" />
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p className="text-xs">
+                        Composite score (0-100) combining volume, CPC, and competition.
+                        <br />Higher scores indicate better opportunities per DataForSEO best practices.
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </TableHead>
+              <TableHead className="w-32 text-right">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="flex flex-col items-end gap-0.5 cursor-help">
+                        <div className="flex items-center gap-1">
+                          <span className="text-sm font-medium">Recommended Bid</span>
+                          <Info className="h-3 w-3 text-muted-foreground" />
+                        </div>
+                        <span className="text-xs font-normal text-muted-foreground">Based on CPC & competition</span>
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p className="text-xs">
+                        Suggested bid amount based on CPC and competition index.
+                        <br />Higher competition requires higher bids to achieve good ad positions (DataForSEO best practice).
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </TableHead>
               <TableHead className="min-w-[300px]">Recommended Asset</TableHead>
               <TableHead className="w-32">Best Match Score</TableHead>
               <TableHead className="w-40">Assign Landing Page</TableHead>
@@ -175,6 +233,63 @@ export function KeywordAssetMatrix({
                       >
                         {kw.searchIntent.main_intent}
                       </Badge>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {kw.valueScore !== undefined ? (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="flex items-center justify-end gap-1 cursor-help">
+                              <span className={`font-semibold ${
+                                kw.valueScore >= 70 ? "text-green-600 dark:text-green-400" :
+                                kw.valueScore >= 50 ? "text-yellow-600 dark:text-yellow-400" :
+                                "text-orange-600 dark:text-orange-400"
+                              }`}>
+                                {kw.valueScore}
+                              </span>
+                              <span className="text-xs text-muted-foreground">/100</span>
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-xs">
+                            <p className="text-xs">
+                              Value Score: {kw.valueScore}/100
+                              <br />Combines volume ({kw.volume}), CPC (${kw.cpc.toFixed(2)}), and competition ({kw.competition}).
+                              <br />Higher = better opportunity per DataForSEO best practices.
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {kw.bidRecommendation !== undefined && kw.bidRecommendation > 0 ? (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="flex flex-col items-end cursor-help">
+                              <span className="font-medium text-blue-600 dark:text-blue-400">
+                                ${kw.bidRecommendation.toFixed(2)}
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                CPC: ${kw.cpc.toFixed(2)}
+                              </span>
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-xs">
+                            <p className="text-xs">
+                              Recommended bid: ${kw.bidRecommendation.toFixed(2)}
+                              <br />Base CPC: ${kw.cpc.toFixed(2)}
+                              <br />Competition: {kw.competition} ({((kw.competition_index || 0.5) * 100).toFixed(0)}%)
+                              <br />Higher competition requires higher bids for good ad positions.
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     ) : (
                       <span className="text-muted-foreground text-xs">—</span>
                     )}
@@ -250,22 +365,6 @@ export function KeywordAssetMatrix({
             })}
           </TableBody>
         </Table>
-      </div>
-
-      {/* Match Score Legend */}
-      <div className="flex items-center gap-4 text-xs text-muted-foreground pt-2 border-t">
-        <div className="flex items-center gap-1">
-          <CheckCircle2 className="h-3 w-3 text-green-500" />
-          <span>70%+ (Excellent Match)</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <TrendingUp className="h-3 w-3 text-yellow-500" />
-          <span>50-69% (Good Match)</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <XCircle className="h-3 w-3 text-red-500" />
-          <span>&lt;50% (Weak Match)</span>
-        </div>
       </div>
     </div>
   );

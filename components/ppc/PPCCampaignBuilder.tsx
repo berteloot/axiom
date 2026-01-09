@@ -43,6 +43,8 @@ interface KeywordWithMatches {
   adGroupSuggestion?: string;
   matchType?: "broad" | "phrase" | "exact";
   estimatedMonthlySpend?: number;
+  bidRecommendation?: number;
+  valueScore?: number;
 }
 
 interface PPCampaignData {
@@ -707,10 +709,40 @@ export function PPCCampaignBuilder({
                               <Badge variant="secondary" className="text-xs">Has Match</Badge>
                             )}
                           </div>
-                          <div className="text-xs text-muted-foreground mt-1">
-                            Volume: {kw.volume.toLocaleString()} • CPC: ${kw.cpc.toFixed(2)} • Competition: {kw.competition}
-                            {kw.searchIntent && (
-                              <> • Intent: {kw.searchIntent.main_intent}</>
+                          <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span>Volume: {kw.volume.toLocaleString()}</span>
+                              <span>•</span>
+                              <span>CPC: ${kw.cpc.toFixed(2)}</span>
+                              <span>•</span>
+                              <span>Competition: {kw.competition}</span>
+                              {kw.searchIntent && (
+                                <>
+                                  <span>•</span>
+                                  <span>Intent: {kw.searchIntent.main_intent}</span>
+                                </>
+                              )}
+                            </div>
+                            {(kw.valueScore !== undefined || kw.bidRecommendation !== undefined) && (
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {kw.valueScore !== undefined && (
+                                  <>
+                                    <span className={`font-medium ${
+                                      kw.valueScore >= 70 ? "text-green-600 dark:text-green-400" :
+                                      kw.valueScore >= 50 ? "text-yellow-600 dark:text-yellow-400" :
+                                      "text-orange-600 dark:text-orange-400"
+                                    }`}>
+                                      Value Score: {kw.valueScore}/100
+                                    </span>
+                                    <span>•</span>
+                                  </>
+                                )}
+                                {kw.bidRecommendation !== undefined && kw.bidRecommendation > 0 && (
+                                  <span className="font-medium text-blue-600 dark:text-blue-400">
+                                    Recommended Bid: ${kw.bidRecommendation.toFixed(2)}
+                                  </span>
+                                )}
+                              </div>
                             )}
                           </div>
                         </div>
