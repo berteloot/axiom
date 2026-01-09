@@ -102,7 +102,7 @@ const BaseAnalysisSchema = z.object({
     "MOFU_CONSIDERATION", 
     "BOFU_DECISION", 
     "RETENTION"
-  ]).describe("The buyer's journey stage. WATERFALL PRIORITY RULE: Check in order - (1) If contains specific ROI stats, customer testimonials, or pricing → BOFU (even if mentions pain points). (2) If explains how product works, features, or compares solutions → MOFU. (3) If only discusses problems/trends without solution details → TOFU. Asset Type Anchor: Case Study → BOFU, Sales Deck → MOFU/BOFU (never TOFU)."),
+  ]).describe("The buyer's journey stage. WATERFALL PRIORITY RULE: Analyze primary intent. Check in order - (1) BOFU: User validating risk/ROI (hard ROI metrics, pricing, security compliance, deep implementation specs, explicit commercial CTAs). Case Studies with metrics → BOFU, narrative-only → MOFU. (2) MOFU: User comparing approaches (comparative content, methodology, capabilities without pricing). (3) TOFU: User discovering problems (trends, definitions, pain agitation without product pitch). Use asset type heuristics as tie-breakers."),
 
   icpTargets: z.array(z.string())
     .max(5)
@@ -185,28 +185,37 @@ STRATEGY GUIDELINES:
    - Examples: ✅ "CFO", "VP of Engineering", "Chief Marketing Officer" | ❌ "Enterprise", "SMB", "Startups", "Managers", "Leaders"
 
 3. **Funnel Stage** (STRICT WATERFALL LOGIC):
-   Determine the funnel stage by checking these conditions in order. Stop at the first match.
+   Analyze the asset's *primary intent*. Check these conditions in order. Stop at the first match.
    
-   **PRIORITY 1: BOFU (Decision) - "The Proof"**
-   - **Signals:** Contains specific ROI metrics (e.g., "saved 30%", "$X cost reduction"), customer testimonials/quotes, pricing information, or legal/contract terms.
-   - **Asset Types:** Case Studies, Pricing Sheets, ROI Calculators, Contracts, Customer Success Stories.
-   - **CRITICAL RULE:** Even if the asset mentions "Pain Points" or problems, the presence of ROI/Proof/Testimonials makes it BOFU. A Case Study that describes customer pain is STILL BOFU because it proves the solution works.
+   **PRIORITY 1: BOFU (Decision) - "The Proof & Validation"**
+   - **User Mindset:** "I am ready to buy, I just need to validate the risk/ROI."
+   - **Signals:** 
+     - Hard numbers: ROI metrics (e.g., "saved 30%"), specific pricing models.
+     - Validation: Trust centers, security compliance, legal terms, deep implementation specs (API docs).
+     - Commercials: Explicit "Book a Demo" or "Talk to Sales" as the primary focus.
+   - **Asset Types:** Pricing Sheets, ROI Calculators, Contracts, Technical Implementation Guides.
+   - **Case Study Rule:** If the Case Study contains specific metrics ($ saved, % gain) or a "Results" section, it is BOFU. If it is purely narrative without data, treat as MOFU.
    
-   **PRIORITY 2: MOFU (Consideration) - "The Solution"**
-   - **Signals:** Explains *how* the product/solution solves the problem. Mentions specific features, use cases, implementation details, or compares us vs. competitors (competitive differentiation).
-   - **Asset Types:** Whitepapers, Solution Briefs, Webinar Recordings, Product Demos, Technical Documentation.
-   - **Logic:** If it moves beyond "why this problem is bad" to "how we fix it" or "what makes us different," it is MOFU.
+   **PRIORITY 2: MOFU (Consideration) - "The Solution & Method"**
+   - **User Mindset:** "I know my problem, I am looking for the best approach/vendor."
+   - **Signals:** 
+     - Comparative: "Us vs. Them" or "Old Way vs. New Way."
+     - Methodology: Explains the framework, features, or unique mechanism of action.
+     - Capabilities: Deep dives into *what* the product does, but without the hard commercial pricing/contract data.
+   - **Asset Types:** Whitepapers, Solution Briefs, Product Demos, Webinar Recordings.
    
-   **PRIORITY 3: TOFU (Awareness) - "The Problem"**
-   - **Signals:** Focuses on market trends, definitions ("What is X?"), or agitating pain clusters without pitching the specific product/solution deeply.
-   - **Asset Types:** Blog Posts, Infographics, Trend Reports, Checklists, Educational Content.
-   - **Logic:** Default to TOFU only if no Solution or Proof signals are present. Pure educational/problem-focused content without solution details.
+   **PRIORITY 3: TOFU (Awareness) - "The Problem & Context"**
+   - **User Mindset:** "I have a problem but I don't know the cause yet."
+   - **Signals:** 
+     - High-level trends, industry news, definitions ("What is X?").
+     - Agitating pain points without explicitly pitching the product as the *only* solution.
+     - Brand acts as a "Publisher/Educator" rather than a "Vendor."
+   - **Asset Types:** Blog Posts, Trend Reports, Infographics, High-Level Checklists.
    
-   **ASSET TYPE HARD ANCHORS:**
-   - **Case Study** → MUST be BOFU (it's proof of success, always Decision stage)
-   - **Sales Deck** → MUST be MOFU or BOFU (active selling, never TOFU)
-   - **Whitepaper** → Typically MOFU (deep technical consideration)
-   - **Infographic** → Typically TOFU (high-level visual awareness)
+   **ASSET TYPE HEURISTICS (Use as tie-breakers):**
+   - **Sales Deck** → Strong indicator of MOFU or BOFU.
+   - **Whitepaper** → Strong indicator of MOFU.
+   - **Infographic** → Strong indicator of TOFU.
 
 4. **Outreach**: Write the hook as if you are a rep sending a personal note to a prospect.
 
@@ -314,7 +323,7 @@ RULES:
 1. matchedProductLineId: MUST use exact ID from productLines[].id above. NO hallucination.
 2. painClusters: Prefer exact terms from painClusters[] when relevant, else infer (2-5 words, Title Case).
 3. icpTargets: PRIORITY 1 = primaryICPRoles[], PRIORITY 2 = productLines[].targetAudience, PRIORITY 3 = infer new.
-4. funnelStage: Use WATERFALL LOGIC (see system prompt). Check BOFU signals first (ROI/testimonials), then MOFU (solution/features), then TOFU (problem only). Case Studies → BOFU always.
+4. funnelStage: Use WATERFALL LOGIC (see system prompt). Check BOFU signals first (ROI/metrics/validation/commercials), then MOFU (comparative/methodology), then TOFU (trends/problems). Case Studies with metrics → BOFU, narrative-only → MOFU.
 5. snippets: Prioritize ROI_STAT matching roiClaims[], COMPETITIVE_WEDGE matching keyDifferentiators[].
 `;
     } 
