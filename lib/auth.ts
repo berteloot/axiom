@@ -70,8 +70,13 @@ export const authOptions: NextAuthOptions = {
         url,
         provider: { from },
       }) {
+        console.log("📧 [EmailProvider] sendVerificationRequest called for:", email);
+        console.log("📧 [EmailProvider] URL provided by NextAuth:", url);
+        console.log("📧 [EmailProvider] Email will be sent from:", EMAIL_FROM);
+        
         // Validate EMAIL_FROM is set before proceeding
         if (!EMAIL_FROM) {
+          console.error("❌ [EmailProvider] EMAIL_FROM is not set!");
           throw new Error("FROM_EMAIL (or EMAIL_FROM) environment variable is required but not set. Please set FROM_EMAIL in your environment variables.");
         }
 
@@ -138,9 +143,11 @@ export const authOptions: NextAuthOptions = {
                 openTracking: { enable: false },
               },
             };
+            console.log("📧 [EmailProvider] Sending email via SendGrid...");
             await sgMail.send(msg);
-            console.log("✅ Verification email sent via SendGrid to:", email);
-            console.log("📧 Verification URL in email:", url);
+            console.log("✅ [EmailProvider] Verification email sent via SendGrid to:", email);
+            console.log("📧 [EmailProvider] Verification URL in email:", url);
+            console.log("📧 [EmailProvider] Token in URL (first 20 chars):", url.match(/token=([^&]+)/)?.[1]?.substring(0, 20) || "not found");
           } catch (error: any) {
             console.error("❌ SendGrid error:", error.message);
             console.error("SendGrid error details:", error.response?.body || error);
@@ -170,28 +177,59 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
+      console.log("🔄 [JWT Callback] Called with trigger:", trigger || "initial");
       if (user) {
+        console.log("🔄 [JWT Callback] User object present, email:", user.email, "id:", user.id);
+        // CRITICAL: Set token.sub FIRST before any database calls
+        // token.sub is required for session callback to work
+        token.sub = user.id
+        token.email = user.email || undefined
+        
         try {
           // Get user from database to include verification status
           const dbUser = await prisma.user.findUnique({
             where: { email: user.email! }
           })
           if (dbUser) {
+            console.log("✅ [JWT Callback] Found user, emailVerified:", dbUser.emailVerified);
             token.emailVerified = dbUser.emailVerified
+          } else {
+            console.warn("⚠️  [JWT Callback] User not found in database:", user.email);
+            // Still allow authentication even if database lookup fails
+            token.emailVerified = "UNVERIFIED"
           }
         } catch (error) {
           console.error("❌ [JWT Callback] Error fetching user from database:", error);
           // Don't fail the JWT callback if database query fails
           // The user will still be authenticated, just without emailVerified status
+          token.emailVerified = "UNVERIFIED"
         }
+      } else {
+        console.log("🔄 [JWT Callback] No user object, using existing token");
+        console.log("🔄 [JWT Callback] Existing token sub:", token.sub);
       }
+      
+      if (!token.sub) {
+        console.error("❌ [JWT Callback] WARNING: token.sub is not set! This will cause session creation to fail.");
+      }
+      
+      console.log("🔄 [JWT Callback] Returning token with sub:", token.sub, "email:", token.email, "emailVerified:", token.emailVerified);
       return token
     },
     async session({ session, token }) {
+      console.log("🔄 [Session Callback] Called");
+      console.log("🔄 [Session Callback] Token sub:", token.sub);
+      console.log("🔄 [Session Callback] Token emailVerified:", token.emailVerified);
       if (session.user) {
+        if (!token.sub) {
+          console.error("❌ [Session Callback] Token.sub is missing!");
+        }
         session.user.id = token.sub!
-        session.user.emailVerified = token.emailVerified as string
+        session.user.emailVerified = (token.emailVerified as string) || "UNVERIFIED"
+        console.log("✅ [Session Callback] Session created for user:", session.user.email, "id:", session.user.id);
+      } else {
+        console.error("❌ [Session Callback] session.user is missing!");
       }
       return session
     },
@@ -201,6 +239,8 @@ export const authOptions: NextAuthOptions = {
       // We mark email as verified in the signIn event instead
       try {
         console.log("✅ [SignIn Callback] User signing in:", user.email);
+        console.log("✅ [SignIn Callback] User ID:", user.id);
+        console.log("✅ [SignIn Callback] Account provider:", account?.provider);
         return true;
       } catch (error) {
         console.error("❌ [SignIn Callback] Error during sign-in:", error);
@@ -208,6 +248,27 @@ export const authOptions: NextAuthOptions = {
         // For now, we'll allow it since the token verification already happened
         return true;
       }
+    },
+    async redirect({ url, baseUrl }) {
+      console.log("🔄 [Redirect Callback] Called");
+      console.log("🔄 [Redirect Callback] URL:", url);
+      console.log("🔄 [Redirect Callback] Base URL:", baseUrl);
+      
+      // If url is relative, make it absolute
+      if (url.startsWith("/")) {
+        const redirectUrl = `${baseUrl}${url}`;
+        console.log("✅ [Redirect Callback] Redirecting to:", redirectUrl);
+        return redirectUrl;
+      }
+      // If url is on the same origin, allow it
+      if (new URL(url).origin === baseUrl) {
+        console.log("✅ [Redirect Callback] Redirecting to same origin:", url);
+        return url;
+      }
+      // Default to dashboard
+      const defaultUrl = `${baseUrl}/dashboard`;
+      console.log("✅ [Redirect Callback] Default redirect to:", defaultUrl);
+      return defaultUrl;
     },
   },
   events: {

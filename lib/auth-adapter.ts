@@ -58,22 +58,36 @@ export function CustomPrismaAdapter(): Adapter {
     // Get user by email
     async getUserByEmail(email) {
       console.log("🔧 [Adapter] getUserByEmail called with:", email);
-      const user = await prisma.user.findUnique({
-        where: { email },
-      });
+      try {
+        const user = await prisma.user.findUnique({
+          where: { email },
+        });
 
-      if (!user) {
-        console.log("🔧 [Adapter] User not found for email:", email);
-        return null;
+        if (!user) {
+          console.log("🔧 [Adapter] User not found for email:", email);
+          return null;
+        }
+
+        console.log("✅ [Adapter] Found user:", user.id);
+        console.log("✅ [Adapter] User emailVerified:", user.emailVerified);
+        console.log("✅ [Adapter] User emailVerifiedAt:", user.emailVerifiedAt);
+        
+        // Return user in NextAuth format
+        // NextAuth expects emailVerified to be a DateTime (null if unverified)
+        // Our schema uses an enum + DateTime, so we return the DateTime
+        const adapterUser = {
+          id: user.id,
+          email: user.email,
+          emailVerified: user.emailVerifiedAt || null, // NextAuth expects DateTime or null
+          name: user.name,
+        };
+        
+        console.log("✅ [Adapter] Returning user with emailVerified:", adapterUser.emailVerified);
+        return adapterUser;
+      } catch (error) {
+        console.error("❌ [Adapter] getUserByEmail error:", error);
+        throw error;
       }
-
-      console.log("✅ [Adapter] Found user:", user.id);
-      return {
-        id: user.id,
-        email: user.email,
-        emailVerified: user.emailVerifiedAt,
-        name: user.name,
-      };
     },
 
     // Update user
@@ -127,15 +141,22 @@ export function CustomPrismaAdapter(): Adapter {
     // Note: NextAuth v4 hashes tokens BEFORE passing them to this method
     // So the token parameter is already hashed - we store it as-is
     async createVerificationToken({ identifier, expires, token }) {
-      console.log("🔧 [Adapter] createVerificationToken for:", identifier);
+      console.log("🔧 [Adapter] createVerificationToken called");
+      console.log("🔧 [Adapter] Identifier (email):", identifier);
       console.log("🔧 [Adapter] Token (first 20 chars):", token?.substring(0, 20));
       console.log("🔧 [Adapter] Token length:", token?.length);
-      console.log("🔧 [Adapter] Expires:", expires);
+      console.log("🔧 [Adapter] Expires at:", expires);
+      console.log("🔧 [Adapter] Current time:", new Date().toISOString());
+      console.log("🔧 [Adapter] Time until expiry:", Math.round((new Date(expires).getTime() - Date.now()) / 1000 / 60), "minutes");
+      
       try {
         // Delete any existing tokens for this identifier first
-        await prisma.verificationToken.deleteMany({
+        const deletedCount = await prisma.verificationToken.deleteMany({
           where: { identifier },
         });
+        if (deletedCount.count > 0) {
+          console.log(`🧹 [Adapter] Deleted ${deletedCount.count} existing token(s) for ${identifier}`);
+        }
         
         const verificationToken = await prisma.verificationToken.create({
           data: {
@@ -144,11 +165,35 @@ export function CustomPrismaAdapter(): Adapter {
             expires,
           },
         });
-        console.log("✅ [Adapter] Token created for:", identifier);
-        console.log("✅ [Adapter] Stored token (first 20):", verificationToken.token.substring(0, 20));
+        
+        console.log("✅ [Adapter] Token successfully created and stored in database");
+        console.log("✅ [Adapter] Database ID:", verificationToken.identifier);
+        console.log("✅ [Adapter] Stored token (first 20 chars):", verificationToken.token.substring(0, 20));
+        console.log("✅ [Adapter] Stored token length:", verificationToken.token.length);
+        console.log("✅ [Adapter] Stored expires:", verificationToken.expires);
+        
+        // Verify the token was actually saved
+        const verifyToken = await prisma.verificationToken.findUnique({
+          where: {
+            identifier_token: {
+              identifier,
+              token,
+            },
+          },
+        });
+        
+        if (verifyToken) {
+          console.log("✅ [Adapter] Token verification: Successfully confirmed token exists in database");
+        } else {
+          console.error("❌ [Adapter] Token verification: FAILED - Token not found in database after creation!");
+          console.error("❌ [Adapter] This suggests a database write issue or transaction rollback");
+        }
+        
         return verificationToken;
-      } catch (error) {
-        console.error("❌ [Adapter] createVerificationToken error:", error);
+      } catch (error: any) {
+        console.error("❌ [Adapter] createVerificationToken error:", error.message);
+        console.error("❌ [Adapter] Error code:", error.code);
+        console.error("❌ [Adapter] Error stack:", error.stack);
         throw error;
       }
     },
