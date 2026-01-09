@@ -143,8 +143,9 @@ export function CustomPrismaAdapter(): Adapter {
     async createVerificationToken({ identifier, expires, token }) {
       console.log("🔧 [Adapter] createVerificationToken called");
       console.log("🔧 [Adapter] Identifier (email):", identifier);
-      console.log("🔧 [Adapter] Token (first 20 chars):", token?.substring(0, 20));
+      console.log("🔧 [Adapter] Stored token (hashed, first 20 chars):", token?.substring(0, 20));
       console.log("🔧 [Adapter] Token length:", token?.length);
+      console.log("🔧 [Adapter] NOTE: This is the HASHED token. NextAuth hashes the raw token from URL before calling this method.");
       console.log("🔧 [Adapter] Expires at:", expires);
       console.log("🔧 [Adapter] Current time:", new Date().toISOString());
       console.log("🔧 [Adapter] Time until expiry:", Math.round((new Date(expires).getTime() - Date.now()) / 1000 / 60), "minutes");
@@ -203,8 +204,9 @@ export function CustomPrismaAdapter(): Adapter {
     async useVerificationToken({ identifier, token }) {
       console.log("🔧 [Adapter] useVerificationToken called");
       console.log("🔧 [Adapter] Looking for identifier:", identifier);
-      console.log("🔧 [Adapter] Looking for token (first 20 chars):", token?.substring(0, 20));
+      console.log("🔧 [Adapter] Provided token (hashed, first 20 chars):", token?.substring(0, 20));
       console.log("🔧 [Adapter] Token length:", token?.length);
+      console.log("🔧 [Adapter] NOTE: This is the HASHED token. NextAuth hashes the raw token from URL before calling this method.");
       console.log("🔧 [Adapter] NOTE: Check server request logs for user-agent/IP to identify bot/scanner clicks");
       
       try {

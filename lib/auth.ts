@@ -2,7 +2,7 @@ import { NextAuthOptions } from "next-auth"
 import { CustomPrismaAdapter } from "@/lib/auth-adapter"
 import EmailProvider from "next-auth/providers/email"
 import { prisma } from "@/lib/prisma"
-import { randomBytes } from "crypto"
+import { randomBytes, createHash } from "crypto"
 import sgMail from "@sendgrid/mail"
 import { getAccountType, getAccountName, removeAccountType } from "@/lib/account-type-store"
 
@@ -70,9 +70,20 @@ export const authOptions: NextAuthOptions = {
         url,
         provider: { from },
       }) {
-        console.log("📧 [EmailProvider] sendVerificationRequest called for:", email);
-        console.log("📧 [EmailProvider] URL provided by NextAuth:", url);
-        console.log("📧 [EmailProvider] Email will be sent from:", EMAIL_FROM);
+      console.log("📧 [EmailProvider] sendVerificationRequest called for:", email);
+      console.log("📧 [EmailProvider] URL provided by NextAuth:", url);
+      console.log("📧 [EmailProvider] Email will be sent from:", EMAIL_FROM);
+      
+      // Log token hashing for verification (as suggested by ChatGPT)
+      const rawTokenFromUrl = url.match(/token=([^&]+)/)?.[1];
+      if (rawTokenFromUrl && NEXTAUTH_SECRET) {
+        const expectedHash = createHash("sha256")
+          .update(`${rawTokenFromUrl}${NEXTAUTH_SECRET}`)
+          .digest("hex");
+        console.log("📧 [EmailProvider] Raw token in URL (first 20):", rawTokenFromUrl.substring(0, 20));
+        console.log("📧 [EmailProvider] Expected hash that will be stored in DB (first 20):", expectedHash.substring(0, 20));
+        console.log("📧 [EmailProvider] NextAuth will hash raw token and match against stored hash");
+      }
         
         // Validate EMAIL_FROM is set before proceeding
         if (!EMAIL_FROM) {
@@ -147,7 +158,6 @@ export const authOptions: NextAuthOptions = {
             await sgMail.send(msg);
             console.log("✅ [EmailProvider] Verification email sent via SendGrid to:", email);
             console.log("📧 [EmailProvider] Verification URL in email:", url);
-            console.log("📧 [EmailProvider] Token in URL (first 20 chars):", url.match(/token=([^&]+)/)?.[1]?.substring(0, 20) || "not found");
           } catch (error: any) {
             console.error("❌ SendGrid error:", error.message);
             console.error("SendGrid error details:", error.response?.body || error);
