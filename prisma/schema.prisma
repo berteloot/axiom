@@ -96,6 +96,9 @@ model Account {
   emailNotifications Boolean            @default(true) // Enable email notifications
   webhookUrl         String? // Webhook URL for integrations
   apiRateLimit       Int                @default(1000) // API rate limit per hour
+  // PPC Campaign preferences
+  ppcLocationName    String             @default("United States") // Location for keyword research (DataForSEO location_name)
+  ppcLanguageName    String             @default("English") // Language for keyword research (DataForSEO language_name)
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 

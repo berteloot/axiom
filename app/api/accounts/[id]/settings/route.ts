@@ -15,6 +15,8 @@ const updateSettingsSchema = z.object({
   emailNotifications: z.boolean(),
   webhookUrl: z.string().url().optional().or(z.literal("")),
   apiRateLimit: z.number().min(1).max(10000),
+  ppcLocationName: z.string().optional(),
+  ppcLanguageName: z.string().optional(),
 });
 
 export const runtime = "nodejs";
@@ -79,6 +81,8 @@ export async function PUT(
         emailNotifications: settings.emailNotifications,
         webhookUrl: settings.webhookUrl || null,
         apiRateLimit: settings.apiRateLimit,
+        ppcLocationName: settings.ppcLocationName,
+        ppcLanguageName: settings.ppcLanguageName,
         updatedAt: new Date(),
       },
       select: {
@@ -94,6 +98,8 @@ export async function PUT(
         emailNotifications: true,
         webhookUrl: true,
         apiRateLimit: true,
+        ppcLocationName: true,
+        ppcLanguageName: true,
         updatedAt: true,
       }
     });
@@ -160,6 +166,8 @@ export async function GET(
         emailNotifications: true,
         webhookUrl: true,
         apiRateLimit: true,
+        ppcLocationName: true,
+        ppcLanguageName: true,
         subscriptionStatus: true,
         trialEndsAt: true,
         subscriptionEndsAt: true,

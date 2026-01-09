@@ -145,7 +145,9 @@ function extractSeedKeyword(titleOrTopic: string): string {
  */
 async function enrichKeywordsWithMetrics(
   keywords: KeywordResult[],
-  credentials: string
+  credentials: string,
+  locationName: string = "United States",
+  languageName: string = "English"
 ): Promise<{ keywords: KeywordResult[]; warnings: APIWarning[] }> {
   const warnings: APIWarning[] = [];
   
@@ -171,8 +173,8 @@ async function enrichKeywordsWithMetrics(
         },
         body: JSON.stringify([{
           keywords: keywordStrings,
-          location_name: "United States",
-          language_name: "English",
+          location_name: locationName,
+          language_name: languageName,
         }]),
       }
     );
@@ -243,7 +245,11 @@ async function enrichKeywordsWithMetrics(
  * Uses keyword_suggestions endpoint for broader coverage (Google Autocomplete based)
  * This endpoint has better coverage for B2B/niche terms than related_keywords
  */
-async function fetchKeywordsFromAPI(seedKeyword: string): Promise<{ keywords: KeywordResult[]; warnings: APIWarning[] }> {
+async function fetchKeywordsFromAPI(
+  seedKeyword: string,
+  locationName: string = "United States",
+  languageName: string = "English"
+): Promise<{ keywords: KeywordResult[]; warnings: APIWarning[] }> {
   const login = process.env.DATAFORSEO_LOGIN;
   const password = process.env.DATAFORSEO_PASSWORD;
   const warnings: APIWarning[] = [];
@@ -268,8 +274,8 @@ async function fetchKeywordsFromAPI(seedKeyword: string): Promise<{ keywords: Ke
   const requestBody = [
     {
       keyword: seedKeyword,
-      location_name: "United States",
-      language_name: "English",
+      location_name: locationName,
+      language_name: languageName,
       limit: 50, // Get suggestions
       include_seed_keyword: true, // Include the original keyword with its metrics
     },
@@ -651,7 +657,7 @@ async function fetchKeywordsFromAPI(seedKeyword: string): Promise<{ keywords: Ke
     const needsEnrichment = keywords.some(k => k.volume === 0);
     if (needsEnrichment && keywords.length > 0) {
       console.log(`[DataForSEO] Keywords need enrichment - fetching search volume data...`);
-      const { keywords: enrichedKeywords, warnings: enrichmentWarnings } = await enrichKeywordsWithMetrics(keywords, credentials);
+      const { keywords: enrichedKeywords, warnings: enrichmentWarnings } = await enrichKeywordsWithMetrics(keywords, credentials, locationName, languageName);
       warnings.push(...enrichmentWarnings);
       return { keywords: enrichedKeywords, warnings };
     }
@@ -765,11 +771,15 @@ function filterKeywordsByStage(
  * 
  * @param seed - Seed keyword or content idea title/topic
  * @param funnelStage - Funnel stage (TOFU_AWARENESS, MOFU_CONSIDERATION, BOFU_DECISION, RETENTION)
+ * @param locationName - Location for keyword research (default: "United States")
+ * @param languageName - Language for keyword research (default: "English")
  * @returns Object with keywords array and warnings (for admin display)
  */
 export async function getStrategicKeywords(
   seed: string,
-  funnelStage: string
+  funnelStage: string,
+  locationName: string = "United States",
+  languageName: string = "English"
 ): Promise<{ keywords: KeywordResult[]; warnings: APIWarning[] }> {
   try {
     // Extract clean seed keyword from input
@@ -777,7 +787,7 @@ export async function getStrategicKeywords(
     console.log(`[getStrategicKeywords] Processing seed: "${seed}" → cleaned: "${seedKeyword}" for stage: ${funnelStage}`);
 
     // Fetch keywords from API
-    const { keywords, warnings } = await fetchKeywordsFromAPI(seedKeyword);
+    const { keywords, warnings } = await fetchKeywordsFromAPI(seedKeyword, locationName, languageName);
 
     if (keywords.length === 0) {
       console.warn(`[getStrategicKeywords] No keywords returned from API for seed: "${seedKeyword}"`);

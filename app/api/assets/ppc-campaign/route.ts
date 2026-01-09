@@ -11,6 +11,8 @@ export const dynamic = "force-dynamic";
 const ppcCampaignSchema = z.object({
   assetIds: z.array(z.string()).min(1, "At least one asset ID is required"),
   productLineId: z.string().optional(),
+  locationName: z.string().optional(), // Override account default location
+  languageName: z.string().optional(), // Override account default language
 });
 
 interface SearchIntentResult {
@@ -309,7 +311,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { assetIds, productLineId } = validation.data;
+    const { assetIds, productLineId, locationName, languageName } = validation.data;
+
+    // Fetch account preferences for location and language (use provided values or account defaults)
+    const account = await prisma.account.findUnique({
+      where: { id: accountId },
+      select: {
+        ppcLocationName: true,
+        ppcLanguageName: true,
+      },
+    });
+
+    const finalLocationName = locationName || account?.ppcLocationName || "United States";
+    const finalLanguageName = languageName || account?.ppcLanguageName || "English";
 
     // Fetch selected assets with product lines
     const assets = await prisma.asset.findMany({
@@ -630,7 +644,7 @@ export async function POST(request: NextRequest) {
             keywordAttempts++;
             seedKeywords.push(seed);
             
-            const { keywords, warnings } = await getStrategicKeywords(seed, "BOFU_DECISION");
+            const { keywords, warnings } = await getStrategicKeywords(seed, "BOFU_DECISION", finalLocationName, finalLanguageName);
             pushWarnings(warnings);
             
             keywords.forEach(kw => {
@@ -677,7 +691,9 @@ export async function POST(request: NextRequest) {
             keywordAttempts++;
             const { keywords, warnings } = await getStrategicKeywords(
               plName,
-              "BOFU_DECISION"
+              "BOFU_DECISION",
+              finalLocationName,
+              finalLanguageName
             );
           
           keywords.forEach(kw => {
@@ -781,7 +797,9 @@ export async function POST(request: NextRequest) {
         keywordAttempts++;
         const { keywords, warnings } = await getStrategicKeywords(
           fallback,
-          "BOFU_DECISION"
+          "BOFU_DECISION",
+          finalLocationName,
+          finalLanguageName
         );
         
         keywords.forEach(kw => {

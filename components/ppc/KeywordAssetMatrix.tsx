@@ -101,6 +101,9 @@ export function KeywordAssetMatrix({
           <h3 className="font-medium">Keyword-to-Asset Mapping</h3>
           <p className="text-sm text-muted-foreground">
             Assign the best landing page (asset) for each keyword. High match scores indicate better alignment.
+            <span className="block mt-1 text-xs">
+              Volume = Average monthly search volume (12-month average). CPC = Cost per click in selected currency.
+            </span>
           </p>
         </div>
         <Badge variant="secondary">
@@ -113,8 +116,18 @@ export function KeywordAssetMatrix({
           <TableHeader>
             <TableRow>
               <TableHead className="min-w-[200px]">Keyword</TableHead>
-              <TableHead className="w-24 text-right">Volume</TableHead>
-              <TableHead className="w-20 text-right">CPC</TableHead>
+              <TableHead className="w-36 text-right">
+                <div className="flex flex-col items-end gap-0.5">
+                  <span className="text-sm font-medium">Avg Monthly Volume</span>
+                  <span className="text-xs font-normal text-muted-foreground whitespace-nowrap">(12-month avg)</span>
+                </div>
+              </TableHead>
+              <TableHead className="w-24 text-right">
+                <div className="flex flex-col items-end gap-0.5">
+                  <span className="text-sm font-medium">CPC</span>
+                  <span className="text-xs font-normal text-muted-foreground">Cost per click</span>
+                </div>
+              </TableHead>
               <TableHead className="w-24">Competition</TableHead>
               <TableHead className="w-32">Intent</TableHead>
               <TableHead className="min-w-[300px]">Recommended Asset</TableHead>

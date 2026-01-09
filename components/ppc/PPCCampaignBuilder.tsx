@@ -12,6 +12,9 @@ import { Asset } from "@/lib/types";
 import { KeywordAssetMatrix } from "./KeywordAssetMatrix";
 import { AdGroupOrganizer } from "./AdGroupOrganizer";
 import { CampaignExport } from "./CampaignExport";
+import { LocationSelector } from "./LocationSelector";
+import { useAccount } from "@/lib/account-context";
+import { DATAFORSEO_LANGUAGES } from "@/lib/keywords/dataforseo-locations";
 
 interface SearchIntent {
   main_intent: "informational" | "commercial" | "transactional" | "navigational";
@@ -87,6 +90,94 @@ export function PPCCampaignBuilder({
   const [keywordToAdGroup, setKeywordToAdGroup] = useState<Map<string, string>>(new Map()); // keyword -> adGroupName
   const [negativeKeywords, setNegativeKeywords] = useState<Set<string>>(new Set());
   const [newAdGroupName, setNewAdGroupName] = useState<string>("");
+  const [locationName, setLocationName] = useState<string>("United States");
+  const [languageName, setLanguageName] = useState<string>("English");
+  const [isLoadingPreferences, setIsLoadingPreferences] = useState(true);
+  
+  const { currentAccount } = useAccount();
+
+  // Fetch account PPC preferences on mount
+  React.useEffect(() => {
+    const fetchPreferences = async () => {
+      if (!currentAccount?.id) {
+        setIsLoadingPreferences(false);
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/accounts/${currentAccount.id}/settings`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.account?.ppcLocationName) {
+            setLocationName(data.account.ppcLocationName);
+          }
+          if (data.account?.ppcLanguageName) {
+            setLanguageName(data.account.ppcLanguageName);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch PPC preferences:", error);
+      } finally {
+        setIsLoadingPreferences(false);
+      }
+    };
+
+    fetchPreferences();
+  }, [currentAccount?.id]);
+
+  // Save preferences when they change
+  const savePreferences = React.useCallback(async (newLocation: string, newLanguage: string) => {
+    if (!currentAccount?.id) return;
+
+    try {
+      // Fetch current settings first
+      const getResponse = await fetch(`/api/accounts/${currentAccount.id}/settings`);
+      if (!getResponse.ok) {
+        console.error("Failed to fetch current settings");
+        return;
+      }
+
+      const { account: currentSettings } = await getResponse.json();
+
+      // Update with new PPC preferences
+      const response = await fetch(`/api/accounts/${currentAccount.id}/settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: currentSettings.name,
+          description: currentSettings.description || "",
+          website: currentSettings.website || "",
+          allowPublicSharing: currentSettings.allowPublicSharing,
+          requireApproval: currentSettings.requireApproval,
+          maxFileSize: currentSettings.maxFileSize,
+          retentionDays: currentSettings.retentionDays,
+          emailNotifications: currentSettings.emailNotifications,
+          webhookUrl: currentSettings.webhookUrl || "",
+          apiRateLimit: currentSettings.apiRateLimit,
+          ppcLocationName: newLocation,
+          ppcLanguageName: newLanguage,
+        }),
+      });
+
+      if (!response.ok) {
+        console.error("Failed to save PPC preferences");
+      }
+    } catch (error) {
+      console.error("Error saving PPC preferences:", error);
+    }
+  }, [currentAccount]);
+
+  // Handle location change
+  const handleLocationChange = (newLocation: string) => {
+    setLocationName(newLocation);
+    savePreferences(newLocation, languageName);
+  };
+
+  // Handle language change
+  const handleLanguageChange = (newLanguage: string) => {
+    setLanguageName(newLanguage);
+    savePreferences(locationName, newLanguage);
+  };
 
   // Get available product lines
   const productLines = React.useMemo(() => {
@@ -139,6 +230,8 @@ export function PPCCampaignBuilder({
         body: JSON.stringify({
           assetIds: selectedAssetIds,
           productLineId: productLineFilter || undefined,
+          locationName: locationName,
+          languageName: languageName,
         }),
       });
 
@@ -393,6 +486,61 @@ export function PPCCampaignBuilder({
         <CardContent>
           {currentStep === "assets" && (
             <div className="space-y-4">
+              {/* PPC Campaign Settings */}
+              <div className="space-y-4 p-4 border rounded-lg bg-muted/30">
+                <div className="space-y-1">
+                  <h3 className="text-sm font-semibold">Keyword Research Settings</h3>
+                  <p className="text-xs text-muted-foreground">
+                    These settings determine the geography and language for keyword volume and CPC data.
+                    Changes are saved automatically.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">
+                      Location <span className="text-muted-foreground">(for search volume)</span>
+                    </label>
+                    {isLoadingPreferences ? (
+                      <div className="h-10 w-full rounded-md border border-input bg-muted animate-pulse" />
+                    ) : (
+                      <LocationSelector
+                        value={locationName}
+                        onChange={handleLocationChange}
+                        disabled={isAnalyzing}
+                      />
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      Search volume is averaged over the past 12 months
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">
+                      Language <span className="text-muted-foreground">(for keyword research)</span>
+                    </label>
+                    {isLoadingPreferences ? (
+                      <div className="h-10 w-full rounded-md border border-input bg-muted animate-pulse" />
+                    ) : (
+                      <Select
+                        value={languageName}
+                        onValueChange={handleLanguageChange}
+                        disabled={isAnalyzing}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select language..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {DATAFORSEO_LANGUAGES.map((lang) => (
+                            <SelectItem key={lang} value={lang}>
+                              {lang}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               {/* Product Line Filter */}
               {productLines.length > 0 && (
                 <div className="space-y-2">
@@ -630,8 +778,8 @@ export function PPCCampaignBuilder({
           {currentStep === "groups" && campaignData && (
             <AdGroupOrganizer
               keywords={campaignData.keywords}
-              adGroups={organizedAdGroups}
-              onAdGroupsChange={setOrganizedAdGroups}
+              adGroups={organizedAdGroups as any}
+              onAdGroupsChange={(groups) => setOrganizedAdGroups(new Map(groups) as any)}
             />
           )}
 

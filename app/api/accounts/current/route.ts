@@ -61,6 +61,8 @@ export async function GET(request: NextRequest) {
         emailNotifications: session.account.emailNotifications,
         webhookUrl: session.account.webhookUrl,
         apiRateLimit: session.account.apiRateLimit,
+        ppcLocationName: session.account.ppcLocationName,
+        ppcLanguageName: session.account.ppcLanguageName,
         createdAt: session.account.createdAt.toISOString(),
       },
     });
