@@ -25,11 +25,17 @@ if (SENDGRID_API_KEY) {
 const NEXTAUTH_URL = process.env.NEXTAUTH_URL || 
   (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
 
-// NEXTAUTH_SECRET is required in production
-// Note: Runtime validation is handled in instrumentation.ts (server startup)
-// We only warn here to avoid breaking the build process
 const NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET;
-if (!NEXTAUTH_SECRET && process.env.NODE_ENV !== "production") {
+
+// In production, this MUST be set and stable across all instances.
+// If it changes between issuing and consuming the email link, the verification token lookup will fail.
+if (!NEXTAUTH_SECRET) {
+  if (process.env.NODE_ENV === "production") {
+    console.error("❌ CRITICAL: NEXTAUTH_SECRET is missing in production.");
+    console.error("❌ Email magic links will fail because token hashing will not be consistent.");
+    throw new Error("NEXTAUTH_SECRET is required in production");
+  }
+
   // In development, warn but allow (developer can use .env file)
   console.warn(
     "⚠️  WARNING: NEXTAUTH_SECRET environment variable is not set. " +
@@ -49,6 +55,8 @@ if (NEXTAUTH_URL.includes("localhost") && process.env.NODE_ENV === "production")
 }
 
 export const authOptions: NextAuthOptions = {
+  // Enable debug mode to see NextAuth's internal flow
+  debug: process.env.NODE_ENV !== "production" || process.env.NEXTAUTH_DEBUG === "true",
   adapter: CustomPrismaAdapter(),
   session: {
     strategy: "jwt",
@@ -78,15 +86,32 @@ export const authOptions: NextAuthOptions = {
       console.log("📧 [EmailProvider] Check logs above for 'createVerificationToken' logs");
       console.log("📧 [EmailProvider] ========================================");
       
-      // Log token hashing for verification (as suggested by ChatGPT)
-      const rawTokenFromUrl = url.match(/token=([^&]+)/)?.[1];
-      if (rawTokenFromUrl && NEXTAUTH_SECRET) {
-        const expectedHash = createHash("sha256")
-          .update(`${rawTokenFromUrl}${NEXTAUTH_SECRET}`)
-          .digest("hex");
-        console.log("📧 [EmailProvider] Raw token in URL (first 20):", rawTokenFromUrl.substring(0, 20));
-        console.log("📧 [EmailProvider] Expected hash that will be stored in DB (first 20):", expectedHash.substring(0, 20));
-        console.log("📧 [EmailProvider] NextAuth will hash raw token and match against stored hash");
+      // Log token hashing for verification and diagnose casing issues
+      try {
+        const urlObj = new URL(url);
+        const rawTokenFromUrl = urlObj.searchParams.get("token") || "";
+        const emailFromUrl = urlObj.searchParams.get("email") || "";
+
+        const normalizedIdentifier = (email || "").trim().toLowerCase();
+        if (email && normalizedIdentifier !== email) {
+          console.warn("⚠️  [EmailProvider] Identifier has uppercase or whitespace. Consider normalizing at sign-in form and in adapter.");
+          console.warn("⚠️  [EmailProvider] Identifier provided:", email);
+          console.warn("⚠️  [EmailProvider] Identifier normalized:", normalizedIdentifier);
+        }
+        if (emailFromUrl && normalizedIdentifier && emailFromUrl !== normalizedIdentifier) {
+          console.warn("⚠️  [EmailProvider] Email param in URL differs from normalized identifier:", emailFromUrl);
+        }
+
+        if (rawTokenFromUrl && NEXTAUTH_SECRET) {
+          // NextAuth hashes the raw token with the secret before persisting/looking it up via the adapter.
+          const expectedHash = createHash("sha256")
+            .update(`${rawTokenFromUrl}${NEXTAUTH_SECRET}`)
+            .digest("hex");
+          console.log("📧 [EmailProvider] Raw token in URL (first 20):", rawTokenFromUrl.substring(0, 20));
+          console.log("📧 [EmailProvider] Expected hash for adapter lookup (first 20):", expectedHash.substring(0, 20));
+        }
+      } catch (e) {
+        console.warn("⚠️  [EmailProvider] Failed to parse verification URL for diagnostics:", e);
       }
         
         // Validate EMAIL_FROM is set before proceeding

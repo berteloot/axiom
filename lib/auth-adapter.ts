@@ -140,7 +140,11 @@ export function CustomPrismaAdapter(): Adapter {
     // Create verification token
     // Note: NextAuth v4 hashes tokens BEFORE passing them to this method
     // So the token parameter is already hashed - we store it as-is
-    async createVerificationToken({ identifier, expires, token }) {
+    async createVerificationToken(params: { identifier: string; expires: Date; token: string }) {
+      // FIRST LINE - if this doesn't appear, the method is never called
+      console.log("🔧🔧🔧 [Adapter] createVerificationToken ENTRY POINT 🔧🔧🔧");
+      
+      const { identifier, expires, token } = params;
       console.log("🔧 [Adapter] ========================================");
       console.log("🔧 [Adapter] createVerificationToken CALLED BY NEXTAUTH");
       console.log("🔧 [Adapter] Identifier (email):", identifier);
