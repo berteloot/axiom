@@ -60,6 +60,10 @@ export const authOptions: NextAuthOptions = {
   adapter: CustomPrismaAdapter(),
   session: {
     strategy: "jwt",
+    maxAge: 30 * 24 * 60 * 60, // 30 days
+  },
+  jwt: {
+    maxAge: 30 * 24 * 60 * 60, // 30 days
   },
   secret: NEXTAUTH_SECRET || undefined, // NextAuth will handle missing secret in dev
   pages: {
