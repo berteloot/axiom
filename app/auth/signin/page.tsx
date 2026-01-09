@@ -16,19 +16,33 @@ function SignInForm() {
   const [codeSent, setCodeSent] = useState(false);
   const [error, setError] = useState("");
   const [countdown, setCountdown] = useState(0);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [redirecting, setRedirecting] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
 
   useEffect(() => {
     // Check if user is already signed in
+    let mounted = true;
     const checkSession = async () => {
-      const session = await getSession();
-      if (session) {
-        router.push(callbackUrl);
+      try {
+        const session = await getSession();
+        if (mounted && session) {
+          setRedirecting(true);
+          // Use replace to avoid back button issues
+          router.replace(callbackUrl);
+        }
+      } catch (err) {
+        console.error("Session check error:", err);
+      } finally {
+        if (mounted) {
+          setCheckingSession(false);
+        }
       }
     };
     checkSession();
+    return () => { mounted = false; };
   }, [router, callbackUrl]);
 
   // Countdown timer for resend
@@ -86,7 +100,8 @@ function SignInForm() {
 
       if (response.ok) {
         // Redirect to dashboard or callback URL
-        router.push(callbackUrl);
+        setRedirecting(true);
+        router.replace(callbackUrl);
         router.refresh(); // Refresh to pick up new session
       } else {
         setError(data.error || "Invalid code. Please try again.");
@@ -126,6 +141,26 @@ function SignInForm() {
       setLoading(false);
     }
   };
+
+  // Show loading while checking session
+  if (checkingSession || redirecting) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center space-y-2">
+            <CardTitle className="text-xl sm:text-2xl">
+              {redirecting ? "Redirecting..." : "Loading..."}
+            </CardTitle>
+            <CardDescription>
+              {redirecting 
+                ? "You're already signed in. Taking you to your dashboard..." 
+                : "Checking your session..."}
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    );
+  }
 
   // Code entry view
   if (codeSent) {
