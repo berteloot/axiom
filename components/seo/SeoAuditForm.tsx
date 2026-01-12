@@ -7,9 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Search } from "lucide-react";
+import { MultiSelectCombobox } from "@/components/ui/combobox";
+import { Badge } from "@/components/ui/badge";
+import { Loader2, Search, X } from "lucide-react";
 import { SeoAuditResults } from "./SeoAuditResults";
 import { SeoAuditResult } from "@/lib/ai/seo-audit";
+import { BRAND_VOICES } from "@/lib/constants/brand-voices";
+import { ALL_JOB_TITLES } from "@/lib/job-titles";
 
 interface SeoAuditFormProps {
   accountId?: string;
@@ -19,8 +23,8 @@ export function SeoAuditForm({ accountId }: SeoAuditFormProps) {
   const [url, setUrl] = useState("");
   const [pageType, setPageType] = useState<string>("");
   const [targetKeyword, setTargetKeyword] = useState("");
-  const [targetAudience, setTargetAudience] = useState("");
-  const [brandVoice, setBrandVoice] = useState("");
+  const [targetAudience, setTargetAudience] = useState<string[]>([]);
+  const [brandVoice, setBrandVoice] = useState<string[]>([]);
   const [includeBrandConsistency, setIncludeBrandConsistency] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<SeoAuditResult | null>(null);
@@ -42,8 +46,8 @@ export function SeoAuditForm({ accountId }: SeoAuditFormProps) {
           url,
           page_type: pageType || undefined,
           target_keyword: targetKeyword || undefined,
-          target_audience: targetAudience || undefined,
-          brand_voice: brandVoice || undefined,
+          target_audience: targetAudience.length > 0 ? targetAudience.join(", ") : undefined,
+          brand_voice: brandVoice.length > 0 ? brandVoice.join(", ") : undefined,
           include_brand_consistency: includeBrandConsistency,
         }),
       });
@@ -122,26 +126,71 @@ export function SeoAuditForm({ accountId }: SeoAuditFormProps) {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="targetAudience">Target Audience (Optional)</Label>
-                <Input
-                  id="targetAudience"
-                  type="text"
-                  placeholder="e.g., 'CTO, VP of Engineering'"
+                <MultiSelectCombobox
+                  options={ALL_JOB_TITLES}
                   value={targetAudience}
-                  onChange={(e) => setTargetAudience(e.target.value)}
-                  disabled={loading}
+                  onChange={setTargetAudience}
+                  placeholder="Select or create job titles..."
+                  searchPlaceholder="Search job titles..."
+                  emptyText="No job titles found."
+                  creatable={true}
+                  createText="Create"
                 />
+                {targetAudience.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {targetAudience.map((audience, idx) => (
+                      <Badge
+                        key={idx}
+                        variant="secondary"
+                        className="text-sm flex items-center gap-1 pr-1"
+                      >
+                        {audience}
+                        <button
+                          type="button"
+                          onClick={() => setTargetAudience(targetAudience.filter((_, i) => i !== idx))}
+                          className="ml-0.5 hover:bg-secondary-foreground/20 rounded-full p-0.5"
+                          aria-label={`Remove ${audience}`}
+                          disabled={loading}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="brandVoice">Brand Voice (Optional)</Label>
-                <Input
-                  id="brandVoice"
-                  type="text"
-                  placeholder="e.g., 'Professional, Technical'"
+                <MultiSelectCombobox
+                  options={[...BRAND_VOICES]}
                   value={brandVoice}
-                  onChange={(e) => setBrandVoice(e.target.value)}
-                  disabled={loading}
+                  onChange={setBrandVoice}
+                  placeholder="Select brand voice attributes..."
+                  searchPlaceholder="Search brand voices..."
                 />
+                {brandVoice.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {brandVoice.map((voice, idx) => (
+                      <Badge
+                        key={idx}
+                        variant="secondary"
+                        className="text-sm flex items-center gap-1 pr-1"
+                      >
+                        {voice}
+                        <button
+                          type="button"
+                          onClick={() => setBrandVoice(brandVoice.filter((_, i) => i !== idx))}
+                          className="ml-0.5 hover:bg-secondary-foreground/20 rounded-full p-0.5"
+                          aria-label={`Remove ${voice}`}
+                          disabled={loading}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
