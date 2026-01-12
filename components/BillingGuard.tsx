@@ -24,13 +24,15 @@ export function BillingGuard({ children }: BillingGuardProps) {
 
   // Check if we're on an auth page that should be allowed without an account
   const isAuthPage = pathname?.startsWith("/auth/") || pathname === "/auth";
+  // SEO audit page doesn't require an account (brand consistency is optional)
+  const isSeoAuditPage = pathname?.startsWith("/seo-audit");
 
   useEffect(() => {
     // Don't run redirects until component is mounted
     if (!mounted) return;
 
-    // Don't redirect while loading or if already on billing/auth pages
-    if (sessionStatus === "loading" || isLoading || pathname.startsWith("/billing") || isAuthPage) {
+    // Don't redirect while loading or if already on billing/auth/seo-audit pages
+    if (sessionStatus === "loading" || isLoading || pathname.startsWith("/billing") || isAuthPage || isSeoAuditPage) {
       return;
     }
 
@@ -55,12 +57,13 @@ export function BillingGuard({ children }: BillingGuardProps) {
       }
 
       // Redirect to account selection if no account is selected (but user is authenticated)
-      if (!currentAccount && !isLoading) {
+      // Exception: SEO audit page doesn't require an account
+      if (!currentAccount && !isLoading && !isSeoAuditPage) {
         router.push("/auth/select-account");
         return;
       }
     }
-  }, [currentAccount, isTrialExpired, isSubscriptionExpired, isLoading, router, pathname, isAuthPage, mounted, sessionStatus]);
+  }, [currentAccount, isTrialExpired, isSubscriptionExpired, isLoading, router, pathname, isAuthPage, isSeoAuditPage, mounted, sessionStatus]);
 
   // On initial render (server or before mount), always render children
   // to prevent hydration mismatch. Redirects will happen in useEffect.
@@ -68,8 +71,8 @@ export function BillingGuard({ children }: BillingGuardProps) {
     return <>{children}</>;
   }
 
-  // Always allow auth pages to render (they handle their own auth checks)
-  if (isAuthPage) {
+  // Always allow auth pages and SEO audit to render (they handle their own requirements)
+  if (isAuthPage || isSeoAuditPage) {
     return <>{children}</>;
   }
 
