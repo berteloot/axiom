@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, Upload, Settings, Menu, X, Shield, FolderSearch } from "lucide-react";
+import { LayoutDashboard, Upload, Settings, Menu, X, Shield, FolderSearch, Search } from "lucide-react";
 import Image from "next/image";
 import { AccountSwitcher } from "@/components/AccountSwitcher";
 import { Button } from "@/components/ui/button";
@@ -36,6 +36,11 @@ const baseNavigation = [
     name: "Dashboard",
     href: "/dashboard",
     icon: LayoutDashboard,
+  },
+  {
+    name: "SEO Audit",
+    href: "/seo-audit",
+    icon: Search,
   },
   {
     name: "Settings",
