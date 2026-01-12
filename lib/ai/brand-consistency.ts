@@ -39,8 +39,24 @@ export interface BrandContext {
  */
 async function queryChatGPT(brandName: string, websiteUrl?: string): Promise<string> {
   const prompt = websiteUrl
-    ? `Describe the company "${brandName}" (website: ${websiteUrl}). What do they do? What are their key products or services? What makes them unique?`
-    : `Describe the company "${brandName}". What do they do? What are their key products or services? What makes them unique?`;
+    ? `Please provide a comprehensive description of the company "${brandName}" (website: ${websiteUrl}). Include:
+- What the company does and their main business
+- Key products or services
+- Target audience or market
+- What makes them unique or differentiates them
+- Company background or history if available
+- Any notable achievements or positioning
+
+Base your response on publicly available information. Be detailed and specific.`
+    : `Please provide a comprehensive description of the company "${brandName}". Include:
+- What the company does and their main business
+- Key products or services
+- Target audience or market
+- What makes them unique or differentiates them
+- Company background or history if available
+- Any notable achievements or positioning
+
+Base your response on publicly available information. Be detailed and specific.`;
 
   try {
     const completion = await openai.chat.completions.create({
@@ -48,7 +64,7 @@ async function queryChatGPT(brandName: string, websiteUrl?: string): Promise<str
       messages: [
         {
           role: "system",
-          content: "You are a helpful assistant that provides accurate, factual information about companies. Base your responses on publicly available information.",
+          content: "You are a helpful assistant that provides accurate, factual information about companies based on publicly available information. Provide comprehensive, detailed responses. If you have knowledge about the company, share it. If you're uncertain, indicate what information is available and what might be missing.",
         },
         {
           role: "user",
@@ -56,13 +72,20 @@ async function queryChatGPT(brandName: string, websiteUrl?: string): Promise<str
         },
       ],
       temperature: 0.3,
-      max_tokens: 500,
+      max_tokens: 1000,
     });
 
-    return completion.choices[0]?.message?.content || "No response from ChatGPT";
+    const response = completion.choices[0]?.message?.content || "";
+    
+    // Check if the response indicates lack of information
+    if (!response || response.toLowerCase().includes("i don't have") || response.toLowerCase().includes("i don't know") || response.toLowerCase().includes("i cannot")) {
+      console.warn(`ChatGPT response suggests lack of information for ${brandName}: ${response.substring(0, 100)}`);
+    }
+    
+    return response || "No response from ChatGPT";
   } catch (error) {
     console.error("Error querying ChatGPT:", error);
-    throw new Error("Failed to query ChatGPT");
+    throw new Error(`Failed to query ChatGPT: ${error instanceof Error ? error.message : "Unknown error"}`);
   }
 }
 
