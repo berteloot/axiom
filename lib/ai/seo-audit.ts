@@ -105,7 +105,7 @@ const SeoAuditSchema = z.object({
       critical_gaps: z.array(z.string()),
       top_recommendations: z.array(z.string()),
     }),
-  }).optional(),
+  }).nullable(),
 });
 
 export type SeoAuditResult = z.infer<typeof SeoAuditSchema>;
@@ -248,10 +248,11 @@ Analyze this page and provide specific, actionable recommendations.`;
       throw new Error("AI failed to generate structured SEO audit");
     }
 
-    // Ensure URL is set
+    // Ensure URL is set and brand_consistency defaults to null if not provided
     return {
       ...result,
       url,
+      brand_consistency: result.brand_consistency ?? null,
     };
   } catch (error) {
     console.error("Error generating SEO audit:", error);
