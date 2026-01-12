@@ -269,6 +269,21 @@ export function SeoAuditResults({ result, url }: SeoAuditResultsProps) {
                             )}
                           </Button>
                         </div>
+                        {rec.placement_instructions && (
+                          <div className="mb-3 p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded-md">
+                            <div className="flex items-start gap-2">
+                              <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
+                              <div className="flex-1">
+                                <h5 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-1">
+                                  Where to Paste This Code:
+                                </h5>
+                                <div className="text-sm text-blue-800 dark:text-blue-200 whitespace-pre-line">
+                                  {rec.placement_instructions}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                         <div className="border rounded-md bg-muted/50 p-3 overflow-x-auto">
                           <pre className="text-xs font-mono whitespace-pre-wrap break-words">
                             {rec.code_example}

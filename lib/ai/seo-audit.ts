@@ -33,6 +33,7 @@ const SeoAuditSchema = z.object({
       rationale: z.string(),
       implementation_steps: z.array(z.string()),
       code_example: z.string().nullable(),
+      placement_instructions: z.string().nullable(),
       references: z.array(
         z.object({
           type: z.enum(["heading", "quote", "selector", "url"]),
@@ -119,9 +120,14 @@ const SEO_AUDIT_SYSTEM_PROMPT = `You are an expert SEO and AI extraction special
 3. Provide "how to implement" in 1-3 bullets per recommendation
 4. For technical recommendations (meta tags, schema markup, HTML elements, structured data, etc.), provide a code_example field with ready-to-copy/paste code
 5. Code examples should be complete, valid, and directly implementable (e.g., full meta tag HTML, complete JSON-LD schema, etc.)
-6. Output must be implementable tickets, not generic advice
-7. Do NOT promise "ranking in AI Overviews" or guaranteed citations
-8. Do NOT suggest generating large volumes of new pages
+6. When providing code_example, ALWAYS provide placement_instructions with clear, step-by-step guidance for non-developers:
+   - For WordPress: Explain how to access the page/post editor, find the "Code Editor" or "Custom HTML" option, or use theme customization/header/footer plugins
+   - For Wix: Explain how to access SEO Tools, Custom Code, or the Page Settings where code can be added
+   - Specify EXACT placement (e.g., "in the <head> section before </head>", "right after <body> tag", "before </body> tag")
+   - Make instructions simple, numbered steps that non-technical users can follow
+7. Output must be implementable tickets, not generic advice
+8. Do NOT promise "ranking in AI Overviews" or guaranteed citations
+9. Do NOT suggest generating large volumes of new pages
 
 **DIAGNOSTICS TO COMPUTE:**
 - Heading integrity: single H1, logical nesting, meaningful headings
