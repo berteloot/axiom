@@ -142,7 +142,11 @@ const SEO_AUDIT_SYSTEM_PROMPT = `You are an expert SEO and AI extraction special
 - P2: Nice-to-have optimizations
 
 **OUTPUT:**
-Return ONLY a JSON object matching the requested schema. Be specific and actionable.`;
+Return ONLY a JSON object matching the requested schema. Be specific and actionable.
+
+**IMPORTANT:**
+- Set `brand_consistency` to `null` (this will be populated separately if brand analysis is requested).
+- All other fields must be populated with actual audit results.`;
 
 export interface SeoAuditContext {
   page_type?: "blog" | "product" | "landing" | "docs";
