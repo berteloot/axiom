@@ -32,6 +32,7 @@ const SeoAuditSchema = z.object({
       title: z.string(),
       rationale: z.string(),
       implementation_steps: z.array(z.string()),
+      code_example: z.string().nullable(),
       references: z.array(
         z.object({
           type: z.enum(["heading", "quote", "selector", "url"]),
@@ -116,9 +117,11 @@ const SEO_AUDIT_SYSTEM_PROMPT = `You are an expert SEO and AI extraction special
 1. Make recommendations SPECIFIC - reference actual headings, quotes, or CSS selectors when possible
 2. Provide "why it matters" in one sentence per recommendation
 3. Provide "how to implement" in 1-3 bullets per recommendation
-4. Output must be implementable tickets, not generic advice
-5. Do NOT promise "ranking in AI Overviews" or guaranteed citations
-6. Do NOT suggest generating large volumes of new pages
+4. For technical recommendations (meta tags, schema markup, HTML elements, structured data, etc.), provide a code_example field with ready-to-copy/paste code
+5. Code examples should be complete, valid, and directly implementable (e.g., full meta tag HTML, complete JSON-LD schema, etc.)
+6. Output must be implementable tickets, not generic advice
+7. Do NOT promise "ranking in AI Overviews" or guaranteed citations
+8. Do NOT suggest generating large volumes of new pages
 
 **DIAGNOSTICS TO COMPUTE:**
 - Heading integrity: single H1, logical nesting, meaningful headings

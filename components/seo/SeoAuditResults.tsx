@@ -67,11 +67,18 @@ function getImpactColor(impact: "high" | "medium" | "low"): string {
 
 export function SeoAuditResults({ result, url }: SeoAuditResultsProps) {
   const [copied, setCopied] = useState(false);
+  const [copiedCodeIndex, setCopiedCodeIndex] = useState<number | null>(null);
 
   const handleCopyJson = () => {
     navigator.clipboard.writeText(JSON.stringify(result, null, 2));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleCopyCode = (code: string, index: number) => {
+    navigator.clipboard.writeText(code);
+    setCopiedCodeIndex(index);
+    setTimeout(() => setCopiedCodeIndex(null), 2000);
   };
 
   const handleExportCsv = () => {
@@ -239,6 +246,36 @@ export function SeoAuditResults({ result, url }: SeoAuditResultsProps) {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
+                    {rec.code_example && (
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="text-sm font-semibold">Code Example:</h4>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleCopyCode(rec.code_example!, idx)}
+                            className="h-7 text-xs"
+                          >
+                            {copiedCodeIndex === idx ? (
+                              <>
+                                <CheckCircle2 className="h-3 w-3 mr-1" />
+                                Copied!
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="h-3 w-3 mr-1" />
+                                Copy
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                        <div className="border rounded-md bg-muted/50 p-3 overflow-x-auto">
+                          <pre className="text-xs font-mono whitespace-pre-wrap break-words">
+                            {rec.code_example}
+                          </pre>
+                        </div>
+                      </div>
+                    )}
                     <div>
                       <h4 className="text-sm font-semibold mb-2">Implementation Steps:</h4>
                       <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
