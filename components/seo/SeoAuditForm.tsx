@@ -1,0 +1,190 @@
+"use client";
+
+import { useState } from "react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Loader2, Search } from "lucide-react";
+import { SeoAuditResults } from "./SeoAuditResults";
+import { SeoAuditResult } from "@/lib/ai/seo-audit";
+
+interface SeoAuditFormProps {
+  accountId?: string;
+}
+
+export function SeoAuditForm({ accountId }: SeoAuditFormProps) {
+  const [url, setUrl] = useState("");
+  const [pageType, setPageType] = useState<string>("");
+  const [targetKeyword, setTargetKeyword] = useState("");
+  const [targetAudience, setTargetAudience] = useState("");
+  const [brandVoice, setBrandVoice] = useState("");
+  const [includeBrandConsistency, setIncludeBrandConsistency] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<SeoAuditResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    setResult(null);
+
+    try {
+      const response = await fetch("/api/seo-audit", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          url,
+          page_type: pageType || undefined,
+          target_keyword: targetKeyword || undefined,
+          target_audience: targetAudience || undefined,
+          brand_voice: brandVoice || undefined,
+          include_brand_consistency: includeBrandConsistency,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to perform SEO audit");
+      }
+
+      const data = await response.json();
+      if (data.success && data.data) {
+        setResult(data.data);
+      } else {
+        throw new Error("Invalid response from server");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unknown error occurred");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>AI SEO Structure Audit</CardTitle>
+          <CardDescription>
+            Audit any public URL for structure, extractability, and AI discoverability. Get actionable recommendations to improve your page's visibility in AI search results.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="url">URL *</Label>
+              <Input
+                id="url"
+                type="url"
+                placeholder="https://example.com/page"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                required
+                disabled={loading}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="pageType">Page Type (Optional)</Label>
+                <Select value={pageType} onValueChange={setPageType} disabled={loading}>
+                  <SelectTrigger id="pageType">
+                    <SelectValue placeholder="Select page type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="blog">Blog</SelectItem>
+                    <SelectItem value="product">Product</SelectItem>
+                    <SelectItem value="landing">Landing Page</SelectItem>
+                    <SelectItem value="docs">Documentation</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="targetKeyword">Target Keyword (Optional)</Label>
+                <Input
+                  id="targetKeyword"
+                  type="text"
+                  placeholder="e.g., 'cloud migration'"
+                  value={targetKeyword}
+                  onChange={(e) => setTargetKeyword(e.target.value)}
+                  disabled={loading}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="targetAudience">Target Audience (Optional)</Label>
+                <Input
+                  id="targetAudience"
+                  type="text"
+                  placeholder="e.g., 'CTO, VP of Engineering'"
+                  value={targetAudience}
+                  onChange={(e) => setTargetAudience(e.target.value)}
+                  disabled={loading}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="brandVoice">Brand Voice (Optional)</Label>
+                <Input
+                  id="brandVoice"
+                  type="text"
+                  placeholder="e.g., 'Professional, Technical'"
+                  value={brandVoice}
+                  onChange={(e) => setBrandVoice(e.target.value)}
+                  disabled={loading}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2 p-4 border rounded-lg bg-muted/50">
+              <Switch
+                id="brandConsistency"
+                checked={includeBrandConsistency}
+                onCheckedChange={setIncludeBrandConsistency}
+                disabled={loading || !accountId}
+              />
+              <Label htmlFor="brandConsistency" className="flex-1 cursor-pointer">
+                <div className="font-medium">Include Brand Consistency Analysis</div>
+                <div className="text-sm text-muted-foreground">
+                  Compare how AI platforms (ChatGPT, etc.) represent your brand vs. your canonical messaging
+                  {!accountId && " (Requires brand context setup)"}
+                </div>
+              </Label>
+            </div>
+
+            {error && (
+              <div className="p-4 border border-red-200 bg-red-50 rounded-lg">
+                <p className="text-sm text-red-800">{error}</p>
+              </div>
+            )}
+
+            <Button type="submit" disabled={loading || !url} className="w-full sm:w-auto">
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Analyzing...
+                </>
+              ) : (
+                <>
+                  <Search className="mr-2 h-4 w-4" />
+                  Run Audit
+                </>
+              )}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      {result && <SeoAuditResults result={result} url={url} />}
+    </div>
+  );
+}
