@@ -84,7 +84,7 @@ const SeoAuditSchema = z.object({
       stage: z.enum(["fetch", "jina", "parse", "analyze"]),
       message: z.string(),
     })
-  )),
+  ),
   brand_consistency: z.object({
     overall_score: z.number().min(0).max(100),
     platform_results: z.array(
