@@ -222,31 +222,6 @@ export function AssetTable({
     });
   };
 
-  const handleSelectAll = (checked: boolean) => {
-    if (!onSelectionChange) return;
-    
-    if (checked) {
-      // Only select assets that are APPROVED or PROCESSED (exclude ERROR, PROCESSING, PENDING)
-      const selectableAssets = assets.filter(
-        asset => asset.status === "APPROVED" || asset.status === "PROCESSED"
-      );
-      onSelectionChange(selectableAssets.map(asset => asset.id));
-    } else {
-      onSelectionChange([]);
-    }
-  };
-
-  const selectableAssetIds = assets
-    .filter((asset) => asset.status === "APPROVED" || asset.status === "PROCESSED")
-    .map((asset) => asset.id);
-
-  const allSelectableSelected =
-    selectableAssetIds.length > 0 &&
-    selectableAssetIds.every((id) => selectedAssetIds.includes(id));
-
-  const someSelectableSelected =
-    selectableAssetIds.some((id) => selectedAssetIds.includes(id)) && !allSelectableSelected;
-
   // Pagination logic
   const totalPages = Math.ceil(assets.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
@@ -259,6 +234,47 @@ export function AssetTable({
   useEffect(() => {
     setCurrentPage(1);
   }, [itemsPerPage]);
+
+  // Selectable assets on current page only - use useMemo to ensure it's stable
+  const selectableAssetIdsOnPage = useMemo(() => {
+    return paginatedAssets
+      .filter((asset) => asset.status === "APPROVED" || asset.status === "PROCESSED")
+      .map((asset) => asset.id);
+  }, [paginatedAssets]);
+
+  const allSelectableSelected =
+    selectableAssetIdsOnPage.length > 0 &&
+    selectableAssetIdsOnPage.every((id) => selectedAssetIds.includes(id));
+
+  const someSelectableSelected =
+    selectableAssetIdsOnPage.some((id) => selectedAssetIds.includes(id)) && !allSelectableSelected;
+
+  const handleSelectAll = (checked: boolean) => {
+    if (!onSelectionChange) return;
+    
+    if (checked) {
+      // CRITICAL: Only select assets from the CURRENT PAGE (paginatedAssets)
+      // Do NOT use the full assets array - only use paginatedAssets which contains only current page items
+      const selectableAssetsOnCurrentPage = paginatedAssets.filter(
+        asset => asset.status === "APPROVED" || asset.status === "PROCESSED"
+      );
+      
+      const currentPageAssetIds = selectableAssetsOnCurrentPage.map(asset => asset.id);
+      
+      // Add current page's selectable assets, keeping any previously selected assets from other pages
+      onSelectionChange((prev) => {
+        // Remove any assets from the current page first (in case some were already selected)
+        const otherPageAssets = prev.filter(id => !currentPageAssetIds.includes(id));
+        // Add all selectable assets from current page ONLY
+        return Array.from(new Set([...otherPageAssets, ...currentPageAssetIds]));
+      });
+    } else {
+      // Only deselect assets from the current page, keep selections from other pages
+      onSelectionChange((prev) => {
+        return prev.filter(id => !selectableAssetIdsOnPage.includes(id));
+      });
+    }
+  };
 
   // Reset to page 1 when assets change (e.g., after filtering)
   useEffect(() => {

@@ -28,12 +28,14 @@ const s3Client = new S3Client({
 });
 
 const BulkImportRequestSchema = z.object({
-  blogUrl: z.string().url("Invalid blog URL"),
+  posts: z.array(z.object({
+    url: z.string().url(),
+    title: z.string(),
+  })).min(1).max(100), // Selected posts to import
   funnelStage: z.enum(["TOFU_AWARENESS", "MOFU_CONSIDERATION", "BOFU_DECISION", "RETENTION"]).optional(),
   icpTargets: z.array(z.string()).optional(),
   painClusters: z.array(z.string()).optional(),
   productLineIds: z.array(z.string()).optional(),
-  maxPosts: z.number().int().min(1).max(100).optional().default(50), // Limit to prevent abuse
 });
 
 /**
@@ -59,12 +61,11 @@ export async function POST(request: NextRequest) {
     }
 
     const {
-      blogUrl,
+      posts: postsToImport,
       funnelStage = "TOFU_AWARENESS",
       icpTargets = [],
       painClusters = [],
       productLineIds = [],
-      maxPosts,
     } = validationResult.data;
 
     if (!BUCKET_NAME) {
@@ -74,19 +75,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Step 1: Extract blog post URLs
-    console.log(`[Bulk Import] Extracting blog posts from ${blogUrl}...`);
-    const blogPosts = await extractBlogPostUrls(blogUrl);
-    
-    if (blogPosts.length === 0) {
-      return NextResponse.json(
-        { error: "No blog posts found on this page. Please check the URL." },
-        { status: 400 }
-      );
-    }
-
-    // Limit the number of posts
-    const postsToImport = blogPosts.slice(0, maxPosts);
     console.log(`[Bulk Import] Importing ${postsToImport.length} blog posts...`);
 
     const results = {
@@ -97,8 +85,14 @@ export async function POST(request: NextRequest) {
       assets: [] as Array<{ id: string; title: string }>,
     };
 
-    // Step 2: Process each blog post
-    for (const post of postsToImport) {
+    // Standardize ICP targets once
+    const standardizedIcpTargets = icpTargets.length > 0 
+      ? standardizeICPTargets(icpTargets)
+      : [];
+
+    // Process posts in parallel batches (5 at a time to avoid overwhelming the system)
+    const BATCH_SIZE = 5;
+    const processPost = async (post: { url: string; title: string }) => {
       try {
         // Fetch content
         const content = await fetchBlogPostContent(post.url);
@@ -130,11 +124,6 @@ export async function POST(request: NextRequest) {
 
         // Build S3 URL
         const s3Url = `https://${BUCKET_NAME}.s3.${AWS_REGION}.amazonaws.com/${encodeURIComponent(s3Key).replace(/%2F/g, "/")}`;
-
-        // Standardize ICP targets
-        const standardizedIcpTargets = icpTargets.length > 0 
-          ? standardizeICPTargets(icpTargets)
-          : [];
 
         // Create asset
         const asset = await prisma.asset.create({
@@ -174,15 +163,27 @@ export async function POST(request: NextRequest) {
           });
         }
 
-        results.success++;
-        results.assets.push({ id: asset.id, title: asset.title });
-        
-        console.log(`[Bulk Import] Successfully imported: ${post.title}`);
+        return { success: true, asset: { id: asset.id, title: asset.title }, url: post.url };
       } catch (error) {
-        results.failed++;
         const errorMessage = error instanceof Error ? error.message : "Unknown error";
-        results.errors.push({ url: post.url, error: errorMessage });
         console.error(`[Bulk Import] Failed to import ${post.url}:`, errorMessage);
+        return { success: false, error: errorMessage, url: post.url };
+      }
+    };
+
+    // Process in batches
+    for (let i = 0; i < postsToImport.length; i += BATCH_SIZE) {
+      const batch = postsToImport.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.all(batch.map(processPost));
+      
+      for (const result of batchResults) {
+        if (result.success) {
+          results.success++;
+          results.assets.push(result.asset!);
+        } else {
+          results.failed++;
+          results.errors.push({ url: result.url, error: result.error! });
+        }
       }
     }
 
