@@ -215,7 +215,7 @@ export function SeoAuditForm({ accountId }: SeoAuditFormProps) {
               <Label htmlFor="brandConsistency" className="flex-1 cursor-pointer">
                 <div className="font-medium">Include Brand Consistency Analysis</div>
                 <div className="text-sm text-muted-foreground">
-                  Compare how AI platforms (ChatGPT, etc.) represent your brand vs. your canonical messaging
+                  Check how ChatGPT from OpenAI represents your brand vs. your canonical messaging
                   {!accountId && " (Requires brand context setup)"}
                 </div>
               </Label>
