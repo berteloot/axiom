@@ -172,10 +172,12 @@ export function BulkBlogImportModal({
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      const nonDuplicates = previewPosts
-        .filter(p => !p.isDuplicate)
-        .slice(0, maxPosts)
-        .map(p => p.url);
+      const nonDuplicates = Array.isArray(previewPosts)
+        ? previewPosts
+            .filter(p => !p.isDuplicate)
+            .slice(0, maxPosts)
+            .map(p => p.url)
+        : [];
       setSelectedPostUrls(new Set(nonDuplicates));
     } else {
       setSelectedPostUrls(new Set());
@@ -376,8 +378,8 @@ export function BulkBlogImportModal({
             <div className="space-y-2">
               <Label htmlFor="icpTargets">ICP Targets (Optional)</Label>
               <MultiSelectCombobox
-                options={icpOptions}
-                value={selectedIcpTargets}
+                options={Array.isArray(icpOptions) ? icpOptions : []}
+                value={Array.isArray(selectedIcpTargets) ? selectedIcpTargets : []}
                 onChange={setSelectedIcpTargets}
                 placeholder={isLoadingIcp ? "Loading ICP targets..." : "Select ICP targets..."}
                 searchPlaceholder="Search ICP targets..."
@@ -574,7 +576,7 @@ export function BulkBlogImportModal({
                       </p>
                     )}
                   </div>
-                  {results.errors.length > 0 && (
+                  {Array.isArray(results.errors) && results.errors.length > 0 && (
                     <details className="mt-2">
                       <summary className="cursor-pointer text-sm font-medium hover:underline">
                         View error details ({results.errors.length})
@@ -583,15 +585,15 @@ export function BulkBlogImportModal({
                         {results.errors.slice(0, 10).map((err, idx) => (
                           <li key={idx} className="break-all">
                             <a
-                              href={err.url}
+                              href={err?.url || '#'}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1"
                             >
                               <ExternalLink className="h-3 w-3" />
-                              {err.url.substring(0, 60)}...
+                              {err?.url ? err.url.substring(0, 60) : 'Unknown URL'}...
                             </a>
-                            <span className="text-muted-foreground ml-1">: {err.error}</span>
+                            <span className="text-muted-foreground ml-1">: {err?.error || 'Unknown error'}</span>
                           </li>
                         ))}
                         {results.errors.length > 10 && (

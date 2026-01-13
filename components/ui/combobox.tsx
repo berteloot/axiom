@@ -47,6 +47,10 @@ export function MultiSelectCombobox({
   const [searchQuery, setSearchQuery] = React.useState("")
   const buttonRef = React.useRef<HTMLButtonElement>(null)
 
+  // Safety checks: ensure options and value are always arrays
+  const safeOptions = Array.isArray(options) ? options : []
+  const safeValue = Array.isArray(value) ? value : []
+
   // Reset search query when popover closes
   React.useEffect(() => {
     if (!open) {
@@ -55,10 +59,10 @@ export function MultiSelectCombobox({
   }, [open])
 
   const handleSelect = (option: string) => {
-    if (value.includes(option)) {
-      onChange(value.filter((item) => item !== option))
+    if (safeValue.includes(option)) {
+      onChange(safeValue.filter((item) => item !== option))
     } else {
-      onChange([...value, option])
+      onChange([...safeValue, option])
     }
     // Don't close the popover when selecting, allow multiple selections
   }
@@ -69,11 +73,11 @@ export function MultiSelectCombobox({
       // Check case-insensitively if it already exists
       const queryLower = trimmedQuery.toLowerCase()
       const alreadyExists = 
-        options.some(opt => opt.toLowerCase() === queryLower) ||
-        value.some(val => val.toLowerCase() === queryLower)
+        safeOptions.some(opt => opt.toLowerCase() === queryLower) ||
+        safeValue.some(val => val.toLowerCase() === queryLower)
       
       if (!alreadyExists) {
-        onChange([...value, trimmedQuery])
+        onChange([...safeValue, trimmedQuery])
         setSearchQuery("")
       }
     }
@@ -82,21 +86,21 @@ export function MultiSelectCombobox({
   // Filter options based on search query
   const filteredOptions = React.useMemo(() => {
     if (!searchQuery.trim()) {
-      return options
+      return safeOptions
     }
     const query = searchQuery.toLowerCase()
-    return options.filter(option => 
+    return safeOptions.filter(option => 
       option.toLowerCase().includes(query)
     )
-  }, [options, searchQuery])
+  }, [safeOptions, searchQuery])
 
   // Check if search query matches any existing option (case-insensitive)
   const exactMatch = React.useMemo(() => {
     if (!searchQuery.trim()) return false
     const query = searchQuery.trim().toLowerCase()
-    return options.some(opt => opt.toLowerCase() === query) || 
-           value.some(val => val.toLowerCase() === query)
-  }, [options, value, searchQuery])
+    return safeOptions.some(opt => opt.toLowerCase() === query) || 
+           safeValue.some(val => val.toLowerCase() === query)
+  }, [safeOptions, safeValue, searchQuery])
 
   // Show create option if:
   // 1. creatable is enabled
@@ -118,8 +122,8 @@ export function MultiSelectCombobox({
           className="w-full justify-between"
           disabled={disabled}
         >
-          {value.length > 0
-            ? `${value.length} selected`
+          {safeValue.length > 0
+            ? `${safeValue.length} selected`
             : placeholder}
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
@@ -143,7 +147,7 @@ export function MultiSelectCombobox({
                 {filteredOptions.length > 0 && (
                   <CommandGroup>
                     {filteredOptions.map((option) => {
-                      const isSelected = value.includes(option)
+                      const isSelected = safeValue.includes(option)
                       return (
                         <CommandItem
                           key={option}
