@@ -53,6 +53,89 @@ async function fetchHtml(url: string): Promise<string> {
 }
 
 /**
+ * Check if a URL should be excluded from blog post extraction
+ */
+function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
+  try {
+    const urlObj = new URL(url);
+    const urlPath = urlObj.pathname.toLowerCase();
+    
+    // Skip if it's the same as the blog URL or homepage
+    if (url === baseUrl.href || url === `${baseUrl.protocol}//${baseUrl.host}/`) return true;
+    
+    // Skip URLs with fragments (anchors)
+    if (url.includes('#')) return true;
+    
+    // Skip URLs with query parameters that indicate filtering/listing
+    const searchParams = urlObj.searchParams;
+    const excludeParams = ['category', 'tag', 'author', 'page', 'paged', 'search', 's', 'filter', 'sort', 'orderby', 'order'];
+    for (const param of excludeParams) {
+      if (searchParams.has(param)) {
+        return true;
+      }
+    }
+    
+    // Skip common non-post URL patterns
+    const excludePatterns = [
+      '/category/',
+      '/tag/',
+      '/tags/',
+      '/author/',
+      '/authors/',
+      '/page/',
+      '/pages/',
+      '/archive/',
+      '/archives/',
+      '/search',
+      '/sitemap',
+      '/feed',
+      '/rss',
+      '/atom',
+      '/contact',
+      '/about',
+      '/privacy',
+      '/terms',
+      '/legal',
+      '/subscribe',
+      '/newsletter',
+      '/login',
+      '/register',
+      '/signup',
+      '/sign-in',
+      '/wp-admin',
+      '/wp-content',
+      '/wp-includes',
+      '/.well-known',
+    ];
+    
+    // Check if URL path contains any exclude pattern
+    if (excludePatterns.some(pattern => urlPath.includes(pattern))) {
+      return true;
+    }
+    
+    // Skip date-based archive URLs (e.g., /2024/, /2024/01/)
+    const dateArchivePattern = /^\/(\d{4})\/(\d{2})?\/?$/;
+    if (dateArchivePattern.test(urlPath)) {
+      return true;
+    }
+    
+    // Skip if URL ends with common non-post extensions or paths
+    if (urlPath.endsWith('/feed') || 
+        urlPath.endsWith('/rss') || 
+        urlPath.endsWith('/atom') ||
+        urlPath.endsWith('/sitemap.xml') ||
+        urlPath.endsWith('/robots.txt')) {
+      return true;
+    }
+    
+    return false;
+  } catch {
+    // If URL parsing fails, exclude it to be safe
+    return true;
+  }
+}
+
+/**
  * Extract blog post URLs from a blog homepage
  * Looks for common blog post link patterns
  */
@@ -94,17 +177,8 @@ export async function extractBlogPostUrls(blogUrl: string): Promise<Array<{ url:
         // Skip if we've seen this URL
         if (seenUrls.has(absoluteUrl)) return;
         
-        // Skip if it's the same as the blog URL or homepage
-        if (absoluteUrl === baseUrl.href || absoluteUrl === `${baseUrl.protocol}//${baseUrl.host}/`) return;
-        
-        // Skip common non-post URLs
-        if (absoluteUrl.includes('/category/') || 
-            absoluteUrl.includes('/tag/') || 
-            absoluteUrl.includes('/author/') ||
-            absoluteUrl.includes('/page/') ||
-            absoluteUrl.includes('#') ||
-            absoluteUrl.endsWith('/feed') ||
-            absoluteUrl.endsWith('/rss')) {
+        // Use the exclusion function to filter out non-post pages
+        if (shouldExcludeUrl(absoluteUrl, baseUrl)) {
           return;
         }
 
