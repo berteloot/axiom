@@ -15,6 +15,7 @@ const nextConfig = {
     serverComponentsExternalPackages: [
       'unpdf',
       'ffmpeg-static',
+      'puppeteer',
     ],
     // Enable instrumentation hook for server startup cleanup
     instrumentationHook: true,
