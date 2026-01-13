@@ -808,13 +808,13 @@ async function fetchAllPostsWithPuppeteer(
       
       // Scroll in smaller increments to ensure we trigger all load events
       const scrollIncrement = viewportHeight * 0.8; // Scroll 80% of viewport at a time
-      let scrollPosition = currentScroll;
+      let incrementalScrollPos = currentScroll;
       
-      while (scrollPosition < scrollHeight) {
-        scrollPosition += scrollIncrement;
+      while (incrementalScrollPos < scrollHeight) {
+        incrementalScrollPos += scrollIncrement;
         await page.evaluate((pos) => {
           window.scrollTo(0, pos);
-        }, scrollPosition);
+        }, incrementalScrollPos);
         
         // Wait a bit for content to load
         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -837,10 +837,10 @@ async function fetchAllPostsWithPuppeteer(
       
       // Check if page height increased (new content loaded)
       const newHeight = await page.evaluate(() => document.body.scrollHeight);
-      const scrollPosition = await page.evaluate(() => window.scrollY);
+      const finalScrollPosition = await page.evaluate(() => window.scrollY);
       
       // If we're at the bottom and no new content, we're done
-      if (scrollPosition + 1000 >= newHeight && noNewPostsCount >= 2) {
+      if (finalScrollPosition + 1000 >= newHeight && noNewPostsCount >= 2) {
         console.log(`[Blog Extractor] Reached bottom of page, stopping`);
         break;
       }
