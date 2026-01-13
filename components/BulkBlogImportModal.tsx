@@ -155,9 +155,10 @@ export function BulkBlogImportModal({
         throw new Error(data.error || "Failed to preview blog posts");
       }
 
-      setPreviewPosts(data.posts || []);
+      const posts = Array.isArray(data.posts) ? data.posts : [];
+      setPreviewPosts(posts);
       // Auto-select all non-duplicate posts, up to maxPosts
-      const nonDuplicates = data.posts
+      const nonDuplicates = posts
         .filter((p: PreviewPost) => !p.isDuplicate)
         .slice(0, maxPosts);
       setSelectedPostUrls(new Set(nonDuplicates.map((p: PreviewPost) => p.url)));
@@ -198,6 +199,11 @@ export function BulkBlogImportModal({
   const handleImport = async () => {
     if (selectedPostUrls.size === 0) {
       setImportError("Please select at least one post to import");
+      return;
+    }
+
+    if (!Array.isArray(previewPosts) || previewPosts.length === 0) {
+      setImportError("No posts available to import");
       return;
     }
 
@@ -288,9 +294,9 @@ export function BulkBlogImportModal({
   };
 
   const selectedCount = selectedPostUrls.size;
-  const duplicateCount = previewPosts.filter(p => p.isDuplicate).length;
-  const newCount = previewPosts.filter(p => !p.isDuplicate).length;
-  const allSelected = selectedCount > 0 && 
+  const duplicateCount = Array.isArray(previewPosts) ? previewPosts.filter(p => p.isDuplicate).length : 0;
+  const newCount = Array.isArray(previewPosts) ? previewPosts.filter(p => !p.isDuplicate).length : 0;
+  const allSelected = selectedCount > 0 && Array.isArray(previewPosts) &&
     previewPosts.filter(p => !p.isDuplicate && selectedPostUrls.has(p.url)).length === 
     Math.min(newCount, maxPosts);
 
@@ -442,7 +448,7 @@ export function BulkBlogImportModal({
             <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
               <div className="space-y-1">
                 <div className="text-sm font-medium">
-                  Found {previewPosts.length} posts ({newCount} new, {duplicateCount} duplicates)
+                  Found {Array.isArray(previewPosts) ? previewPosts.length : 0} posts ({newCount} new, {duplicateCount} duplicates)
                 </div>
                 <div className="text-xs text-muted-foreground">
                   {selectedCount} selected for import
@@ -461,53 +467,59 @@ export function BulkBlogImportModal({
             </div>
 
             <div className="max-h-[400px] overflow-y-auto border rounded-lg">
-              <div className="divide-y">
-                {previewPosts.map((post) => {
-                  const isSelected = selectedPostUrls.has(post.url);
-                  const canSelect = !post.isDuplicate && selectedCount < maxPosts;
-                  
-                  return (
-                    <div
-                      key={post.url}
-                      className={`p-3 flex items-start gap-3 ${
-                        post.isDuplicate ? "bg-muted/30 opacity-60" : ""
-                      }`}
-                    >
-                      <Checkbox
-                        checked={isSelected}
-                        onCheckedChange={() => handleTogglePost(post.url)}
-                        disabled={post.isDuplicate || (!isSelected && !canSelect)}
-                        id={`post-${post.url}`}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start gap-2">
-                          <Label
-                            htmlFor={`post-${post.url}`}
-                            className="flex-1 text-sm font-medium cursor-pointer"
+              {Array.isArray(previewPosts) && previewPosts.length > 0 ? (
+                <div className="divide-y">
+                  {previewPosts.map((post) => {
+                    const isSelected = selectedPostUrls.has(post.url);
+                    const canSelect = !post.isDuplicate && selectedCount < maxPosts;
+                    
+                    return (
+                      <div
+                        key={post.url}
+                        className={`p-3 flex items-start gap-3 ${
+                          post.isDuplicate ? "bg-muted/30 opacity-60" : ""
+                        }`}
+                      >
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => handleTogglePost(post.url)}
+                          disabled={post.isDuplicate || (!isSelected && !canSelect)}
+                          id={`post-${post.url}`}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start gap-2">
+                            <Label
+                              htmlFor={`post-${post.url}`}
+                              className="flex-1 text-sm font-medium cursor-pointer"
+                            >
+                              {post.title}
+                            </Label>
+                            {post.isDuplicate && (
+                              <span className="text-xs px-2 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded">
+                                Duplicate
+                              </span>
+                            )}
+                          </div>
+                          <a
+                            href={post.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-muted-foreground hover:underline inline-flex items-center gap-1 mt-1"
+                            onClick={(e) => e.stopPropagation()}
                           >
-                            {post.title}
-                          </Label>
-                          {post.isDuplicate && (
-                            <span className="text-xs px-2 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded">
-                              Duplicate
-                            </span>
-                          )}
+                            <ExternalLink className="h-3 w-3" />
+                            {post.url.substring(0, 60)}...
+                          </a>
                         </div>
-                        <a
-                          href={post.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-muted-foreground hover:underline inline-flex items-center gap-1 mt-1"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <ExternalLink className="h-3 w-3" />
-                          {post.url.substring(0, 60)}...
-                        </a>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="p-8 text-center text-muted-foreground">
+                  No posts to display
+                </div>
+              )}
             </div>
 
             {selectedCount === 0 && (
