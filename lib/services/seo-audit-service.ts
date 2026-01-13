@@ -454,7 +454,7 @@ function parseDom(html: string, pageUrl: string): PageAnalysis["domData"] {
 
 /**
  * Fetch related search queries from DataForSEO
- * Uses keyword_suggestions endpoint to find what users are actually searching for
+ * Uses related_keywords endpoint which includes search volume data
  */
 async function fetchSearchQueries(
   seedKeyword: string,
@@ -471,9 +471,9 @@ async function fetchSearchQueries(
   const credentials = Buffer.from(`${DATAFORSEO_LOGIN}:${DATAFORSEO_PASSWORD}`).toString("base64");
 
   try {
-    // Use keyword_suggestions for broader coverage
+    // Use related_keywords endpoint - includes keyword_data with search volume
     const response = await fetch(
-      "https://api.dataforseo.com/v3/dataforseo_labs/google/keyword_suggestions/live",
+      "https://api.dataforseo.com/v3/dataforseo_labs/google/related_keywords/live",
       {
         method: "POST",
         headers: {
@@ -485,7 +485,7 @@ async function fetchSearchQueries(
             keyword: seedKeyword,
             location_name: locationName,
             language_name: languageName,
-            limit: 30, // Get top 30 related queries
+            limit: 30,
             include_seed_keyword: true,
           },
         ]),
@@ -507,39 +507,51 @@ async function fetchSearchQueries(
 
     const task = data.tasks?.[0];
     if (!task || task.status_code !== 20000) {
-      console.warn("[SEO Audit] DataForSEO task failed");
+      console.warn(`[SEO Audit] DataForSEO task failed: ${task?.status_message || 'unknown error'}`);
       return { queries: [], available: true };
     }
 
-    // Extract items from various response structures
+    // Extract items from result structure
     let items: any[] = [];
     if (task.result?.[0]?.items) {
       items = task.result[0].items;
-    } else if (task.data?.[0]?.items) {
-      items = task.data[0].items;
     }
+
+    // Also check for seed_keyword_data to include the original keyword
+    const seedKeywordData = task.result?.[0]?.seed_keyword_data;
 
     if (!items || items.length === 0) {
       console.log("[SEO Audit] No related queries found");
+      // If we have seed keyword data, use that
+      if (seedKeywordData?.keyword_info) {
+        const info = seedKeywordData.keyword_info;
+        return {
+          queries: [{
+            query: info.keyword || seedKeyword,
+            searchVolume: info.search_volume || 0,
+            cpc: info.cpc || 0,
+            competition: info.competition_level || "unknown",
+            isQuestion: /^(what|how|why|when|where|who|which|can|do|does|is|are|should|would|could)\s/i.test(seedKeyword),
+          }],
+          available: true
+        };
+      }
       return { queries: [], available: true };
     }
 
-    // Transform to our format, prioritizing by search volume
+    // Transform to our format - related_keywords uses keyword_data structure
     const queries: SearchQueryData[] = items
       .map((item: any) => {
-        const keyword = item.keyword || item.keyword_data?.keyword_info?.keyword;
-        const searchVolume = item.search_volume ?? item.keyword_data?.keyword_info?.search_volume ?? 0;
-        const cpc = item.cpc ?? item.keyword_data?.keyword_info?.cpc ?? 0;
-        const competition = item.competition_level ?? item.keyword_data?.keyword_info?.competition_level ?? "unknown";
-        
-        if (!keyword) return null;
+        // related_keywords endpoint structure: item.keyword_data.keyword_info
+        const keywordInfo = item.keyword_data?.keyword_info;
+        if (!keywordInfo?.keyword) return null;
         
         return {
-          query: keyword,
-          searchVolume,
-          cpc,
-          competition,
-          isQuestion: /^(what|how|why|when|where|who|which|can|do|does|is|are|should|would|could)\s/i.test(keyword),
+          query: keywordInfo.keyword,
+          searchVolume: keywordInfo.search_volume || 0,
+          cpc: keywordInfo.cpc || 0,
+          competition: keywordInfo.competition_level || "unknown",
+          isQuestion: /^(what|how|why|when|where|who|which|can|do|does|is|are|should|would|could)\s/i.test(keywordInfo.keyword),
         };
       })
       .filter((q: SearchQueryData | null): q is SearchQueryData => q !== null)
@@ -548,7 +560,7 @@ async function fetchSearchQueries(
 
     console.log(`[SEO Audit] Found ${queries.length} related search queries`);
     if (queries.length > 0) {
-      console.log(`[SEO Audit] Top query: "${queries[0].query}" (${queries[0].searchVolume} monthly searches)`);
+      console.log(`[SEO Audit] Top query: "${queries[0].query}" (${queries[0].searchVolume.toLocaleString()} monthly searches)`);
     }
 
     return { queries, available: true };
