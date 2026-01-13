@@ -218,8 +218,8 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
     ];
 
     // Blog-only exclusions (too aggressive for library listings)
+    // NOTE: /solutions/ is already in alwaysExcludeStringPatterns
     const blogOnlyExcludePatterns = [
-      "/solutions/",
       "/products/",
       "/product/",
       "/services/",
@@ -269,13 +269,12 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
     // These are typically landing pages, not actual content assets
     const productPagePatterns = [
       /^\/rfxcel-[a-z-]+-traceability-[a-z]+$/i, // e.g., /rfxcel-finished-goods-traceability-rfgt/
-      /^\/rfxcel-[a-z-]+-processing-[a-z]+$/i,     // e.g., /rfxcel-serialization-processing-rsp/
-      /^\/rfxcel-[a-z-]+-service-[a-z]+$/i,       // e.g., /rfxcel-verification-router-service-rvrs/
+      /^\/rfxcel-[a-z-]+-processing-[a-z]+$/i,   // e.g., /rfxcel-serialization-processing-rsp/
+      /^\/rfxcel-[a-z-]+-service-[a-z]+$/i,      // e.g., /rfxcel-verification-router-service-rvrs/
       /^\/rfxcel-[a-z-]+-management-[a-z]+$/i,   // e.g., /rfxcel-compliance-management-rcm/
-      /^\/rfxcel-[a-z-]+-monitoring-[a-z]+$/i,    // e.g., /rfxcel-environmental-monitoring-rem/
+      /^\/rfxcel-[a-z-]+-monitoring-[a-z]+$/i,   // e.g., /rfxcel-environmental-monitoring-rem/
       /^\/rfxcel-[a-z-]+-mgt-[a-z]+$/i,          // e.g., /rfxcel-accurate-immunization-mgt-raim/
-      /^\/rfxcel-[a-z-]+-traceability-[a-z]+$/i, // e.g., /rfxcel-ingredients-traceability-rit/
-      /^\/rfxcel-[a-z-]+$/i,                      // e.g., /rfxcel-iris/
+      /^\/rfxcel-[a-z-]+$/i,                     // e.g., /rfxcel-iris/
       /^\/rfxcel-code-check-[a-z-]+$/i,          // e.g., /rfxcel-code-check-dispensers-eu/
       /^\/diamind-sentry$/i,                     // e.g., /diamind-sentry/
     ];
@@ -354,9 +353,9 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
         return true;
       }
 
-      // If URL is very short, it's likely not a blog post
-      const pathSegments = urlPath.split("/").filter((seg) => seg.length > 0);
-      if (pathSegments.length === 0 || (pathSegments.length === 1 && pathSegments[0].length < 5)) {
+      // If URL has no path segments, it's likely not a blog post
+      // Note: Single-segment short paths are already excluded above (line 311-315)
+      if (pathSegments.length === 0) {
         return true;
       }
     }
