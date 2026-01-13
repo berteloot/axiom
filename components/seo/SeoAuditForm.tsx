@@ -21,7 +21,7 @@ interface SeoAuditFormProps {
 
 export function SeoAuditForm({ accountId }: SeoAuditFormProps) {
   const [url, setUrl] = useState("");
-  const [pageType, setPageType] = useState<string | undefined>(undefined);
+  const [pageType, setPageType] = useState<string>("none");
   const [targetKeyword, setTargetKeyword] = useState("");
   const [targetAudience, setTargetAudience] = useState<string[]>([]);
   const [brandVoice, setBrandVoice] = useState<string[]>([]);
@@ -44,7 +44,7 @@ export function SeoAuditForm({ accountId }: SeoAuditFormProps) {
         },
         body: JSON.stringify({
           url,
-          page_type: pageType,
+          page_type: pageType === "none" ? undefined : pageType,
           target_keyword: targetKeyword || undefined,
           // API expects comma-separated strings for these fields (see auditRequestSchema)
           target_audience: targetAudience.length > 0 ? targetAudience.join(", ") : undefined,
@@ -111,6 +111,7 @@ export function SeoAuditForm({ accountId }: SeoAuditFormProps) {
                     <SelectValue placeholder="Select page type" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="none">None (Auto-detect)</SelectItem>
                     <SelectItem value="blog">Blog</SelectItem>
                     <SelectItem value="product">Product</SelectItem>
                     <SelectItem value="landing">Landing Page</SelectItem>

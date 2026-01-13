@@ -826,26 +826,33 @@ export async function auditSeoPage(
     }
 
     // Add brand consistency analysis if requested
-    // IMPORTANT: Brand consistency only runs for URLs that match an account in the database.
-    // For third-party URLs (like analyzing a competitor's blog), we skip brand consistency
-    // because we don't have their canonical brand context to compare against.
+    // When includeBrandConsistency is true, use the provided accountId (authenticated user's account)
+    // This allows users to check how ChatGPT represents their brand even when auditing third-party URLs
     if (options.includeBrandConsistency) {
       try {
-        // Try to find account from URL - only run brand consistency if we find a matching account
-        const accountIdForBrandCheck = await findAccountByUrl(url);
+        // Use provided accountId (from authenticated user) if available
+        // Otherwise, try to find account from URL (for backwards compatibility)
+        let accountIdForBrandCheck = options.accountId;
+        
+        if (!accountIdForBrandCheck) {
+          // Fallback: Try to find account from URL domain match
+          accountIdForBrandCheck = await findAccountByUrl(url);
+        }
         
         if (accountIdForBrandCheck) {
-          console.log(`[SEO Audit] Found account ${accountIdForBrandCheck} for URL ${url} based on domain match - running brand consistency`);
+          if (options.accountId) {
+            console.log(`[SEO Audit] Using authenticated user's account ${accountIdForBrandCheck} for brand consistency analysis`);
+          } else {
+            console.log(`[SEO Audit] Found account ${accountIdForBrandCheck} for URL ${url} based on domain match - running brand consistency`);
+          }
           const brandConsistency = await testBrandConsistency(accountIdForBrandCheck);
           auditResult.brand_consistency = brandConsistency;
         } else {
-          // No matching account found - this is a third-party URL
-          // Skip brand consistency (don't fallback to user's selected account)
-          console.log(`[SEO Audit] No matching account found for URL ${url} - skipping brand consistency (third-party URL)`);
-          // Add informational note (not an error, just info)
+          // No account available - this shouldn't happen if accountId was provided
+          console.log(`[SEO Audit] No account available for brand consistency analysis`);
           auditResult.brand_consistency_skipped = {
-            reason: "third_party_url",
-            message: "Brand consistency analysis skipped. This URL does not match any account in your system. Brand consistency is only available when auditing your own website URLs.",
+            reason: "no_brand_context",
+            message: "Brand consistency analysis requires an account with brand context configured. Please ensure your account has brand information set up.",
           };
         }
       } catch (error) {
