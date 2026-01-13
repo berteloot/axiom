@@ -184,6 +184,33 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
       "/event/",
       "/book-a-demo/",
       "/thank-you",
+      "/cookie-declaration",
+      "/request-pricing",
+      "/homepage-",
+      // Navigation/landing pages
+      "/overview",
+      "/products",
+      "/resources",
+      // Industry/audience landing pages (not library content)
+      "/pharmacies/",
+      "/wholesale-distributors/",
+      "/repackagers/",
+      "/manufacturers/",
+      "/distributors/",
+      "/growers-shippers/",
+      "/contract-manufacturing-packaging-organizations-cmos-cpos/",
+      // Product/solution landing pages (not library content)
+      "/food-and-beverage/",
+      "/cpg-manufacturers/",
+      "/government-usa/",
+      "/consumer-goods-products/",
+      "/pharmaceuticals-overview/",
+      "/f-b-overview/",
+      "/government-overview/",
+      "/consumer-goods-overview/",
+      "/pharmaceuticals/",
+      "/3pl/",
+      "/aim/",
     ];
     
     // Regex patterns for always-excluded paths
@@ -236,6 +263,30 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
     
     // Exclude "old" pages (archived/outdated content)
     if (urlPath.includes("-old") || urlPath.includes("-tmp")) {
+      return true;
+    }
+    
+    // Exclude product/solution pages that are not library content
+    // These are typically landing pages, not actual content assets
+    const productPagePatterns = [
+      /^\/rfxcel-[a-z-]+-traceability-[a-z]+$/i, // e.g., /rfxcel-finished-goods-traceability-rfgt/
+      /^\/rfxcel-[a-z-]+-processing-[a-z]+$/i,     // e.g., /rfxcel-serialization-processing-rsp/
+      /^\/rfxcel-[a-z-]+-service-[a-z]+$/i,       // e.g., /rfxcel-verification-router-service-rvrs/
+      /^\/rfxcel-[a-z-]+-management-[a-z]+$/i,   // e.g., /rfxcel-compliance-management-rcm/
+      /^\/rfxcel-[a-z-]+-monitoring-[a-z]+$/i,    // e.g., /rfxcel-environmental-monitoring-rem/
+      /^\/rfxcel-[a-z-]+-mgt-[a-z]+$/i,          // e.g., /rfxcel-accurate-immunization-mgt-raim/
+      /^\/rfxcel-[a-z-]+-traceability-[a-z]+$/i, // e.g., /rfxcel-ingredients-traceability-rit/
+      /^\/rfxcel-[a-z-]+$/i,                      // e.g., /rfxcel-iris/
+    ];
+    
+    if (productPagePatterns.some(pattern => pattern.test(urlPath))) {
+      return true;
+    }
+    
+    // Exclude very short paths that are likely navigation pages
+    const pathSegments = urlPath.split('/').filter(seg => seg.length > 0);
+    if (pathSegments.length === 1 && pathSegments[0].length < 10) {
+      // Single segment, very short - likely a navigation/landing page
       return true;
     }
 
