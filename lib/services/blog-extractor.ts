@@ -1,5 +1,4 @@
 import * as cheerio from "cheerio";
-import puppeteer from "puppeteer";
 
 const JINA_READER_URL = "https://r.jina.ai";
 const JINA_API_KEY = process.env.JINA_API_KEY;
@@ -373,9 +372,17 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
  * This is used as a last-resort fallback when sitemap/Jina do not return enough items.
  */
 async function fetchListingPageWithPuppeteer(url: string, maxIterations = 30): Promise<string> {
+  // Dynamically import puppeteer only when needed (optional dependency)
+  let puppeteer;
+  try {
+    puppeteer = await import("puppeteer");
+  } catch (error) {
+    throw new Error("Puppeteer is not available. Install it with: npm install puppeteer");
+  }
+  
   const normalizedUrl = normalizeUrl(url);
 
-  const browser = await puppeteer.launch({
+  const browser = await puppeteer.default.launch({
     headless: true,
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
   });
