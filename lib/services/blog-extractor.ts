@@ -66,6 +66,22 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
     // Skip URLs with fragments (anchors)
     if (url.includes('#')) return true;
     
+    // Skip if URL is from a different domain (CDN, external links, etc.)
+    if (urlObj.hostname !== baseUrl.hostname && urlObj.hostname !== `www.${baseUrl.hostname}` && baseUrl.hostname !== `www.${urlObj.hostname}`) {
+      return true;
+    }
+    
+    // Skip image/media file URLs
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico', '.bmp', '.tiff', '.pdf', '.mp4', '.mp3', '.avi', '.mov', '.wmv', '.zip', '.rar', '.exe', '.dmg'];
+    if (imageExtensions.some(ext => urlPath.toLowerCase().endsWith(ext))) {
+      return true;
+    }
+    
+    // Skip CDN URLs
+    if (urlObj.hostname.includes('cdn.') || urlObj.hostname.includes('static.') || urlObj.hostname.includes('assets.')) {
+      return true;
+    }
+    
     // Skip URLs with query parameters that indicate filtering/listing
     const searchParams = urlObj.searchParams;
     const excludeParams = ['category', 'tag', 'author', 'page', 'paged', 'search', 's', 'filter', 'sort', 'orderby', 'order'];
@@ -75,7 +91,7 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
       }
     }
     
-    // Skip common non-post URL patterns
+    // Skip common non-post URL patterns (expanded list)
     const excludePatterns = [
       '/category/',
       '/tag/',
@@ -93,6 +109,7 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
       '/atom',
       '/contact',
       '/about',
+      '/about-us',
       '/privacy',
       '/terms',
       '/legal',
@@ -106,6 +123,43 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
       '/wp-content',
       '/wp-includes',
       '/.well-known',
+      '/solutions/',
+      '/products/',
+      '/product/',
+      '/services/',
+      '/service/',
+      '/industries/',
+      '/industry/',
+      '/company/',
+      '/team/',
+      '/careers/',
+      '/career/',
+      '/jobs/',
+      '/job/',
+      '/pricing/',
+      '/prices/',
+      '/demo/',
+      '/demos/',
+      '/download/',
+      '/downloads/',
+      '/resources/',
+      '/resource/',
+      '/library',
+      '/whitepaper/',
+      '/whitepapers/',
+      '/webinar/',
+      '/webinars/',
+      '/video/',
+      '/videos/',
+      '/news/',
+      '/publication/',
+      '/publications/',
+      '/customer-story/',
+      '/customer-stories/',
+      '/case-study/',
+      '/case-studies/',
+      '/brochure/',
+      '/brochures/',
     ];
     
     // Check if URL path contains any exclude pattern
@@ -125,6 +179,34 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
         urlPath.endsWith('/atom') ||
         urlPath.endsWith('/sitemap.xml') ||
         urlPath.endsWith('/robots.txt')) {
+      return true;
+    }
+    
+    // Additional positive validation: exclude obvious non-blog pages
+    // Skip if URL looks like a product/solution page (common patterns)
+    const nonBlogPatterns = [
+      /^\/solutions\//,
+      /^\/products\//,
+      /^\/product\//,
+      /^\/services\//,
+      /^\/service\//,
+      /^\/industries\//,
+      /^\/industry\//,
+      /^\/company\//,
+      /^\/contact/,
+      /^\/about/,
+      /^\/pricing/,
+      /^\/demo/,
+      /^\/download/,
+    ];
+    
+    if (nonBlogPatterns.some(pattern => pattern.test(urlPath))) {
+      return true;
+    }
+    
+    // If URL is very short (just root or one segment), it's likely not a blog post
+    const pathSegments = urlPath.split('/').filter(seg => seg.length > 0);
+    if (pathSegments.length === 0 || (pathSegments.length === 1 && pathSegments[0].length < 5)) {
       return true;
     }
     
