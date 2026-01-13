@@ -397,12 +397,7 @@ export async function auditSeoPage(
       domData,
     };
 
-    let auditResult: Awaited<ReturnType<typeof generateSeoAudit>> & {
-      brand_consistency_skipped?: {
-        reason: "third_party_url" | "no_brand_context" | "error";
-        message: string;
-      };
-    };
+    let auditResult: Awaited<ReturnType<typeof generateSeoAudit>>;
     try {
       auditResult = await generateSeoAudit(url, analysis, context);
     } catch (error) {

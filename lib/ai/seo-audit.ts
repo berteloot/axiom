@@ -112,7 +112,7 @@ const SeoAuditSchema = z.object({
   brand_consistency_skipped: z.object({
     reason: z.enum(["third_party_url", "no_brand_context", "error"]),
     message: z.string(),
-  }).optional(),
+  }).nullable(),
 });
 
 export type SeoAuditResult = z.infer<typeof SeoAuditSchema>;
@@ -266,11 +266,12 @@ Analyze this page and provide specific, actionable recommendations.`;
       throw new Error("AI failed to generate structured SEO audit");
     }
 
-    // Ensure URL is set and brand_consistency defaults to null if not provided
+    // Ensure URL is set and nullable fields default to null if not provided
     return {
       ...result,
       url,
       brand_consistency: result.brand_consistency ?? null,
+      brand_consistency_skipped: result.brand_consistency_skipped ?? null,
     };
   } catch (error) {
     console.error("Error generating SEO audit:", error);
