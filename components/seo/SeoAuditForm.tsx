@@ -21,7 +21,7 @@ interface SeoAuditFormProps {
 
 export function SeoAuditForm({ accountId }: SeoAuditFormProps) {
   const [url, setUrl] = useState("");
-  const [pageType, setPageType] = useState<string>("");
+  const [pageType, setPageType] = useState<string | undefined>(undefined);
   const [targetKeyword, setTargetKeyword] = useState("");
   const [targetAudience, setTargetAudience] = useState<string[]>([]);
   const [brandVoice, setBrandVoice] = useState<string[]>([]);
@@ -44,8 +44,9 @@ export function SeoAuditForm({ accountId }: SeoAuditFormProps) {
         },
         body: JSON.stringify({
           url,
-          page_type: pageType || undefined,
+          page_type: pageType,
           target_keyword: targetKeyword || undefined,
+          // API expects comma-separated strings for these fields (see auditRequestSchema)
           target_audience: targetAudience.length > 0 ? targetAudience.join(", ") : undefined,
           brand_voice: brandVoice.length > 0 ? brandVoice.join(", ") : undefined,
           include_brand_consistency: includeBrandConsistency,
@@ -53,8 +54,16 @@ export function SeoAuditForm({ accountId }: SeoAuditFormProps) {
       });
 
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to perform SEO audit");
+        let errorMessage = "Failed to perform SEO audit";
+        try {
+          const data = await response.json();
+          errorMessage = data.error || errorMessage;
+        } catch {
+          // Non-JSON error response (HTML, plain text, etc.)
+          const text = await response.text();
+          errorMessage = text || errorMessage;
+        }
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
@@ -135,6 +144,7 @@ export function SeoAuditForm({ accountId }: SeoAuditFormProps) {
                   emptyText="No job titles found."
                   creatable={true}
                   createText="Create"
+                  disabled={loading}
                 />
                 {targetAudience.length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-2">
@@ -168,6 +178,7 @@ export function SeoAuditForm({ accountId }: SeoAuditFormProps) {
                   onChange={setBrandVoice}
                   placeholder="Select brand voice attributes..."
                   searchPlaceholder="Search brand voices..."
+                  disabled={loading}
                 />
                 {brandVoice.length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-2">
