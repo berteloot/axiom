@@ -1,6 +1,7 @@
 import * as cheerio from "cheerio";
 import { generateSeoAudit, type SeoAuditContext, type PageAnalysis } from "@/lib/ai/seo-audit";
 import { testBrandConsistency } from "@/lib/ai/brand-consistency";
+import { prisma } from "@/lib/prisma";
 
 const JINA_READER_URL = "https://r.jina.ai";
 const JINA_API_KEY = process.env.JINA_API_KEY;
@@ -18,6 +19,101 @@ function normalizeUrl(url: string): string {
     normalized = `https://${normalized}`;
   }
   return normalized;
+}
+
+/**
+ * Safely extract hostname from a URL, removing www. prefix
+ * Returns undefined if URL cannot be parsed
+ */
+function safeHostname(url: string | null | undefined): string | undefined {
+  if (!url) return undefined;
+
+  try {
+    // Normalize URL - add protocol if missing
+    let normalizedUrl = url.trim();
+    if (!normalizedUrl.startsWith("http://") && !normalizedUrl.startsWith("https://")) {
+      normalizedUrl = `https://${normalizedUrl}`;
+    }
+
+    const urlObj = new URL(normalizedUrl);
+    return urlObj.hostname.replace(/^www\./, "");
+  } catch {
+    // If URL parsing fails, try simple regex extraction
+    const match = url.match(/https?:\/\/(?:www\.)?([^\/]+)/);
+    return match ? match[1] : undefined;
+  }
+}
+
+/**
+ * Find account by URL domain - tries to match URL hostname against BrandContext.websiteUrl or Account.website
+ * Returns accountId if found, null otherwise
+ */
+async function findAccountByUrl(url: string): Promise<string | null> {
+  try {
+    const hostname = safeHostname(url);
+    if (!hostname) return null;
+
+    // First, try exact match against all BrandContexts with websiteUrl
+    const allBrandContexts = await prisma.brandContext.findMany({
+      where: {
+        websiteUrl: {
+          not: null,
+        },
+      },
+      select: {
+        accountId: true,
+        websiteUrl: true,
+      },
+    });
+
+    // Exact match first
+    for (const bc of allBrandContexts) {
+      if (bc.websiteUrl) {
+        const bcHostname = safeHostname(bc.websiteUrl);
+        if (bcHostname === hostname) {
+          return bc.accountId;
+        }
+      }
+    }
+
+    // Try partial match - check if hostname contains or is contained in website URL
+    // This handles cases like blog.example.com matching example.com
+    for (const bc of allBrandContexts) {
+      if (bc.websiteUrl) {
+        const bcHostname = safeHostname(bc.websiteUrl);
+        if (bcHostname && (hostname.includes(bcHostname) || bcHostname.includes(hostname))) {
+          return bc.accountId;
+        }
+      }
+    }
+
+    // Fallback: Try to find Account with matching website
+    const allAccounts = await prisma.account.findMany({
+      where: {
+        website: {
+          not: null,
+        },
+      },
+      select: {
+        id: true,
+        website: true,
+      },
+    });
+
+    for (const account of allAccounts) {
+      if (account.website) {
+        const accountHostname = safeHostname(account.website);
+        if (accountHostname === hostname || (accountHostname && (hostname.includes(accountHostname) || accountHostname.includes(hostname)))) {
+          return account.id;
+        }
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error("Error finding account by URL:", error);
+    return null;
+  }
 }
 
 /**
@@ -210,14 +306,14 @@ export interface AuditOptions {
 export interface AuditResult {
   success: boolean;
   data?: any;
-  errors?: Array<{ stage: string; message: string }>;
+  errors?: Array<{ stage: "jina" | "fetch" | "parse" | "analyze"; message: string }>;
 }
 
 export async function auditSeoPage(
   options: AuditOptions
 ): Promise<AuditResult> {
   const { url, context } = options;
-  const errors: Array<{ stage: string; message: string }> = [];
+  const errors: Array<{ stage: "jina" | "fetch" | "parse" | "analyze"; message: string }> = [];
 
   // Check cache
   const cacheKey = `${url}-${JSON.stringify(context || {})}`;
@@ -312,11 +408,35 @@ export async function auditSeoPage(
       throw error;
     }
 
-    // Add brand consistency analysis if requested and accountId is provided
-    if (options.includeBrandConsistency && options.accountId) {
+    // Add brand consistency analysis if requested
+    if (options.includeBrandConsistency) {
       try {
-        const brandConsistency = await testBrandConsistency(options.accountId);
-        auditResult.brand_consistency = brandConsistency;
+        // Try to find account from URL first (e.g., CaseGuard blog post should use CaseGuard's brand context)
+        // Fallback to provided accountId if URL doesn't match any account
+        let accountIdForBrandCheck: string | null = null;
+        
+        try {
+          accountIdForBrandCheck = await findAccountByUrl(url);
+          if (accountIdForBrandCheck) {
+            console.log(`[SEO Audit] Found account ${accountIdForBrandCheck} for URL ${url} based on domain match`);
+          }
+        } catch (error) {
+          console.warn("Error finding account by URL, will use provided accountId:", error);
+        }
+
+        // Use accountId from URL match, or fallback to provided accountId
+        const accountIdToUse = accountIdForBrandCheck || options.accountId;
+
+        if (accountIdToUse) {
+          const brandConsistency = await testBrandConsistency(accountIdToUse);
+          auditResult.brand_consistency = brandConsistency;
+        } else {
+          const errorMessage = "Brand consistency analysis requested but no matching account found for URL and no accountId provided";
+          errors.push({
+            stage: "analyze" as const,
+            message: errorMessage,
+          });
+        }
       } catch (error) {
         console.error("Error generating brand consistency analysis:", error);
         errors.push({
