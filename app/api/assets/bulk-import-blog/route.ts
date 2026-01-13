@@ -97,6 +97,10 @@ export async function POST(request: NextRequest) {
         // Fetch content and extract published date
         const { content, publishedDate } = await fetchBlogPostContentWithDate(post.url);
         
+        // Validate content - if content is too short or invalid, mark as ERROR
+        const isValidContent = content && content.trim().length >= 100;
+        const status = isValidContent ? "PROCESSED" : "ERROR";
+        
         // Generate filename
         const timestamp = Date.now();
         const sanitizedTitle = post.title
@@ -129,7 +133,7 @@ export async function POST(request: NextRequest) {
         // Convert published date string to Date object if available
         const customCreatedAt = publishedDate ? new Date(publishedDate) : null;
 
-        // Create asset
+        // Create asset with appropriate status based on processing success
         const asset = await prisma.asset.create({
           data: {
             accountId,
@@ -144,17 +148,18 @@ export async function POST(request: NextRequest) {
             icpTargets: standardizedIcpTargets,
             painClusters,
             outreachTip: `This blog post was imported from ${post.url}. ${painClusters.length > 0 ? `Addresses: ${painClusters.join(", ")}.` : ""}`,
-            status: "PROCESSED",
-            aiModel: "bulk-import",
-            promptVersion: "v1",
-            analyzedAt: new Date(),
-            contentQualityScore: 70,
+            status: status as "PROCESSED" | "ERROR",
+            aiModel: isValidContent ? "bulk-import" : null,
+            promptVersion: isValidContent ? "v1" : null,
+            analyzedAt: isValidContent ? new Date() : null,
+            contentQualityScore: isValidContent ? 70 : null,
             customCreatedAt, // Set creation date from extracted published date
             atomicSnippets: {
               type: "blog_import",
               sourceUrl: post.url,
               importedAt: new Date().toISOString(),
               ...(publishedDate ? { publishedDate } : {}),
+              ...(!isValidContent ? { error: "Content extraction failed or content too short" } : {}),
             },
           },
         });
