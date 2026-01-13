@@ -187,29 +187,64 @@ export async function POST(request: NextRequest) {
     // Use batch processing with concurrency limit to avoid overwhelming the server
     console.log(`[Bulk Import Preview] Enriching ${filteredPosts.length} posts with HTML detection...`);
     
+    // Helper to check if URL is same-domain HTML (not PDF)
+    const isSameDomainHtml = (url: string, baseUrl: string): boolean => {
+      try {
+        const urlObj = new URL(url);
+        const baseUrlObj = new URL(baseUrl);
+        
+        // Must be same domain
+        if (urlObj.hostname !== baseUrlObj.hostname && 
+            urlObj.hostname !== `www.${baseUrlObj.hostname}` &&
+            baseUrlObj.hostname !== `www.${urlObj.hostname}`) {
+          return false;
+        }
+        
+        // Must not be a PDF
+        const path = urlObj.pathname.toLowerCase();
+        if (path.endsWith('.pdf')) {
+          return false;
+        }
+        
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    
     const enrichedPosts = await processBatchWithConcurrency(
       filteredPosts,
       async (post) => {
         let detectedType = detectAssetTypeFromUrl(post.url);
         let publishedDate = post.publishedDate;
+        let fetchedHtml: string | null = null;
         
         // If URL-based detection failed OR date is missing, try HTML-based detection
         if (!detectedType || !publishedDate) {
           try {
-            const html = await fetchHtml(post.url).catch(() => null);
-            if (html) {
+            fetchedHtml = await fetchHtml(post.url).catch(() => null);
+            if (fetchedHtml) {
               // Detect content type from HTML
               if (!detectedType) {
-                detectedType = await detectAssetTypeFromHtml(post.url, html);
+                detectedType = await detectAssetTypeFromHtml(post.url, fetchedHtml);
               }
               // Extract date from HTML if not found in URL
               if (!publishedDate) {
-                publishedDate = extractPublishedDateFromHtml(post.url, html);
+                publishedDate = extractPublishedDateFromHtml(post.url, fetchedHtml);
               }
             }
           } catch (error) {
             // HTML fetch failed, keep detectedType as null
             console.log(`[Bulk Import Preview] Failed to fetch HTML for ${post.url}:`, error);
+          }
+        }
+        
+        // Fallback: If still no type detected and it's same-domain HTML, label as "Web Page"
+        // This prevents "Unknown Type" for ordinary web pages when classification is uncertain
+        if (!detectedType && (fetchedHtml || isSameDomainHtml(post.url, blogUrl))) {
+          // Only use fallback if we confirmed it's HTML (fetched it) or it's clearly same-domain HTML
+          if (fetchedHtml || (!post.url.toLowerCase().endsWith('.pdf') && isSameDomainHtml(post.url, blogUrl))) {
+            detectedType = "Web Page";
           }
         }
         

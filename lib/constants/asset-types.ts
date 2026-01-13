@@ -231,14 +231,30 @@ export async function detectAssetTypeFromHtml(url: string, html?: string): Promi
       }
     }
 
-    // 2. Check meta tags
+    // 2. Check meta tags (including article:published_time as blog indicator)
     const metaSelectors = [
       'meta[property="og:type"]',
       'meta[name="og:type"]',
       'meta[property="article:type"]',
       'meta[name="content-type"]',
       'meta[property="content-type"]',
+      'meta[property="article:published_time"]', // Blog posts typically have this
+      'meta[property="article:published"]',
+      'meta[name="article:published_time"]',
     ];
+    
+    // Check for article:published_time first (strong blog indicator)
+    const publishedTime = $('meta[property="article:published_time"], meta[property="article:published"], meta[name="article:published_time"]').first().attr('content');
+    if (publishedTime) {
+      // If we have a published time, it's likely a blog post or article
+      // Check other signals to confirm
+      const ogType = $('meta[property="og:type"]').first().attr('content')?.toLowerCase() || '';
+      if (ogType.includes('article') || ogType.includes('blog')) {
+        return "Blog Post";
+      }
+      // If no conflicting type, assume blog post
+      return "Blog Post";
+    }
     
     for (const selector of metaSelectors) {
       const meta = $(selector).first();
@@ -269,9 +285,13 @@ export async function detectAssetTypeFromHtml(url: string, html?: string): Promi
         const checkType = (obj: any): string | null => {
           if (!obj || typeof obj !== 'object') return null;
           
-          // Check @type field
+          // Check @type field (prioritize BlogPosting schema)
           if (obj['@type']) {
             const type = String(obj['@type']).toLowerCase();
+            // BlogPosting is the explicit schema.org type for blog posts
+            if (type === 'blogposting' || type === 'https://schema.org/blogposting' || type === 'http://schema.org/blogposting') {
+              return "Blog Post";
+            }
             if (type.includes('blog') || type.includes('article') || type.includes('blogposting')) {
               return "Blog Post";
             }
@@ -280,6 +300,15 @@ export async function detectAssetTypeFromHtml(url: string, html?: string): Promi
             }
             if (type.includes('podcast')) {
               return "Podcast Episode";
+            }
+          }
+          
+          // Check for datePublished as blog indicator (BlogPosting schema)
+          if (obj.datePublished || obj.datepublished || obj.publishedTime) {
+            // If it has a published date and looks like content, likely a blog post
+            const type = String(obj['@type'] || '').toLowerCase();
+            if (!type || type.includes('article') || type.includes('blog') || type.includes('post')) {
+              return "Blog Post";
             }
           }
           
@@ -327,6 +356,15 @@ export async function detectAssetTypeFromHtml(url: string, html?: string): Promi
 }
 
 /**
+ * Strip locale prefix from path for pattern matching
+ * Examples: /de/..., /fr/..., /en-us/... -> /...
+ */
+function stripLocalePrefix(path: string): string {
+  // /de/... or /de-DE/... or /en-us/...
+  return path.replace(/^\/(?:[a-z]{2})(?:-[a-z]{2})?\//i, "/");
+}
+
+/**
  * Detect asset type from URL patterns
  * Returns detected type or null if unknown
  */
@@ -334,7 +372,9 @@ export function detectAssetTypeFromUrl(url: string): string | null {
   try {
     const urlObj = new URL(url);
     const path = urlObj.pathname.toLowerCase();
-    const pathSegments = path.split('/').filter(s => s.length > 0);
+    // Strip locale prefix for pattern matching (e.g., /de/blog/... -> /blog/...)
+    const pathForMatching = stripLocalePrefix(path);
+    const pathSegments = pathForMatching.split('/').filter(s => s.length > 0);
     
     // URL pattern mappings (order matters - more specific first)
     const patterns: Array<{ pattern: RegExp | string; type: string }> = [
@@ -379,12 +419,12 @@ export function detectAssetTypeFromUrl(url: string): string | null {
       { pattern: /infographic/i, type: "Infographic" },
     ];
     
-    // Check full path first
+    // Check full path first (using locale-stripped path)
     for (const { pattern, type } of patterns) {
       if (typeof pattern === 'string') {
-        if (path.includes(pattern)) return type;
+        if (pathForMatching.includes(pattern)) return type;
       } else {
-        if (pattern.test(path)) return type;
+        if (pattern.test(pathForMatching)) return type;
       }
     }
     
@@ -399,8 +439,8 @@ export function detectAssetTypeFromUrl(url: string): string | null {
       }
     }
     
-    // Default to Blog Post if URL contains common blog indicators
-    if (path.includes('blog') || path.includes('post') || path.includes('article')) {
+    // Default to Blog Post if URL contains common blog indicators (using locale-stripped path)
+    if (pathForMatching.includes('blog') || pathForMatching.includes('post') || pathForMatching.includes('article')) {
       return "Blog Post";
     }
     
