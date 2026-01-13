@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { MultiSelectCombobox } from "@/components/ui/combobox";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Search, X } from "lucide-react";
@@ -25,7 +24,6 @@ export function SeoAuditForm({ accountId }: SeoAuditFormProps) {
   const [targetKeyword, setTargetKeyword] = useState("");
   const [targetAudience, setTargetAudience] = useState<string[]>([]);
   const [brandVoice, setBrandVoice] = useState<string[]>([]);
-  const [includeBrandConsistency, setIncludeBrandConsistency] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<SeoAuditResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +47,7 @@ export function SeoAuditForm({ accountId }: SeoAuditFormProps) {
           // API expects comma-separated strings for these fields (see auditRequestSchema)
           target_audience: targetAudience.length > 0 ? targetAudience.join(", ") : undefined,
           brand_voice: brandVoice.length > 0 ? brandVoice.join(", ") : undefined,
-          include_brand_consistency: includeBrandConsistency,
+          include_brand_consistency: false, // Brand consistency feature temporarily disabled
         }),
       });
 
@@ -204,22 +202,6 @@ export function SeoAuditForm({ accountId }: SeoAuditFormProps) {
                   </div>
                 )}
               </div>
-            </div>
-
-            <div className="flex items-center space-x-2 p-4 border rounded-lg bg-muted/50">
-              <Switch
-                id="brandConsistency"
-                checked={includeBrandConsistency}
-                onCheckedChange={setIncludeBrandConsistency}
-                disabled={loading || !accountId}
-              />
-              <Label htmlFor="brandConsistency" className="flex-1 cursor-pointer">
-                <div className="font-medium">Include Brand Consistency Analysis</div>
-                <div className="text-sm text-muted-foreground">
-                  Check how ChatGPT from OpenAI represents your brand vs. your canonical messaging
-                  {!accountId && " (Requires brand context setup)"}
-                </div>
-              </Label>
             </div>
 
             {error && (
