@@ -319,12 +319,37 @@ export async function analyzeAsset(
       contextPrompt = `COMPANY CONTEXT (JSON):
 ${brandContextJson}
 
-RULES:
+CRITICAL ANALYSIS RULES:
+🔴 YOU MUST ANALYZE EACH ASSET'S ACTUAL CONTENT INDIVIDUALLY. Do NOT default to brand context values without content analysis.
+
 1. matchedProductLineId: MUST use exact ID from productLines[].id above. NO hallucination.
-2. painClusters: Prefer exact terms from painClusters[] when relevant, else infer (2-5 words, Title Case).
-3. icpTargets: PRIORITY 1 = primaryICPRoles[], PRIORITY 2 = productLines[].targetAudience, PRIORITY 3 = infer new.
-4. funnelStage: Use WATERFALL LOGIC (see system prompt). Check BOFU signals first (ROI/metrics/validation/commercials), then MOFU (comparative/methodology), then TOFU (trends/problems). Case Studies with metrics → BOFU, narrative-only → MOFU.
+
+2. painClusters: 
+   - FIRST: Analyze the asset's content to identify what problems it addresses
+   - THEN: If the content addresses problems matching painClusters[] terms, use those exact terms
+   - ELSE: Infer new pain clusters from the content (2-5 words, Title Case)
+   - DO NOT default to painClusters[] without content analysis
+
+3. icpTargets: 
+   - FIRST: Analyze the asset's content to determine WHO it targets (job titles mentioned, personas addressed)
+   - THEN: If content targets roles matching primaryICPRoles[], use those exact titles
+   - ELSE IF: Content targets roles matching productLines[].targetAudience, use those
+   - ELSE: Infer new ICP targets from content analysis (specific job titles only)
+   - DO NOT default to primaryICPRoles[] if the content doesn't actually target those roles
+   - Each asset may target different ICPs based on its unique content
+
+4. funnelStage: 
+   - Use STRICT WATERFALL LOGIC based on the asset's ACTUAL CONTENT
+   - Analyze the content's primary intent, not just asset type
+   - Check BOFU signals first (ROI/metrics/validation/commercials in the content)
+   - Then MOFU (comparative/methodology in the content)
+   - Then TOFU (trends/problems/education in the content)
+   - Case Studies with metrics → BOFU, narrative-only → MOFU
+   - Blog posts can be TOFU, MOFU, or BOFU depending on their actual content - analyze each individually
+
 5. snippets: Prioritize ROI_STAT matching roiClaims[], COMPETITIVE_WEDGE matching keyDifferentiators[].
+
+REMEMBER: Each asset is unique. Analyze its actual content, not just the brand context.
 `;
     } 
     // BRAND CONTEXT WITHOUT PRODUCT LINES
@@ -411,7 +436,12 @@ INSTRUCTIONS:
       const safeText = text.length > 300000 ? text.slice(0, 300000) + "..." : text;
       
       userContent = [
-        { type: "text", text: `Analyze this content:\n\n${safeText}` }
+        { type: "text", text: `🔴 CRITICAL: Analyze THIS SPECIFIC ASSET'S CONTENT below. Each asset is unique - do not default to generic values. Base your analysis on the actual content provided.
+
+Analyze this content:
+${safeText}
+
+Remember: Analyze the actual content above to determine funnel stage, ICP targets, and pain clusters. Do not use default values without content justification.` }
       ];
     }
 
@@ -423,7 +453,7 @@ INSTRUCTIONS:
         { role: "user", content: userContent },
       ],
       response_format: zodResponseFormat(AnalysisSchema, "marketing_analysis"),
-      temperature: 0.2, // Keep it low for consistent classification
+      temperature: 0.4, // Slightly higher to allow variation between similar assets while maintaining consistency
     });
 
     const result = completion.choices[0].message.parsed;

@@ -21,10 +21,13 @@ export async function processAssetAsync(
   console.log(`[PROCESSOR] File type: ${fileType}, S3 URL: ${s3Url.substring(0, 50)}...`);
   
   try {
-    // Get asset to retrieve accountId
+    // Get asset to retrieve accountId and existing extractedText
     const asset = await prisma.asset.findUnique({
       where: { id: assetId },
-      select: { accountId: true },
+      select: { 
+        accountId: true,
+        extractedText: true,
+      },
     });
 
     if (!asset) {
@@ -37,7 +40,8 @@ export async function processAssetAsync(
       data: { status: "PROCESSING" },
     });
 
-    let extractedText: string | null = null;
+    // Use existing extractedText if available (for re-analysis scenarios)
+    let extractedText: string | null = asset.extractedText;
 
     // Check if this is a video/audio file (Audio-First analysis)
     const isMedia = isAnalyzableMedia(fileType);
@@ -89,19 +93,24 @@ export async function processAssetAsync(
       fileType.startsWith("text/");
 
     if (isTextBased && !isMedia) {
-      try {
-        extractedText = await extractTextFromS3(s3Url, fileType);
-        // Store extracted text
-        await prisma.asset.update({
-          where: { id: assetId },
-          data: { extractedText },
-        });
-        console.log(`Text extraction successful for asset ${assetId} (${extractedText?.length || 0} chars)`);
-      } catch (error) {
-        console.error(`Error extracting text for asset ${assetId}:`, error);
-        console.log(`Will attempt visual analysis instead for ${fileType}`);
-        // Continue with analysis even if text extraction fails
-        // For PDFs, the AI will fall back to visual analysis
+      // Only extract if we don't already have text (e.g., for re-analysis)
+      if (!extractedText || extractedText.trim().length === 0) {
+        try {
+          extractedText = await extractTextFromS3(s3Url, fileType);
+          // Store extracted text
+          await prisma.asset.update({
+            where: { id: assetId },
+            data: { extractedText },
+          });
+          console.log(`Text extraction successful for asset ${assetId} (${extractedText?.length || 0} chars)`);
+        } catch (error) {
+          console.error(`Error extracting text for asset ${assetId}:`, error);
+          console.log(`Will attempt visual analysis instead for ${fileType}`);
+          // Continue with analysis even if text extraction fails
+          // For PDFs, the AI will fall back to visual analysis
+        }
+      } else {
+        console.log(`[PROCESSOR] Using existing extractedText for asset ${assetId} (${extractedText.length} chars)`);
       }
     }
 
