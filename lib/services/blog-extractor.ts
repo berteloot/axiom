@@ -229,9 +229,11 @@ export async function fetchBlogPostContent(url: string): Promise<string> {
       headers: {
         Authorization: `Bearer ${JINA_API_KEY}`,
         Accept: "text/plain",
+        "X-Respond-With": "markdown", // Request full markdown content
         "X-With-Generated-Alt": "true",
+        "X-No-Cache": "true", // Get fresh content
       },
-      signal: AbortSignal.timeout(30000), // 30 seconds
+      signal: AbortSignal.timeout(60000), // 60 seconds for full content
     });
 
     if (!response.ok) {
@@ -244,6 +246,10 @@ export async function fetchBlogPostContent(url: string): Promise<string> {
       throw new Error("Could not extract meaningful content from the blog post");
     }
 
+    // Log content length for debugging
+    console.log(`[Blog Extractor] Fetched ${content.length} characters from ${url}`);
+    
+    // Return full content (no truncation for blog posts)
     return content;
   } catch (error) {
     if (error instanceof Error) {

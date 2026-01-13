@@ -33,8 +33,17 @@ import { Asset, AssetStatus } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
 import { LinkedInPostGenerator } from "@/components/LinkedInPostGenerator";
 import { Linkedin, FileText, Image, FileSpreadsheet, File, Video, Music, X, BookOpen, Eye, RotateCw } from "lucide-react";
-import { useState } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { VideoCompressionGuide } from "@/components/VideoCompressionGuide";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 
 // Helper to get file type icon
 // All icons use consistent size (w-5 h-5 = 20px) for better visibility
@@ -134,6 +143,8 @@ const getPrimaryDate = (asset: Asset): string | null => {
   return asset.customCreatedAt || asset.lastReviewedAt || asset.createdAt || null;
 };
 
+const ITEMS_PER_PAGE = 25;
+
 export function AssetTable({ 
   assets, 
   onReview, 
@@ -145,6 +156,7 @@ export function AssetTable({
   const [isLinkedInModalOpen, setIsLinkedInModalOpen] = useState(false);
   const [showProcessingGuide, setShowProcessingGuide] = useState(false);
   const [processingAssetSize, setProcessingAssetSize] = useState<number>(465);
+  const [currentPage, setCurrentPage] = useState(1);
 
   if (assets.length === 0) {
     return (
@@ -229,10 +241,67 @@ export function AssetTable({
   const someSelectableSelected =
     selectableAssetIds.some((id) => selectedAssetIds.includes(id)) && !allSelectableSelected;
 
+  // Pagination logic
+  const totalPages = Math.ceil(assets.length / ITEMS_PER_PAGE);
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = startIndex + ITEMS_PER_PAGE;
+  const paginatedAssets = useMemo(() => {
+    return assets.slice(startIndex, endIndex);
+  }, [assets, startIndex, endIndex]);
+
+  // Reset to page 1 when assets change (e.g., after filtering)
+  useEffect(() => {
+    if (currentPage > totalPages && totalPages > 0) {
+      setCurrentPage(1);
+    }
+  }, [assets.length, currentPage, totalPages]);
+
+  // Generate page numbers to display
+  const getPageNumbers = () => {
+    const pages: (number | "ellipsis")[] = [];
+    const maxVisible = 7;
+    
+    if (totalPages <= maxVisible) {
+      // Show all pages if total is small
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i);
+      }
+    } else {
+      // Always show first page
+      pages.push(1);
+      
+      if (currentPage <= 3) {
+        // Near the start
+        for (let i = 2; i <= 4; i++) {
+          pages.push(i);
+        }
+        pages.push("ellipsis");
+        pages.push(totalPages);
+      } else if (currentPage >= totalPages - 2) {
+        // Near the end
+        pages.push("ellipsis");
+        for (let i = totalPages - 3; i <= totalPages; i++) {
+          pages.push(i);
+        }
+      } else {
+        // In the middle
+        pages.push("ellipsis");
+        for (let i = currentPage - 1; i <= currentPage + 1; i++) {
+          pages.push(i);
+        }
+        pages.push("ellipsis");
+        pages.push(totalPages);
+      }
+    }
+    
+    return pages;
+  };
+
   return (
-    <div className="rounded-md border overflow-hidden">
-      <div className="overflow-x-auto">
-        <Table>
+    <React.Fragment>
+      <div className="rounded-md border overflow-hidden">
+        <div className="overflow-x-auto">
+          <Table>
           <TableHeader>
             <TableRow>
               {onSelectionChange && (
@@ -266,7 +335,7 @@ export function AssetTable({
             </TableRow>
           </TableHeader>
             <TableBody>
-              {assets.map((asset) => {
+              {paginatedAssets.map((asset) => {
                 const isSelectable = asset.status === "APPROVED" || asset.status === "PROCESSED";
                 const isSelected = selectedAssetIds.includes(asset.id);
                 
@@ -568,6 +637,70 @@ export function AssetTable({
           </Table>
         </div>
 
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-4 border-t">
+            <div className="text-sm text-muted-foreground">
+              Showing {startIndex + 1} to {Math.min(endIndex, assets.length)} of {assets.length} assets
+            </div>
+            <Pagination>
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationPrevious
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (currentPage > 1) {
+                        setCurrentPage(currentPage - 1);
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }
+                    }}
+                    className={currentPage === 1 ? "pointer-events-none opacity-50" : ""}
+                  />
+                </PaginationItem>
+                {getPageNumbers().map((page, index) => {
+                  if (page === "ellipsis") {
+                    return (
+                      <PaginationItem key={`ellipsis-${index}`}>
+                        <PaginationEllipsis />
+                      </PaginationItem>
+                    );
+                  }
+                  return (
+                    <PaginationItem key={page}>
+                      <PaginationLink
+                        href="#"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setCurrentPage(page);
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }}
+                        isActive={currentPage === page}
+                      >
+                        {page}
+                      </PaginationLink>
+                    </PaginationItem>
+                  );
+                })}
+                <PaginationItem>
+                  <PaginationNext
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (currentPage < totalPages) {
+                        setCurrentPage(currentPage + 1);
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }
+                    }}
+                    className={currentPage === totalPages ? "pointer-events-none opacity-50" : ""}
+                  />
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
+          </div>
+        )}
+      </div>
+
       {selectedAssetForPost && (
         <LinkedInPostGenerator
           asset={selectedAssetForPost}
@@ -593,6 +726,6 @@ export function AssetTable({
           />
         </DialogContent>
       </Dialog>
-    </div>
+    </React.Fragment>
   );
 }
