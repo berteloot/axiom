@@ -76,16 +76,22 @@ export async function PATCH(
       );
     }
 
-    // Cannot edit OWNER role
-    if (memberAccount.role === "OWNER") {
+    const body = await request.json();
+    const { name, email, role } = body;
+
+    // Check if trying to edit an OWNER
+    const isEditingOwner = memberAccount.role === "OWNER";
+    const isEditingSelf = memberAccount.userId === session.user.id;
+    
+    // If editing an OWNER, only allow if:
+    // 1. The owner is editing themselves (can update name/email)
+    // 2. AND not trying to change the role (owners cannot change their own role)
+    if (isEditingOwner && !isEditingSelf) {
       return NextResponse.json(
-        { error: "Cannot modify the account owner" },
+        { error: "Cannot modify the account owner. Only the owner can update their own information." },
         { status: 403 }
       );
     }
-
-    const body = await request.json();
-    const { name, email, role } = body;
 
     const updateData: { name?: string | null; email?: string } = {};
 
@@ -143,6 +149,14 @@ export async function PATCH(
         return NextResponse.json(
           { error: "Invalid role. Must be MEMBER or ADMIN." },
           { status: 400 }
+        );
+      }
+
+      // Cannot change OWNER role (even if owner is editing themselves)
+      if (isEditingOwner) {
+        return NextResponse.json(
+          { error: "Cannot change the account owner's role" },
+          { status: 403 }
         );
       }
 
