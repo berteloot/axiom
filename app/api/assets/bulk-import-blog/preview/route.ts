@@ -219,31 +219,39 @@ export async function POST(request: NextRequest) {
         let publishedDate = post.publishedDate;
         let fetchedHtml: string | null = null;
         
-        // If URL-based detection failed OR date is missing, try HTML-based detection
-        if (!detectedType || !publishedDate) {
-          try {
-            fetchedHtml = await fetchHtml(post.url).catch(() => null);
-            if (fetchedHtml) {
-              // Detect content type from HTML
-              if (!detectedType) {
-                detectedType = await detectAssetTypeFromHtml(post.url, fetchedHtml);
-              }
-              // Extract date from HTML if not found in URL
-              if (!publishedDate) {
-                publishedDate = extractPublishedDateFromHtml(post.url, fetchedHtml);
-              }
+        // ALWAYS try HTML-based detection to get the most accurate type
+        // URL-based detection is just a fast first pass, but HTML has the definitive signals
+        try {
+          fetchedHtml = await fetchHtml(post.url).catch(() => null);
+          if (fetchedHtml) {
+            // HTML-based detection is more reliable - use it if we get a result
+            const htmlDetectedType = await detectAssetTypeFromHtml(post.url, fetchedHtml);
+            if (htmlDetectedType) {
+              detectedType = htmlDetectedType;
             }
-          } catch (error) {
-            // HTML fetch failed, keep detectedType as null
-            console.log(`[Bulk Import Preview] Failed to fetch HTML for ${post.url}:`, error);
+            // Extract date from HTML if not found in URL
+            if (!publishedDate) {
+              publishedDate = extractPublishedDateFromHtml(post.url, fetchedHtml);
+            }
           }
+        } catch (error) {
+          // HTML fetch failed, keep detectedType from URL (if any)
+          console.log(`[Bulk Import Preview] Failed to fetch HTML for ${post.url}:`, error);
         }
         
-        // Fallback: If still no type detected and it's same-domain HTML, label as "Web Page"
+        // Fallback: Only if we truly couldn't detect anything AND we've tried HTML detection
         // This prevents "Unknown Type" for ordinary web pages when classification is uncertain
-        if (!detectedType && (fetchedHtml || isSameDomainHtml(post.url, blogUrl))) {
-          // Only use fallback if we confirmed it's HTML (fetched it) or it's clearly same-domain HTML
-          if (fetchedHtml || (!post.url.toLowerCase().endsWith('.pdf') && isSameDomainHtml(post.url, blogUrl))) {
+        // But prioritize actual detection results over this fallback
+        if (!detectedType && fetchedHtml && isSameDomainHtml(post.url, blogUrl)) {
+          // Only use "Web Page" fallback if:
+          // 1. We fetched HTML (so we tried detection)
+          // 2. Detection returned nothing
+          // 3. It's same-domain HTML (not PDF, not external)
+          detectedType = "Web Page";
+        } else if (!detectedType && !fetchedHtml && isSameDomainHtml(post.url, blogUrl)) {
+          // If we couldn't fetch HTML but it's same-domain, still label as Web Page
+          // (but this is less ideal since we didn't get to check HTML signals)
+          if (!post.url.toLowerCase().endsWith('.pdf')) {
             detectedType = "Web Page";
           }
         }

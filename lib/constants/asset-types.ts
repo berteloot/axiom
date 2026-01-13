@@ -208,7 +208,8 @@ export async function detectAssetTypeFromHtml(url: string, html?: string): Promi
     const cheerio = await import("cheerio");
     const $ = cheerio.default.load(html);
 
-    // 1. Check HubSpot script tags (data-content-id and setContentType)
+    // 1. Check HubSpot script tags FIRST (most explicit signal)
+    // These are the most reliable indicators when present
     const hubspotScripts = $('script[data-content-id], script.hsq-set-content-id');
     for (let i = 0; i < hubspotScripts.length; i++) {
       const script = $(hubspotScripts[i]);
@@ -217,6 +218,10 @@ export async function detectAssetTypeFromHtml(url: string, html?: string): Promi
         const normalized = contentId.toLowerCase().trim();
         if (CONTENT_TYPE_MAP[normalized]) {
           return CONTENT_TYPE_MAP[normalized];
+        }
+        // Even if not in map, "blog-post" is a clear signal
+        if (normalized === 'blog-post' || normalized === 'blogpost') {
+          return "Blog Post";
         }
       }
       
@@ -228,33 +233,50 @@ export async function detectAssetTypeFromHtml(url: string, html?: string): Promi
         if (CONTENT_TYPE_MAP[contentType]) {
           return CONTENT_TYPE_MAP[contentType];
         }
+        // Even if not in map, "blog-post" is a clear signal
+        if (contentType === 'blog-post' || contentType === 'blogpost') {
+          return "Blog Post";
+        }
       }
     }
 
-    // 2. Check meta tags (including article:published_time as blog indicator)
+    // 2. Check og:type meta tag (strong signal for article/blog)
+    const ogType = $('meta[property="og:type"]').first().attr('content')?.toLowerCase().trim();
+    if (ogType) {
+      if (ogType === 'article') {
+        return "Blog Post";
+      }
+      if (ogType.includes('article') || ogType.includes('blog')) {
+        return "Blog Post";
+      }
+      if (CONTENT_TYPE_MAP[ogType]) {
+        return CONTENT_TYPE_MAP[ogType];
+      }
+    }
+    
+    // 3. Check for article:published_time (strong blog indicator when combined with og:type)
+    const publishedTime = $('meta[property="article:published_time"], meta[property="article:published"], meta[name="article:published_time"]').first().attr('content');
+    if (publishedTime) {
+      // If we have a published time AND og:type is article, it's definitely a blog post
+      if (ogType === 'article') {
+        return "Blog Post";
+      }
+      // If we have published time, it's likely a blog post or article
+      // Check other signals to confirm
+      if (ogType && (ogType.includes('article') || ogType.includes('blog'))) {
+        return "Blog Post";
+      }
+      // If no conflicting type, assume blog post (published_time is a strong signal)
+      return "Blog Post";
+    }
+    
+    // 4. Check other meta tags
     const metaSelectors = [
-      'meta[property="og:type"]',
       'meta[name="og:type"]',
       'meta[property="article:type"]',
       'meta[name="content-type"]',
       'meta[property="content-type"]',
-      'meta[property="article:published_time"]', // Blog posts typically have this
-      'meta[property="article:published"]',
-      'meta[name="article:published_time"]',
     ];
-    
-    // Check for article:published_time first (strong blog indicator)
-    const publishedTime = $('meta[property="article:published_time"], meta[property="article:published"], meta[name="article:published_time"]').first().attr('content');
-    if (publishedTime) {
-      // If we have a published time, it's likely a blog post or article
-      // Check other signals to confirm
-      const ogType = $('meta[property="og:type"]').first().attr('content')?.toLowerCase() || '';
-      if (ogType.includes('article') || ogType.includes('blog')) {
-        return "Blog Post";
-      }
-      // If no conflicting type, assume blog post
-      return "Blog Post";
-    }
     
     for (const selector of metaSelectors) {
       const meta = $(selector).first();
@@ -285,11 +307,24 @@ export async function detectAssetTypeFromHtml(url: string, html?: string): Promi
         const checkType = (obj: any): string | null => {
           if (!obj || typeof obj !== 'object') return null;
           
+          // Handle arrays (like @graph arrays)
+          if (Array.isArray(obj)) {
+            for (const item of obj) {
+              const result = checkType(item);
+              if (result) return result;
+            }
+            return null;
+          }
+          
           // Check @type field (prioritize BlogPosting schema)
           if (obj['@type']) {
             const type = String(obj['@type']).toLowerCase();
             // BlogPosting is the explicit schema.org type for blog posts
             if (type === 'blogposting' || type === 'https://schema.org/blogposting' || type === 'http://schema.org/blogposting') {
+              return "Blog Post";
+            }
+            // Article type is also a strong blog indicator
+            if (type === 'article' || type === 'https://schema.org/article' || type === 'http://schema.org/article') {
               return "Blog Post";
             }
             if (type.includes('blog') || type.includes('article') || type.includes('blogposting')) {
@@ -320,8 +355,9 @@ export async function detectAssetTypeFromHtml(url: string, html?: string): Promi
             }
           }
           
-          // Recursively check nested objects
+          // Recursively check nested objects and arrays
           for (const key in obj) {
+            if (key === '@context') continue; // Skip context, it's not content type info
             if (typeof obj[key] === 'object' && obj[key] !== null) {
               const result = checkType(obj[key]);
               if (result) return result;
@@ -330,6 +366,14 @@ export async function detectAssetTypeFromHtml(url: string, html?: string): Promi
           
           return null;
         };
+        
+        // Handle @graph arrays (common in Yoast SEO and other plugins)
+        if (data['@graph'] && Array.isArray(data['@graph'])) {
+          for (const item of data['@graph']) {
+            const type = checkType(item);
+            if (type) return type;
+          }
+        }
         
         const type = checkType(data);
         if (type) return type;
