@@ -462,6 +462,76 @@ function extractUrlsFromMarkdown(content: string, baseUrl: URL): Array<{ url: st
 }
 
 /**
+ * Try to fetch blog posts from sitemap or RSS feed
+ */
+async function tryFetchFromSitemapOrRSS(baseUrl: URL): Promise<Array<{ url: string; title: string }>> {
+  const blogPosts: Array<{ url: string; title: string }> = [];
+  const baseUrlString = `${baseUrl.protocol}//${baseUrl.host}`;
+  
+  // Try common sitemap/RSS locations
+  const feedUrls = [
+    `${baseUrlString}/sitemap.xml`,
+    `${baseUrlString}/sitemap_index.xml`,
+    `${baseUrlString}/blog/sitemap.xml`,
+    `${baseUrlString}/feed`,
+    `${baseUrlString}/rss`,
+    `${baseUrlString}/blog/feed`,
+    `${baseUrlString}/blog/rss`,
+  ];
+  
+  for (const feedUrl of feedUrls) {
+    try {
+      console.log(`[Blog Extractor] Trying sitemap/RSS: ${feedUrl}`);
+      const response = await fetch(feedUrl, {
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; BlogExtractor/1.0)" },
+        signal: AbortSignal.timeout(10000),
+      });
+      
+      if (response.ok) {
+        const content = await response.text();
+        const $ = cheerio.load(content, { xmlMode: true });
+        
+        // Parse sitemap.xml
+        $('url loc').each((_, element) => {
+          const url = $(element).text().trim();
+          if (url && !shouldExcludeUrl(url, baseUrl)) {
+            // Extract title from sitemap if available
+            const $urlElement = $(element).parent();
+            const title = $urlElement.find('image\\:title, title').first().text().trim() || 
+                         url.split('/').pop()?.replace(/-/g, ' ') || '';
+            if (title.length >= 10) {
+              blogPosts.push({ url, title });
+            }
+          }
+        });
+        
+        // Parse RSS feed
+        $('item link, entry link[type="text/html"]').each((_, element) => {
+          const url = $(element).text().trim() || $(element).attr('href') || '';
+          if (url && !shouldExcludeUrl(url, baseUrl)) {
+            const $item = $(element).closest('item, entry');
+            const title = $item.find('title').first().text().trim() || '';
+            if (title.length >= 10) {
+              blogPosts.push({ url, title });
+            }
+          }
+        });
+        
+        if (blogPosts.length > 0) {
+          console.log(`[Blog Extractor] Found ${blogPosts.length} posts from ${feedUrl}`);
+          return blogPosts;
+        }
+      }
+    } catch (error) {
+      // Continue to next feed URL
+      continue;
+    }
+  }
+  
+  return [];
+}
+
+/**
  * Extract blog post URLs from a blog homepage
  * Uses Jina Reader for JavaScript-rendered pages, falls back to HTML parsing
  */
@@ -470,24 +540,46 @@ export async function extractBlogPostUrls(blogUrl: string): Promise<Array<{ url:
   let blogPosts: Array<{ url: string; title: string }> = [];
   
   try {
-    // Try Jina Reader first (handles JavaScript-rendered SPAs)
+    // First, try sitemap/RSS feeds (most reliable for getting all posts)
     try {
-      console.log(`[Blog Extractor] Attempting to extract with Jina Reader from ${blogUrl}...`);
-      const jinaContent = await fetchListingPageWithJina(blogUrl);
-      
-      // Log content preview for debugging
-      console.log(`[Blog Extractor] Jina content preview (first 500 chars): ${jinaContent.substring(0, 500)}`);
-      console.log(`[Blog Extractor] Jina content length: ${jinaContent.length} characters`);
-      
-      blogPosts = extractUrlsFromMarkdown(jinaContent, baseUrl);
-      console.log(`[Blog Extractor] Jina extraction found ${blogPosts.length} blog posts`);
-      
-      // If we found very few posts, log a sample of the content to debug
-      if (blogPosts.length < 20) {
-        console.warn(`[Blog Extractor] Only found ${blogPosts.length} posts, content sample:`, jinaContent.substring(0, 1000));
+      const sitemapPosts = await tryFetchFromSitemapOrRSS(baseUrl);
+      if (sitemapPosts.length > 0) {
+        console.log(`[Blog Extractor] Found ${sitemapPosts.length} posts from sitemap/RSS`);
+        blogPosts = sitemapPosts;
       }
-    } catch (jinaError) {
-      console.warn(`[Blog Extractor] Jina extraction failed, falling back to HTML:`, jinaError);
+    } catch (error) {
+      console.log(`[Blog Extractor] Sitemap/RSS fetch failed, continuing with page extraction`);
+    }
+    
+    // If sitemap didn't work or found few posts, try Jina Reader
+    if (blogPosts.length < 50) {
+      try {
+        console.log(`[Blog Extractor] Attempting to extract with Jina Reader from ${blogUrl}...`);
+        const jinaContent = await fetchListingPageWithJina(blogUrl);
+        
+        // Log content preview for debugging
+        console.log(`[Blog Extractor] Jina content preview (first 500 chars): ${jinaContent.substring(0, 500)}`);
+        console.log(`[Blog Extractor] Jina content length: ${jinaContent.length} characters`);
+        
+        const jinaPosts = extractUrlsFromMarkdown(jinaContent, baseUrl);
+        console.log(`[Blog Extractor] Jina extraction found ${jinaPosts.length} blog posts`);
+        
+        // Merge with sitemap posts (avoid duplicates)
+        const existingUrls = new Set(blogPosts.map(p => p.url));
+        for (const post of jinaPosts) {
+          if (!existingUrls.has(post.url)) {
+            blogPosts.push(post);
+            existingUrls.add(post.url);
+          }
+        }
+        
+        // If we found very few posts, log a sample of the content to debug
+        if (blogPosts.length < 20) {
+          console.warn(`[Blog Extractor] Only found ${blogPosts.length} posts total, content sample:`, jinaContent.substring(0, 1000));
+        }
+      } catch (jinaError) {
+        console.warn(`[Blog Extractor] Jina extraction failed, falling back to HTML:`, jinaError);
+      }
     }
 
     // Fallback to HTML parsing if Jina didn't find enough posts or failed
