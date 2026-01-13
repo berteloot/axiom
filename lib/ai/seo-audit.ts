@@ -124,7 +124,7 @@ const SeoAuditSchema = z.object({
       stage: z.enum(["fetch", "jina", "parse", "analyze"]),
       message: z.string(),
     })
-  ),
+  ).default([]),
   brand_consistency: z.object({
     overall_score: z.number().min(0).max(100),
     platform_results: z.array(
@@ -151,7 +151,10 @@ const SeoAuditSchema = z.object({
     reason: z.enum(["third_party_url", "no_brand_context", "error"]),
     message: z.string(),
   }).nullable(),
-  // Search query data (added by service, not AI)
+});
+
+// Extended schema with search queries (added by service after AI response)
+const SeoAuditResultSchema = SeoAuditSchema.extend({
   search_queries: z.array(
     z.object({
       query: z.string(),
@@ -163,7 +166,7 @@ const SeoAuditSchema = z.object({
   ).nullable(),
 });
 
-export type SeoAuditResult = z.infer<typeof SeoAuditSchema>;
+export type SeoAuditResult = z.infer<typeof SeoAuditResultSchema>;
 
 const SEO_AUDIT_SYSTEM_PROMPT = `You are an expert SEO and AI extraction specialist. Your job is to audit a webpage's structure and content organization for discoverability and extractability by modern search engines and AI answer systems.
 
