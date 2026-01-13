@@ -29,17 +29,27 @@ interface SeoAuditResultsProps {
   url: string;
 }
 
-function getScoreColor(score: number): string {
-  if (score >= 80) return "text-green-600";
-  if (score >= 60) return "text-blue-600";
-  if (score >= 40) return "text-yellow-600";
+// Helper to extract score value - handles both old format (number) and new format ({score, confidence})
+function getScoreValue(score: number | { score: number; confidence: string } | undefined): number {
+  if (score === undefined || score === null) return 0;
+  if (typeof score === "number") return score;
+  if (typeof score === "object" && "score" in score) return score.score;
+  return 0;
+}
+
+function getScoreColor(score: number | { score: number; confidence: string } | undefined): string {
+  const value = getScoreValue(score);
+  if (value >= 80) return "text-green-600";
+  if (value >= 60) return "text-blue-600";
+  if (value >= 40) return "text-yellow-600";
   return "text-red-600";
 }
 
-function getScoreBgColor(score: number): string {
-  if (score >= 80) return "bg-green-50 border-green-200";
-  if (score >= 60) return "bg-blue-50 border-blue-200";
-  if (score >= 40) return "bg-yellow-50 border-yellow-200";
+function getScoreBgColor(score: number | { score: number; confidence: string } | undefined): string {
+  const value = getScoreValue(score);
+  if (value >= 80) return "bg-green-50 border-green-200";
+  if (value >= 60) return "bg-blue-50 border-blue-200";
+  if (value >= 40) return "bg-yellow-50 border-yellow-200";
   return "bg-red-50 border-red-200";
 }
 
@@ -215,11 +225,11 @@ export function SeoAuditResults({ result, url }: SeoAuditResultsProps) {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Extractability</CardTitle>
-            <Search className={`h-4 w-4 ${getScoreColor(result.scores.extractability.score)}`} />
+            <Search className={`h-4 w-4 ${getScoreColor(result.scores.extractability)}`} />
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${getScoreColor(result.scores.extractability.score)}`}>
-              {result.scores.extractability.score}
+            <div className={`text-2xl font-bold ${getScoreColor(result.scores.extractability)}`}>
+              {getScoreValue(result.scores.extractability)}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               How easily AI can extract content
@@ -230,11 +240,11 @@ export function SeoAuditResults({ result, url }: SeoAuditResultsProps) {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Structure</CardTitle>
-            <FileText className={`h-4 w-4 ${getScoreColor(result.scores.structure.score)}`} />
+            <FileText className={`h-4 w-4 ${getScoreColor(result.scores.structure)}`} />
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${getScoreColor(result.scores.structure.score)}`}>
-              {result.scores.structure.score}
+            <div className={`text-2xl font-bold ${getScoreColor(result.scores.structure)}`}>
+              {getScoreValue(result.scores.structure)}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               Page organization quality
@@ -245,11 +255,11 @@ export function SeoAuditResults({ result, url }: SeoAuditResultsProps) {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Trust</CardTitle>
-            <Shield className={`h-4 w-4 ${getScoreColor(result.scores.trust.score)}`} />
+            <Shield className={`h-4 w-4 ${getScoreColor(result.scores.trust)}`} />
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${getScoreColor(result.scores.trust.score)}`}>
-              {result.scores.trust.score}
+            <div className={`text-2xl font-bold ${getScoreColor(result.scores.trust)}`}>
+              {getScoreValue(result.scores.trust)}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               Authority & credibility signals
@@ -260,11 +270,11 @@ export function SeoAuditResults({ result, url }: SeoAuditResultsProps) {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Internal Discovery</CardTitle>
-            <Network className={`h-4 w-4 ${getScoreColor(result.scores.internal_discovery.score)}`} />
+            <Network className={`h-4 w-4 ${getScoreColor(result.scores.internal_discovery)}`} />
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${getScoreColor(result.scores.internal_discovery.score)}`}>
-              {result.scores.internal_discovery.score}
+            <div className={`text-2xl font-bold ${getScoreColor(result.scores.internal_discovery)}`}>
+              {getScoreValue(result.scores.internal_discovery)}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               Internal linking quality
@@ -272,20 +282,23 @@ export function SeoAuditResults({ result, url }: SeoAuditResultsProps) {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Answer Block</CardTitle>
-            <TrendingUp className={`h-4 w-4 ${getScoreColor(result.scores.answer_block.score)}`} />
-          </CardHeader>
-          <CardContent>
-            <div className={`text-2xl font-bold ${getScoreColor(result.scores.answer_block.score)}`}>
-              {result.scores.answer_block.score}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              First 150-250 words value
-            </p>
-          </CardContent>
-        </Card>
+        {/* Only show Answer Block if available (new schema) */}
+        {result.scores.answer_block && (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Answer Block</CardTitle>
+              <TrendingUp className={`h-4 w-4 ${getScoreColor(result.scores.answer_block)}`} />
+            </CardHeader>
+            <CardContent>
+              <div className={`text-2xl font-bold ${getScoreColor(result.scores.answer_block)}`}>
+                {getScoreValue(result.scores.answer_block)}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                First 150-250 words value
+              </p>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Answer Block Analysis */}
