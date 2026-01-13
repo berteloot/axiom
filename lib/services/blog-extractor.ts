@@ -53,22 +53,34 @@ export async function fetchHtml(url: string): Promise<string> {
 }
 
 /**
+ * Extract published date from HTML only (skips URL extraction)
+ * Used for preview enrichment when URL-based extraction failed
+ * Returns ISO date string (YYYY-MM-DD) or null if not found
+ */
+export function extractPublishedDateFromHtml(url: string, html: string): string | null {
+  // Skip URL extraction, go straight to HTML/content extraction
+  return extractPublishedDate(url, html, undefined, true);
+}
+
+/**
  * Extract published date from various sources (meta tags, structured data, content, URL)
  * Returns ISO date string (YYYY-MM-DD) or null if not found
  * Works flexibly for all kinds of websites
  */
-function extractPublishedDate(url: string, html?: string, content?: string): string | null {
+function extractPublishedDate(url: string, html?: string, content?: string, skipUrlExtraction: boolean = false): string | null {
   const normalizedUrl = normalizeUrl(url);
   
   // 1. Try to extract from URL first (common patterns: /2024/01/, /2024-01-15/, etc.)
-  const urlDateMatch = normalizedUrl.match(/\/(\d{4})[\/\-](\d{1,2})[\/\-]?(\d{1,2})?/);
-  if (urlDateMatch) {
-    const year = parseInt(urlDateMatch[1], 10);
-    const month = parseInt(urlDateMatch[2], 10) || 1;
-    const day = parseInt(urlDateMatch[3], 10) || 1;
-    const date = new Date(year, month - 1, day);
-    if (!isNaN(date.getTime()) && date <= new Date()) {
-      return date.toISOString().split('T')[0];
+  if (!skipUrlExtraction) {
+    const urlDateMatch = normalizedUrl.match(/\/(\d{4})[\/\-](\d{1,2})[\/\-]?(\d{1,2})?/);
+    if (urlDateMatch) {
+      const year = parseInt(urlDateMatch[1], 10);
+      const month = parseInt(urlDateMatch[2], 10) || 1;
+      const day = parseInt(urlDateMatch[3], 10) || 1;
+      const date = new Date(year, month - 1, day);
+      if (!isNaN(date.getTime()) && date <= new Date()) {
+        return date.toISOString().split('T')[0];
+      }
     }
   }
 

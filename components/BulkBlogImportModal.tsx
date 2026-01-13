@@ -53,7 +53,28 @@ interface PreviewPost {
   detectedAssetType?: string | null;
   isUnknownType?: boolean;
   publishedDate?: string | null;
+  language?: string | null;
 }
+
+// Language code to name mapping
+const LANGUAGE_NAMES: Record<string, string> = {
+  de: "German",
+  fr: "French",
+  en: "English",
+  es: "Spanish",
+  it: "Italian",
+  pt: "Portuguese",
+  nl: "Dutch",
+  ja: "Japanese",
+  zh: "Chinese",
+  ko: "Korean",
+  ru: "Russian",
+  pl: "Polish",
+  sv: "Swedish",
+  no: "Norwegian",
+  da: "Danish",
+  fi: "Finnish",
+};
 
 type Step = "configure" | "preview" | "importing";
 
@@ -72,6 +93,8 @@ export function BulkBlogImportModal({
   const [selectedAssetTypeFilter, setSelectedAssetTypeFilter] = useState<string>("all");
   const [dateRangeStart, setDateRangeStart] = useState<string>("");
   const [dateRangeEnd, setDateRangeEnd] = useState<string>("");
+  const [languageFilter, setLanguageFilter] = useState<string>("all");
+  const [detectedLanguages, setDetectedLanguages] = useState<string[]>([]);
   
   // Preview state
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
@@ -158,6 +181,7 @@ export function BulkBlogImportModal({
           blogUrl: blogUrl.trim(),
           dateRangeStart: dateRangeStart || null,
           dateRangeEnd: dateRangeEnd || null,
+          languageFilter: languageFilter !== "all" ? languageFilter : null,
         }),
       });
 
@@ -169,6 +193,10 @@ export function BulkBlogImportModal({
 
       const posts = Array.isArray(data.posts) ? data.posts : [];
       setPreviewPosts(posts);
+      // Store detected languages for filter UI
+      if (Array.isArray(data.detectedLanguages)) {
+        setDetectedLanguages(data.detectedLanguages);
+      }
       // Auto-select all non-duplicate posts, up to maxPosts
       const nonDuplicates = posts
         .filter((p: PreviewPost) => !p.isDuplicate)
@@ -303,6 +331,8 @@ export function BulkBlogImportModal({
       setSelectedAssetTypeFilter("all");
       setDateRangeStart("");
       setDateRangeEnd("");
+      setLanguageFilter("all");
+      setDetectedLanguages([]);
       setPreviewPosts([]);
       setSelectedPostUrls(new Set());
       setProgress(0);
@@ -524,30 +554,57 @@ export function BulkBlogImportModal({
         {/* Step 2: Preview */}
         {currentStep === "preview" && (
           <div className="space-y-4 py-4">
-            {/* Date Range Filter - Moved to top for visibility */}
-            <div className="space-y-2 p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
+            {/* Filters Section - Date Range and Language */}
+            <div className="space-y-3 p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
               <div className="flex items-center justify-between">
-                <Label className="text-sm font-semibold flex items-center gap-2">
-                  <Calendar className="h-4 w-4" />
-                  Published Date Range Filter
-                </Label>
-                {(dateRangeStart || dateRangeEnd) && (
+                <Label className="text-sm font-semibold">Filters</Label>
+                {(dateRangeStart || dateRangeEnd || languageFilter !== "all") && (
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => {
                       setDateRangeStart("");
                       setDateRangeEnd("");
+                      setLanguageFilter("all");
                     }}
                     className="text-xs h-7"
                   >
-                    Clear
+                    Clear All
                   </Button>
                 )}
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              
+              {/* Language Filter */}
+              {detectedLanguages.length > 0 && (
                 <div className="space-y-1">
-                  <Label htmlFor="previewDateRangeStart" className="text-xs font-medium">Start Date</Label>
+                  <Label htmlFor="languageFilter" className="text-xs font-medium">Language</Label>
+                  <Select
+                    value={languageFilter}
+                    onValueChange={setLanguageFilter}
+                    disabled={isLoadingPreview}
+                  >
+                    <SelectTrigger id="languageFilter" className="text-sm">
+                      <SelectValue placeholder="All Languages" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Languages</SelectItem>
+                      {detectedLanguages.map(lang => (
+                        <SelectItem key={lang} value={lang}>
+                          {LANGUAGE_NAMES[lang] || lang.toUpperCase()} ({lang})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              
+              {/* Date Range Filter */}
+              <div className="space-y-1">
+                <Label className="text-xs font-medium flex items-center gap-1">
+                  <Calendar className="h-3 w-3" />
+                  Published Date Range
+                </Label>
+                <div className="grid grid-cols-2 gap-2">
                   <Input
                     id="previewDateRangeStart"
                     type="date"
@@ -555,10 +612,8 @@ export function BulkBlogImportModal({
                     onChange={(e) => setDateRangeStart(e.target.value)}
                     disabled={isLoadingPreview}
                     className="text-sm"
+                    placeholder="Start Date"
                   />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="previewDateRangeEnd" className="text-xs font-medium">End Date</Label>
                   <Input
                     id="previewDateRangeEnd"
                     type="date"
@@ -566,12 +621,14 @@ export function BulkBlogImportModal({
                     onChange={(e) => setDateRangeEnd(e.target.value)}
                     disabled={isLoadingPreview}
                     className="text-sm"
+                    placeholder="End Date"
                   />
                 </div>
               </div>
+              
               <div className="flex items-center justify-between pt-1">
                 <p className="text-xs text-muted-foreground">
-                  Filter posts by published date. Dates extracted from URLs. Posts without dates will be included.
+                  Dates and content types are extracted from page HTML.
                 </p>
                 <Button
                   variant="default"
@@ -586,10 +643,7 @@ export function BulkBlogImportModal({
                       Refreshing...
                     </>
                   ) : (
-                    <>
-                      <Calendar className="mr-2 h-3 w-3" />
-                      Apply Filter
-                    </>
+                    "Apply Filters"
                   )}
                 </Button>
               </div>
@@ -695,7 +749,13 @@ export function BulkBlogImportModal({
                               </Label>
                             </div>
                             <div className="flex items-center gap-2 flex-wrap">
-                              {/* Publication Date - More Prominent */}
+                              {/* Language Badge */}
+                              {post.language && (
+                                <span className="text-xs px-2 py-1 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 rounded font-medium">
+                                  {LANGUAGE_NAMES[post.language] || post.language.toUpperCase()}
+                                </span>
+                              )}
+                              {/* Publication Date */}
                               {post.publishedDate ? (
                                 <span className="text-xs px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded font-medium inline-flex items-center gap-1">
                                   <Calendar className="h-3 w-3" />
