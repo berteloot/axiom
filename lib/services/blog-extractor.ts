@@ -28,7 +28,7 @@ function resolveUrl(baseUrl: string, relativeUrl: string): string {
 /**
  * Fetch raw HTML from URL
  */
-async function fetchHtml(url: string): Promise<string> {
+export async function fetchHtml(url: string): Promise<string> {
   const normalizedUrl = normalizeUrl(url);
 
   try {
@@ -1155,10 +1155,11 @@ async function fetchAllPagesWithPagination(
 /**
  * Extract blog post URLs from a blog homepage
  * Uses Jina Reader for JavaScript-rendered pages, falls back to HTML parsing
+ * Also extracts published dates from URLs when available
  */
-export async function extractBlogPostUrls(blogUrl: string): Promise<Array<{ url: string; title: string }>> {
+export async function extractBlogPostUrls(blogUrl: string): Promise<Array<{ url: string; title: string; publishedDate: string | null }>> {
   const baseUrl = new URL(normalizeUrl(blogUrl));
-  let blogPosts: Array<{ url: string; title: string }> = [];
+  let blogPosts: Array<{ url: string; title: string; publishedDate: string | null }> = [];
   
   try {
     // First, try sitemap/RSS feeds (most reliable for getting all posts)
@@ -1166,7 +1167,11 @@ export async function extractBlogPostUrls(blogUrl: string): Promise<Array<{ url:
       const sitemapPosts = await tryFetchFromSitemapOrRSS(baseUrl);
       if (sitemapPosts.length > 0) {
         console.log(`[Blog Extractor] Found ${sitemapPosts.length} posts from sitemap/RSS`);
-        blogPosts = sitemapPosts;
+        blogPosts = sitemapPosts.map(post => ({
+          url: post.url,
+          title: post.title,
+          publishedDate: null, // Will be extracted later from URL
+        }));
       }
     } catch (error) {
       console.log(`[Blog Extractor] Sitemap/RSS fetch failed, continuing with page extraction`);
@@ -1184,7 +1189,11 @@ export async function extractBlogPostUrls(blogUrl: string): Promise<Array<{ url:
         const existingUrls = new Set(blogPosts.map(p => p.url));
         for (const post of paginatedPosts) {
           if (!existingUrls.has(post.url)) {
-            blogPosts.push(post);
+            blogPosts.push({
+              url: post.url,
+              title: post.title,
+              publishedDate: null, // Will be extracted later from URL
+            });
             existingUrls.add(post.url);
           }
         }
@@ -1206,7 +1215,11 @@ export async function extractBlogPostUrls(blogUrl: string): Promise<Array<{ url:
           // Merge with existing posts
           for (const post of jinaPosts) {
             if (!existingUrls.has(post.url)) {
-              blogPosts.push(post);
+              blogPosts.push({
+                url: post.url,
+                title: post.title,
+                publishedDate: null, // Will be extracted later from URL
+              });
               existingUrls.add(post.url);
             }
           }
@@ -1271,7 +1284,11 @@ export async function extractBlogPostUrls(blogUrl: string): Promise<Array<{ url:
 
           // Only add if we have a reasonable title and URL
           if (title && title.length >= 10 && absoluteUrl.startsWith('http')) {
-            blogPosts.push({ url: absoluteUrl, title });
+            blogPosts.push({ 
+              url: absoluteUrl, 
+              title,
+              publishedDate: null, // Will be extracted later from URL
+            });
             seenUrls.add(absoluteUrl);
           }
         });
@@ -1297,7 +1314,11 @@ export async function extractBlogPostUrls(blogUrl: string): Promise<Array<{ url:
         const existingUrls = new Set(blogPosts.map((p) => p.url));
         for (const post of renderedPosts) {
           if (!existingUrls.has(post.url)) {
-            blogPosts.push(post);
+            blogPosts.push({
+              url: post.url,
+              title: post.title,
+              publishedDate: null, // Will be extracted later from URL
+            });
             existingUrls.add(post.url);
           }
         }
@@ -1316,7 +1337,11 @@ export async function extractBlogPostUrls(blogUrl: string): Promise<Array<{ url:
         const existingUrls = new Set(blogPosts.map((p) => p.url));
         for (const post of renderedPosts) {
           if (!existingUrls.has(post.url)) {
-            blogPosts.push(post);
+            blogPosts.push({
+              url: post.url,
+              title: post.title,
+              publishedDate: null, // Will be extracted later from URL
+            });
             existingUrls.add(post.url);
           }
         }
@@ -1327,10 +1352,22 @@ export async function extractBlogPostUrls(blogUrl: string): Promise<Array<{ url:
       }
     }
 
-    // Remove duplicates and sort
-    const uniquePosts = Array.from(
-      new Map(blogPosts.map(post => [post.url, post])).values()
-    );
+    // Remove duplicates and enrich with published dates from URLs
+    const uniquePostsMap = new Map<string, { url: string; title: string; publishedDate: string | null }>();
+    
+    for (const post of blogPosts) {
+      if (!uniquePostsMap.has(post.url)) {
+        // Extract published date from URL (fast extraction from URL patterns)
+        const publishedDate = extractPublishedDate(post.url);
+        uniquePostsMap.set(post.url, {
+          url: post.url,
+          title: post.title,
+          publishedDate,
+        });
+      }
+    }
+    
+    const uniquePosts = Array.from(uniquePostsMap.values());
 
     console.log(`[Blog Extractor] Found ${uniquePosts.length} blog posts from ${blogUrl}`);
     

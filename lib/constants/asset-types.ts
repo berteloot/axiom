@@ -132,6 +132,201 @@ export function normalizeAssetType(assetType: string | null | undefined): string
 }
 
 /**
+ * Map common content type identifiers to our asset type taxonomy
+ */
+const CONTENT_TYPE_MAP: Record<string, string> = {
+  // HubSpot and common CMS identifiers
+  "blog-post": "Blog Post",
+  "blog_post": "Blog Post",
+  "blogpost": "Blog Post",
+  "article": "Article",
+  "post": "Blog Post",
+  "news": "Press Release",
+  "press-release": "Press Release",
+  "pressrelease": "Press Release",
+  "case-study": "Case Study",
+  "casestudy": "Case Study",
+  "case_study": "Case Study",
+  "whitepaper": "Whitepaper",
+  "white-paper": "Whitepaper",
+  "ebook": "eBook",
+  "e-book": "eBook",
+  "webinar": "Webinar Recording",
+  "webinar-recording": "Webinar Recording",
+  "podcast": "Podcast Episode",
+  "podcast-episode": "Podcast Episode",
+  "video": "Explainer Video",
+  "demo": "Product Demo",
+  "product-demo": "Product Demo",
+  "guide": "Guide",
+  "how-to": "Guide",
+  "testimonial": "Customer Testimonial",
+  "use-case": "Use Case",
+  "usecase": "Use Case",
+  "infographic": "Infographic",
+  "newsletter": "Newsletter",
+  "documentation": "Technical Documentation",
+  "docs": "Technical Documentation",
+  "user-guide": "User Guide",
+  "datasheet": "Data Sheet",
+  "data-sheet": "Data Sheet",
+  "sales-deck": "Sales Deck",
+  "salesdeck": "Sales Deck",
+  "one-pager": "One-Pager",
+  "onepager": "One-Pager",
+  "solution-brief": "Solution Brief",
+  "solutionbrief": "Solution Brief",
+};
+
+/**
+ * Extract asset type from HTML content
+ * Looks for HubSpot script tags, meta tags, JSON-LD, and other indicators
+ */
+export async function detectAssetTypeFromHtml(url: string, html?: string): Promise<string | null> {
+  if (!html) {
+    try {
+      // Fetch HTML if not provided
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; BlogExtractor/1.0)",
+        },
+        signal: AbortSignal.timeout(10000), // 10 seconds timeout
+      });
+      
+      if (!response.ok) {
+        return null;
+      }
+      
+      html = await response.text();
+    } catch {
+      return null;
+    }
+  }
+
+  try {
+    // Use cheerio to parse HTML
+    const cheerio = await import("cheerio");
+    const $ = cheerio.default.load(html);
+
+    // 1. Check HubSpot script tags (data-content-id and setContentType)
+    const hubspotScripts = $('script[data-content-id], script.hsq-set-content-id');
+    for (let i = 0; i < hubspotScripts.length; i++) {
+      const script = $(hubspotScripts[i]);
+      const contentId = script.attr('data-content-id');
+      if (contentId) {
+        const normalized = contentId.toLowerCase().trim();
+        if (CONTENT_TYPE_MAP[normalized]) {
+          return CONTENT_TYPE_MAP[normalized];
+        }
+      }
+      
+      // Check for setContentType in script content
+      const scriptContent = script.html() || '';
+      const contentTypeMatch = scriptContent.match(/setContentType["\s]*\(["\s]*["']([^"']+)["']/i);
+      if (contentTypeMatch) {
+        const contentType = contentTypeMatch[1].toLowerCase().trim();
+        if (CONTENT_TYPE_MAP[contentType]) {
+          return CONTENT_TYPE_MAP[contentType];
+        }
+      }
+    }
+
+    // 2. Check meta tags
+    const metaSelectors = [
+      'meta[property="og:type"]',
+      'meta[name="og:type"]',
+      'meta[property="article:type"]',
+      'meta[name="content-type"]',
+      'meta[property="content-type"]',
+    ];
+    
+    for (const selector of metaSelectors) {
+      const meta = $(selector).first();
+      const content = meta.attr('content') || meta.attr('value');
+      if (content) {
+        const normalized = content.toLowerCase().trim();
+        if (CONTENT_TYPE_MAP[normalized]) {
+          return CONTENT_TYPE_MAP[normalized];
+        }
+        // Check for common patterns
+        if (normalized.includes('article') || normalized.includes('blog')) {
+          return "Blog Post";
+        }
+        if (normalized.includes('video')) {
+          return "Explainer Video";
+        }
+      }
+    }
+
+    // 3. Check JSON-LD structured data
+    const jsonLdScripts = $('script[type="application/ld+json"]');
+    for (let i = 0; i < jsonLdScripts.length; i++) {
+      try {
+        const jsonText = $(jsonLdScripts[i]).html();
+        if (!jsonText) continue;
+        
+        const data = JSON.parse(jsonText);
+        const checkType = (obj: any): string | null => {
+          if (!obj || typeof obj !== 'object') return null;
+          
+          // Check @type field
+          if (obj['@type']) {
+            const type = String(obj['@type']).toLowerCase();
+            if (type.includes('blog') || type.includes('article') || type.includes('blogposting')) {
+              return "Blog Post";
+            }
+            if (type.includes('video')) {
+              return "Explainer Video";
+            }
+            if (type.includes('podcast')) {
+              return "Podcast Episode";
+            }
+          }
+          
+          // Check contentType field
+          if (obj.contentType) {
+            const normalized = String(obj.contentType).toLowerCase().trim();
+            if (CONTENT_TYPE_MAP[normalized]) {
+              return CONTENT_TYPE_MAP[normalized];
+            }
+          }
+          
+          // Recursively check nested objects
+          for (const key in obj) {
+            if (typeof obj[key] === 'object' && obj[key] !== null) {
+              const result = checkType(obj[key]);
+              if (result) return result;
+            }
+          }
+          
+          return null;
+        };
+        
+        const type = checkType(data);
+        if (type) return type;
+      } catch {
+        // Invalid JSON, continue
+      }
+    }
+
+    // 4. Check body/article classes and IDs
+    const bodyClasses = $('body').attr('class') || '';
+    const articleClasses = $('article, .post, .blog-post, .entry').first().attr('class') || '';
+    const allClasses = (bodyClasses + ' ' + articleClasses).toLowerCase();
+    
+    for (const [key, value] of Object.entries(CONTENT_TYPE_MAP)) {
+      if (allClasses.includes(key.replace(/-/g, ' ')) || allClasses.includes(key)) {
+        return value;
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Detect asset type from URL patterns
  * Returns detected type or null if unknown
  */

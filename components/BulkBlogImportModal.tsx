@@ -34,6 +34,7 @@ import {
   ChevronRight,
   ChevronLeft,
   AlertCircle,
+  Calendar,
 } from "lucide-react";
 import { ALL_JOB_TITLES } from "@/lib/icp-targets";
 import { ASSET_TYPE_VALUES } from "@/lib/constants/asset-types";
@@ -51,6 +52,7 @@ interface PreviewPost {
   existingAssetId?: string;
   detectedAssetType?: string | null;
   isUnknownType?: boolean;
+  publishedDate?: string | null;
 }
 
 type Step = "configure" | "preview" | "importing";
@@ -68,6 +70,8 @@ export function BulkBlogImportModal({
   const [painClusters, setPainClusters] = useState<string>("");
   const [maxPosts, setMaxPosts] = useState<number>(50);
   const [selectedAssetTypeFilter, setSelectedAssetTypeFilter] = useState<string>("all");
+  const [dateRangeStart, setDateRangeStart] = useState<string>("");
+  const [dateRangeEnd, setDateRangeEnd] = useState<string>("");
   
   // Preview state
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
@@ -150,7 +154,11 @@ export function BulkBlogImportModal({
       const response = await fetch("/api/assets/bulk-import-blog/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ blogUrl: blogUrl.trim() }),
+        body: JSON.stringify({ 
+          blogUrl: blogUrl.trim(),
+          dateRangeStart: dateRangeStart || null,
+          dateRangeEnd: dateRangeEnd || null,
+        }),
       });
 
       const data = await response.json();
@@ -293,6 +301,8 @@ export function BulkBlogImportModal({
       setPainClusters("");
       setMaxPosts(50);
       setSelectedAssetTypeFilter("all");
+      setDateRangeStart("");
+      setDateRangeEnd("");
       setPreviewPosts([]);
       setSelectedPostUrls(new Set());
       setProgress(0);
@@ -391,6 +401,36 @@ export function BulkBlogImportModal({
                   <SelectItem value="100">100</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="dateRangeStart">Published Date Range (Optional)</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label htmlFor="dateRangeStart" className="text-xs text-muted-foreground">Start Date</Label>
+                  <Input
+                    id="dateRangeStart"
+                    type="date"
+                    value={dateRangeStart}
+                    onChange={(e) => setDateRangeStart(e.target.value)}
+                    disabled={isLoadingPreview}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="dateRangeEnd" className="text-xs text-muted-foreground">End Date</Label>
+                  <Input
+                    id="dateRangeEnd"
+                    type="date"
+                    value={dateRangeEnd}
+                    onChange={(e) => setDateRangeEnd(e.target.value)}
+                    disabled={isLoadingPreview}
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground flex items-start gap-1">
+                <Info className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                Filter posts by published date. Dates are extracted from URLs. Posts without dates in URLs will be included.
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -505,6 +545,56 @@ export function BulkBlogImportModal({
               </div>
             </div>
 
+            {/* Date Range Filter */}
+            <div className="space-y-2 p-3 bg-muted/30 rounded-lg border">
+              <Label className="text-sm font-medium">Published Date Range</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label htmlFor="previewDateRangeStart" className="text-xs text-muted-foreground">Start Date</Label>
+                  <Input
+                    id="previewDateRangeStart"
+                    type="date"
+                    value={dateRangeStart}
+                    onChange={(e) => setDateRangeStart(e.target.value)}
+                    disabled={isLoadingPreview}
+                    className="text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="previewDateRangeEnd" className="text-xs text-muted-foreground">End Date</Label>
+                  <Input
+                    id="previewDateRangeEnd"
+                    type="date"
+                    value={dateRangeEnd}
+                    onChange={(e) => setDateRangeEnd(e.target.value)}
+                    disabled={isLoadingPreview}
+                    className="text-sm"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-muted-foreground">
+                  Filter posts by published date. Dates extracted from URLs.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handlePreview}
+                  disabled={isLoadingPreview}
+                  className="text-xs"
+                >
+                  {isLoadingPreview ? (
+                    <>
+                      <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                      Refreshing...
+                    </>
+                  ) : (
+                    "Refresh Preview"
+                  )}
+                </Button>
+              </div>
+            </div>
+
             {/* Asset Type Filter and Bulk Selection */}
             <div className="space-y-2">
               <div className="flex items-center gap-2">
@@ -574,41 +664,60 @@ export function BulkBlogImportModal({
                           id={`post-${post.url}`}
                         />
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-start gap-2 flex-wrap">
-                            <Label
-                              htmlFor={`post-${post.url}`}
-                              className="flex-1 text-sm font-medium cursor-pointer"
-                            >
-                              {post.title}
-                            </Label>
-                            <div className="flex items-center gap-1 flex-wrap">
-                              {post.detectedAssetType && (
-                                <span className="text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded">
+                          <div className="space-y-1.5">
+                            <div className="flex items-start gap-2 flex-wrap">
+                              <Label
+                                htmlFor={`post-${post.url}`}
+                                className="flex-1 text-sm font-medium cursor-pointer"
+                              >
+                                {post.title}
+                              </Label>
+                            </div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {/* Publication Date - More Prominent */}
+                              {post.publishedDate ? (
+                                <span className="text-xs px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded font-medium inline-flex items-center gap-1">
+                                  <Calendar className="h-3 w-3" />
+                                  {new Date(post.publishedDate).toLocaleDateString('en-US', { 
+                                    year: 'numeric', 
+                                    month: 'short', 
+                                    day: 'numeric' 
+                                  })}
+                                </span>
+                              ) : (
+                                <span className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-900/30 text-gray-500 dark:text-gray-500 rounded italic inline-flex items-center gap-1">
+                                  <Calendar className="h-3 w-3" />
+                                  Date unknown
+                                </span>
+                              )}
+                              {/* Content Type */}
+                              {post.detectedAssetType ? (
+                                <span className="text-xs px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded font-medium">
                                   {post.detectedAssetType}
                                 </span>
-                              )}
-                              {post.isUnknownType && (
-                                <span className="text-xs px-2 py-0.5 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded font-medium">
+                              ) : post.isUnknownType ? (
+                                <span className="text-xs px-2 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded font-medium">
                                   Unknown Type
                                 </span>
-                              )}
+                              ) : null}
+                              {/* Duplicate Badge */}
                               {post.isDuplicate && (
-                                <span className="text-xs px-2 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded">
+                                <span className="text-xs px-2 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded">
                                   Duplicate
                                 </span>
                               )}
                             </div>
+                            <a
+                              href={post.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-muted-foreground hover:underline inline-flex items-center gap-1"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                              {post.url.substring(0, 60)}...
+                            </a>
                           </div>
-                          <a
-                            href={post.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs text-muted-foreground hover:underline inline-flex items-center gap-1 mt-1"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <ExternalLink className="h-3 w-3" />
-                            {post.url.substring(0, 60)}...
-                          </a>
                         </div>
                       </div>
                     );
