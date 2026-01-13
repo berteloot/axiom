@@ -362,7 +362,7 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
       }
 
       // If URL has no path segments, it's likely not a blog post
-      // Note: Single-segment short paths are already excluded above (line 311-315)
+      // Note: Single-segment short paths are already excluded above (line 319-323)
       if (pathSegments.length === 0) {
         return true;
       }
