@@ -219,47 +219,92 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
 
 /**
  * Fetch listing page content using Jina Reader (handles JavaScript-rendered pages)
+ * Includes retry logic for connection failures
  */
-async function fetchListingPageWithJina(url: string): Promise<string> {
+async function fetchListingPageWithJina(url: string, retries = 2): Promise<string> {
   if (!JINA_API_KEY) {
     throw new Error("JINA_API_KEY environment variable is not set");
   }
 
-  try {
-    // Remove hash fragments before passing to Jina (e.g., #blog)
-    const urlWithoutHash = url.split('#')[0];
-    const normalizedUrl = normalizeUrl(urlWithoutHash);
-    const jinaUrl = `${JINA_READER_URL}/${normalizedUrl}`;
-    
-    console.log(`[Blog Extractor] Fetching listing page with Jina: ${jinaUrl}`);
-    
-    const response = await fetch(jinaUrl, {
-      headers: {
-        Authorization: `Bearer ${JINA_API_KEY}`,
-        Accept: "text/plain",
-        "X-Respond-With": "markdown",
-        "X-With-Generated-Alt": "true",
-        "X-No-Cache": "true",
-        // Remove page chrome but keep content links
-        "X-Remove-Selector": "nav,footer,header,.navigation,.sidebar,.menu,.breadcrumb,.cookie-banner,.popup,.modal",
-      },
-      signal: AbortSignal.timeout(120000), // 120 seconds for large listing pages
-    });
+  // Remove hash fragments before passing to Jina (e.g., #blog)
+  const urlWithoutHash = url.split('#')[0];
+  const normalizedUrl = normalizeUrl(urlWithoutHash);
+  
+  // Jina Reader expects the URL to be properly encoded
+  // The URL should be appended directly, not encoded in the path
+  const jinaUrl = `${JINA_READER_URL}/${normalizedUrl}`;
 
-    if (!response.ok) {
-      throw new Error(`Jina API error: ${response.status} - ${response.statusText}`);
-    }
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      console.log(`[Blog Extractor] Fetching listing page with Jina (attempt ${attempt + 1}/${retries + 1}): ${jinaUrl}`);
+      
+      const response = await fetch(jinaUrl, {
+        headers: {
+          Authorization: `Bearer ${JINA_API_KEY}`,
+          Accept: "text/plain",
+          "X-Respond-With": "markdown",
+          "X-With-Generated-Alt": "true",
+          "X-No-Cache": "true",
+          // Remove page chrome but keep content links
+          "X-Remove-Selector": "nav,footer,header,.navigation,.sidebar,.menu,.breadcrumb,.cookie-banner,.popup,.modal",
+        },
+        signal: AbortSignal.timeout(120000), // 120 seconds for large listing pages
+      });
 
-    const content = await response.text();
-    console.log(`[Blog Extractor] Jina returned ${content.length} characters from listing page`);
-    
-    return content;
-  } catch (error) {
-    if (error instanceof Error) {
-      throw new Error(`Failed to fetch listing page with Jina: ${error.message}`);
+      if (!response.ok) {
+        if (response.status === 429 && attempt < retries) {
+          // Rate limited - wait and retry
+          const waitTime = 2000 * (attempt + 1);
+          console.log(`[Blog Extractor] Rate limited, waiting ${waitTime}ms before retry...`);
+          await new Promise((resolve) => setTimeout(resolve, waitTime));
+          continue;
+        }
+        
+        const errorText = await response.text().catch(() => '');
+        console.error(`[Blog Extractor] Jina API error: ${response.status} ${response.statusText}`);
+        if (errorText) {
+          console.error(`[Blog Extractor] Error details: ${errorText.substring(0, 200)}`);
+        }
+        
+        throw new Error(`Jina API error: ${response.status} - ${response.statusText}`);
+      }
+
+      const content = await response.text();
+      
+      if (!content || content.trim().length < 100) {
+        throw new Error("Jina returned empty or insufficient content");
+      }
+      
+      console.log(`[Blog Extractor] Jina returned ${content.length} characters from listing page`);
+      
+      return content;
+    } catch (error) {
+      const isLastAttempt = attempt === retries;
+      const isConnectionError = error instanceof Error && (
+        error.message.includes('fetch failed') ||
+        error.message.includes('ECONNREFUSED') ||
+        error.message.includes('ETIMEDOUT') ||
+        error.message.includes('network') ||
+        error.name === 'AbortError'
+      );
+
+      if (isConnectionError && !isLastAttempt) {
+        const waitTime = 3000 * (attempt + 1);
+        console.warn(`[Blog Extractor] Connection error (attempt ${attempt + 1}/${retries + 1}), retrying in ${waitTime}ms...`);
+        console.warn(`[Blog Extractor] Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        await new Promise((resolve) => setTimeout(resolve, waitTime));
+        continue;
+      }
+
+      if (isLastAttempt) {
+        const errorMessage = error instanceof Error ? error.message : "Unknown error";
+        console.error(`[Blog Extractor] Failed after ${retries + 1} attempts: ${errorMessage}`);
+        throw new Error(`Failed to fetch listing page with Jina after ${retries + 1} attempts: ${errorMessage}`);
+      }
     }
-    throw new Error("Failed to fetch listing page with Jina: Unknown error");
   }
+
+  throw new Error("Failed to fetch listing page with Jina after retries");
 }
 
 /**
