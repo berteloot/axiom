@@ -31,6 +31,7 @@ const BulkImportRequestSchema = z.object({
   posts: z.array(z.object({
     url: z.string().url(),
     title: z.string(),
+    detectedAssetType: z.string().nullable().optional(),
   })).min(1).max(100), // Selected posts to import
   funnelStage: z.enum(["TOFU_AWARENESS", "MOFU_CONSIDERATION", "BOFU_DECISION", "RETENTION"]).optional(),
   icpTargets: z.array(z.string()).optional(),
@@ -142,7 +143,7 @@ export async function POST(request: NextRequest) {
             s3Url,
             s3Key,
             fileType: "text/markdown",
-            assetType: "Blog_Post",
+            assetType: post.detectedAssetType || "Blog Post",
             extractedText: content,
             funnelStage: funnelStage as FunnelStage,
             icpTargets: standardizedIcpTargets,

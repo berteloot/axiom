@@ -130,3 +130,87 @@ export function normalizeAssetType(assetType: string | null | undefined): string
   // Return original if no match found
   return assetType;
 }
+
+/**
+ * Detect asset type from URL patterns
+ * Returns detected type or null if unknown
+ */
+export function detectAssetTypeFromUrl(url: string): string | null {
+  try {
+    const urlObj = new URL(url);
+    const path = urlObj.pathname.toLowerCase();
+    const pathSegments = path.split('/').filter(s => s.length > 0);
+    
+    // URL pattern mappings (order matters - more specific first)
+    const patterns: Array<{ pattern: RegExp | string; type: string }> = [
+      // Case Studies
+      { pattern: /case-stud(y|ies)|customer-stor(y|ies)|success-stor(y|ies)/i, type: "Case Study" },
+      { pattern: /testimonial/i, type: "Customer Testimonial" },
+      { pattern: /use-case/i, type: "Use Case" },
+      
+      // Whitepapers & eBooks
+      { pattern: /whitepaper|white-paper/i, type: "Whitepaper" },
+      { pattern: /ebook|e-book/i, type: "eBook" },
+      { pattern: /research-report/i, type: "Research Report" },
+      { pattern: /guide|how-to/i, type: "Guide" },
+      
+      // Webinars & Videos
+      { pattern: /webinar/i, type: "Webinar Recording" },
+      { pattern: /demo|product-demo/i, type: "Product Demo" },
+      { pattern: /video|explainer/i, type: "Explainer Video" },
+      { pattern: /podcast/i, type: "Podcast Episode" },
+      { pattern: /event|recording/i, type: "Event Recording" },
+      
+      // Sales Enablement
+      { pattern: /sales-deck|pitch-deck/i, type: "Sales Deck" },
+      { pattern: /one-pager|one-pager|datasheet/i, type: "One-Pager" },
+      { pattern: /solution-brief|solution-overview/i, type: "Solution Brief" },
+      { pattern: /battlecard/i, type: "Battlecard" },
+      { pattern: /pricing/i, type: "Pricing Sheet" },
+      { pattern: /proposal/i, type: "Proposal" },
+      
+      // Blog & Articles
+      { pattern: /blog|post|article/i, type: "Blog Post" },
+      { pattern: /news|press-release|announcement/i, type: "Press Release" },
+      { pattern: /newsletter/i, type: "Newsletter" },
+      
+      // Technical
+      { pattern: /documentation|docs|api-reference/i, type: "Technical Documentation" },
+      { pattern: /user-guide|getting-started/i, type: "User Guide" },
+      { pattern: /release-notes|changelog/i, type: "Release Notes" },
+      { pattern: /data-sheet|datasheet/i, type: "Data Sheet" },
+      
+      // Other
+      { pattern: /infographic/i, type: "Infographic" },
+    ];
+    
+    // Check full path first
+    for (const { pattern, type } of patterns) {
+      if (typeof pattern === 'string') {
+        if (path.includes(pattern)) return type;
+      } else {
+        if (pattern.test(path)) return type;
+      }
+    }
+    
+    // Check individual path segments
+    for (const segment of pathSegments) {
+      for (const { pattern, type } of patterns) {
+        if (typeof pattern === 'string') {
+          if (segment.includes(pattern)) return type;
+        } else {
+          if (pattern.test(segment)) return type;
+        }
+      }
+    }
+    
+    // Default to Blog Post if URL contains common blog indicators
+    if (path.includes('blog') || path.includes('post') || path.includes('article')) {
+      return "Blog Post";
+    }
+    
+    return null; // Unknown type
+  } catch {
+    return null;
+  }
+}

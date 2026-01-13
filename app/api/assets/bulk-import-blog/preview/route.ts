@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAccountId } from "@/lib/account-utils";
 import { extractBlogPostUrls } from "@/lib/services/blog-extractor";
+import { detectAssetTypeFromUrl } from "@/lib/constants/asset-types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -61,13 +62,18 @@ export async function POST(request: NextRequest) {
       }
     });
 
-    // Enrich blog posts with duplicate information
-    const enrichedPosts = blogPosts.map(post => ({
-      url: post.url,
-      title: post.title,
-      isDuplicate: existingSourceUrls.has(post.url),
-      existingAssetId: existingSourceUrls.get(post.url),
-    }));
+    // Enrich blog posts with duplicate information and detected asset type
+    const enrichedPosts = blogPosts.map(post => {
+      const detectedType = detectAssetTypeFromUrl(post.url);
+      return {
+        url: post.url,
+        title: post.title,
+        isDuplicate: existingSourceUrls.has(post.url),
+        existingAssetId: existingSourceUrls.get(post.url),
+        detectedAssetType: detectedType,
+        isUnknownType: detectedType === null,
+      };
+    });
 
     const duplicateCount = enrichedPosts.filter(p => p.isDuplicate).length;
     const newCount = enrichedPosts.length - duplicateCount;

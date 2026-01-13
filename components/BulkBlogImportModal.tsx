@@ -36,6 +36,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { ALL_JOB_TITLES } from "@/lib/icp-targets";
+import { ASSET_TYPE_VALUES } from "@/lib/constants/asset-types";
 
 interface BulkBlogImportModalProps {
   open: boolean;
@@ -48,6 +49,8 @@ interface PreviewPost {
   title: string;
   isDuplicate: boolean;
   existingAssetId?: string;
+  detectedAssetType?: string | null;
+  isUnknownType?: boolean;
 }
 
 type Step = "configure" | "preview" | "importing";
@@ -64,6 +67,7 @@ export function BulkBlogImportModal({
   const [selectedProductLineIds, setSelectedProductLineIds] = useState<string[]>([]);
   const [painClusters, setPainClusters] = useState<string>("");
   const [maxPosts, setMaxPosts] = useState<number>(50);
+  const [selectedAssetTypeFilter, setSelectedAssetTypeFilter] = useState<string>("all");
   
   // Preview state
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
@@ -229,7 +233,11 @@ export function BulkBlogImportModal({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          posts: selectedPosts.map(p => ({ url: p.url, title: p.title })),
+          posts: selectedPosts.map(p => ({ 
+            url: p.url, 
+            title: p.title,
+            detectedAssetType: p.detectedAssetType || null,
+          })),
           funnelStage,
           icpTargets: selectedIcpTargets,
           painClusters: painClustersArray,
@@ -284,6 +292,7 @@ export function BulkBlogImportModal({
       setSelectedProductLineIds([]);
       setPainClusters("");
       setMaxPosts(50);
+      setSelectedAssetTypeFilter("all");
       setPreviewPosts([]);
       setSelectedPostUrls(new Set());
       setProgress(0);
@@ -301,6 +310,34 @@ export function BulkBlogImportModal({
   const allSelected = selectedCount > 0 && Array.isArray(previewPosts) &&
     previewPosts.filter(p => !p.isDuplicate && selectedPostUrls.has(p.url)).length === 
     Math.min(newCount, maxPosts);
+
+  // Get unique asset types from preview posts
+  const assetTypes = Array.isArray(previewPosts)
+    ? Array.from(new Set(previewPosts.map(p => p.detectedAssetType || "Unknown").filter(Boolean)))
+    : [];
+  
+  // Filter posts by selected asset type
+  const filteredPosts = Array.isArray(previewPosts)
+    ? previewPosts.filter(post => {
+        if (selectedAssetTypeFilter === "all") return true;
+        if (selectedAssetTypeFilter === "unknown") return post.isUnknownType;
+        return post.detectedAssetType === selectedAssetTypeFilter;
+      })
+    : [];
+
+  // Handle selecting all posts of a specific type
+  const handleSelectByType = (type: string) => {
+    const postsToSelect = Array.isArray(previewPosts)
+      ? previewPosts.filter(p => {
+          if (type === "unknown") return p.isUnknownType && !p.isDuplicate;
+          return p.detectedAssetType === type && !p.isDuplicate;
+        })
+        .slice(0, maxPosts - selectedPostUrls.size)
+        .map(p => p.url)
+      : [];
+    
+    setSelectedPostUrls(new Set([...selectedPostUrls, ...postsToSelect]));
+  };
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -468,10 +505,58 @@ export function BulkBlogImportModal({
               </div>
             </div>
 
+            {/* Asset Type Filter and Bulk Selection */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Label htmlFor="assetTypeFilter" className="text-sm font-medium">
+                  Filter by Type:
+                </Label>
+                <Select
+                  value={selectedAssetTypeFilter}
+                  onValueChange={setSelectedAssetTypeFilter}
+                >
+                  <SelectTrigger id="assetTypeFilter" className="w-[200px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="unknown">Unknown</SelectItem>
+                    {assetTypes
+                      .filter(type => type !== "Unknown")
+                      .sort()
+                      .map(type => (
+                        <SelectItem key={type} value={type}>
+                          {type}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                {selectedAssetTypeFilter !== "all" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleSelectByType(selectedAssetTypeFilter)}
+                    disabled={selectedPostUrls.size >= maxPosts}
+                  >
+                    Select All {selectedAssetTypeFilter === "unknown" ? "Unknown" : selectedAssetTypeFilter}
+                  </Button>
+                )}
+              </div>
+              {assetTypes.includes("Unknown") && (
+                <Alert>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle className="text-sm">Unknown Asset Types Detected</AlertTitle>
+                  <AlertDescription className="text-xs">
+                    {Array.isArray(previewPosts) ? previewPosts.filter(p => p.isUnknownType).length : 0} asset(s) could not be automatically categorized. Please review and manually assign types.
+                  </AlertDescription>
+                </Alert>
+              )}
+            </div>
+
             <div className="max-h-[400px] overflow-y-auto border rounded-lg">
-              {Array.isArray(previewPosts) && previewPosts.length > 0 ? (
+              {filteredPosts.length > 0 ? (
                 <div className="divide-y">
-                  {previewPosts.map((post) => {
+                  {filteredPosts.map((post) => {
                     const isSelected = selectedPostUrls.has(post.url);
                     const canSelect = !post.isDuplicate && selectedCount < maxPosts;
                     
@@ -480,7 +565,7 @@ export function BulkBlogImportModal({
                         key={post.url}
                         className={`p-3 flex items-start gap-3 ${
                           post.isDuplicate ? "bg-muted/30 opacity-60" : ""
-                        }`}
+                        } ${post.isUnknownType ? "border-l-2 border-l-orange-500" : ""}`}
                       >
                         <Checkbox
                           checked={isSelected}
@@ -489,18 +574,30 @@ export function BulkBlogImportModal({
                           id={`post-${post.url}`}
                         />
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-start gap-2">
+                          <div className="flex items-start gap-2 flex-wrap">
                             <Label
                               htmlFor={`post-${post.url}`}
                               className="flex-1 text-sm font-medium cursor-pointer"
                             >
                               {post.title}
                             </Label>
-                            {post.isDuplicate && (
-                              <span className="text-xs px-2 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded">
-                                Duplicate
-                              </span>
-                            )}
+                            <div className="flex items-center gap-1 flex-wrap">
+                              {post.detectedAssetType && (
+                                <span className="text-xs px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded">
+                                  {post.detectedAssetType}
+                                </span>
+                              )}
+                              {post.isUnknownType && (
+                                <span className="text-xs px-2 py-0.5 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded font-medium">
+                                  Unknown Type
+                                </span>
+                              )}
+                              {post.isDuplicate && (
+                                <span className="text-xs px-2 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded">
+                                  Duplicate
+                                </span>
+                              )}
+                            </div>
                           </div>
                           <a
                             href={post.url}
@@ -519,7 +616,9 @@ export function BulkBlogImportModal({
                 </div>
               ) : (
                 <div className="p-8 text-center text-muted-foreground">
-                  No posts to display
+                  {selectedAssetTypeFilter !== "all" 
+                    ? `No posts found for type "${selectedAssetTypeFilter}"`
+                    : "No posts to display"}
                 </div>
               )}
             </div>
