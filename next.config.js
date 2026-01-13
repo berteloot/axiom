@@ -37,6 +37,10 @@ const nextConfig = {
       config.externals.push({
         'ffmpeg-static': 'ffmpeg-static',
       });
+      // Don't bundle puppeteer (it contains Chromium and native dependencies)
+      config.externals.push({
+        puppeteer: 'puppeteer',
+      });
     }
     
     return config;
