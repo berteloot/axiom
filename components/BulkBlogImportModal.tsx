@@ -524,6 +524,77 @@ export function BulkBlogImportModal({
         {/* Step 2: Preview */}
         {currentStep === "preview" && (
           <div className="space-y-4 py-4">
+            {/* Date Range Filter - Moved to top for visibility */}
+            <div className="space-y-2 p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-semibold flex items-center gap-2">
+                  <Calendar className="h-4 w-4" />
+                  Published Date Range Filter
+                </Label>
+                {(dateRangeStart || dateRangeEnd) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setDateRangeStart("");
+                      setDateRangeEnd("");
+                    }}
+                    className="text-xs h-7"
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="previewDateRangeStart" className="text-xs font-medium">Start Date</Label>
+                  <Input
+                    id="previewDateRangeStart"
+                    type="date"
+                    value={dateRangeStart}
+                    onChange={(e) => setDateRangeStart(e.target.value)}
+                    disabled={isLoadingPreview}
+                    className="text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="previewDateRangeEnd" className="text-xs font-medium">End Date</Label>
+                  <Input
+                    id="previewDateRangeEnd"
+                    type="date"
+                    value={dateRangeEnd}
+                    onChange={(e) => setDateRangeEnd(e.target.value)}
+                    disabled={isLoadingPreview}
+                    className="text-sm"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center justify-between pt-1">
+                <p className="text-xs text-muted-foreground">
+                  Filter posts by published date. Dates extracted from URLs. Posts without dates will be included.
+                </p>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={handlePreview}
+                  disabled={isLoadingPreview}
+                  className="text-xs"
+                >
+                  {isLoadingPreview ? (
+                    <>
+                      <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                      Refreshing...
+                    </>
+                  ) : (
+                    <>
+                      <Calendar className="mr-2 h-3 w-3" />
+                      Apply Filter
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+
             <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
               <div className="space-y-1">
                 <div className="text-sm font-medium">
@@ -542,56 +613,6 @@ export function BulkBlogImportModal({
                 <Label htmlFor="select-all" className="text-sm cursor-pointer">
                   Select all new ({Math.min(newCount, maxPosts)})
                 </Label>
-              </div>
-            </div>
-
-            {/* Date Range Filter */}
-            <div className="space-y-2 p-3 bg-muted/30 rounded-lg border">
-              <Label className="text-sm font-medium">Published Date Range</Label>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <Label htmlFor="previewDateRangeStart" className="text-xs text-muted-foreground">Start Date</Label>
-                  <Input
-                    id="previewDateRangeStart"
-                    type="date"
-                    value={dateRangeStart}
-                    onChange={(e) => setDateRangeStart(e.target.value)}
-                    disabled={isLoadingPreview}
-                    className="text-sm"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="previewDateRangeEnd" className="text-xs text-muted-foreground">End Date</Label>
-                  <Input
-                    id="previewDateRangeEnd"
-                    type="date"
-                    value={dateRangeEnd}
-                    onChange={(e) => setDateRangeEnd(e.target.value)}
-                    disabled={isLoadingPreview}
-                    className="text-sm"
-                  />
-                </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-muted-foreground">
-                  Filter posts by published date. Dates extracted from URLs.
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handlePreview}
-                  disabled={isLoadingPreview}
-                  className="text-xs"
-                >
-                  {isLoadingPreview ? (
-                    <>
-                      <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                      Refreshing...
-                    </>
-                  ) : (
-                    "Refresh Preview"
-                  )}
-                </Button>
               </div>
             </div>
 
