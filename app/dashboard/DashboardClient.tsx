@@ -20,13 +20,15 @@ import {
   TrendingUp,
   Target,
   AlertTriangle,
-  Upload
+  Upload,
+  FileText
 } from "lucide-react";
 import { CriticalGapsModal, CriticalGap } from "@/components/dashboard/CriticalGapsModal";
 import { SaveSearchButton } from "@/components/smart-collections";
 import DownloadReportButton from "@/components/reports/DownloadReportButton";
 import { useAccount } from "@/lib/account-context";
 import { PPCCampaignBuilder } from "@/components/ppc/PPCCampaignBuilder";
+import { BulkBlogImportModal } from "@/components/BulkBlogImportModal";
 
 const STAGES: FunnelStage[] = [
   "TOFU_AWARENESS",
@@ -126,6 +128,7 @@ export default function DashboardClient() {
   const [isDraftingSequence, setIsDraftingSequence] = useState(false);
   const [isBulkEditModalOpen, setIsBulkEditModalOpen] = useState(false);
   const [isCriticalGapsModalOpen, setIsCriticalGapsModalOpen] = useState(false);
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("strategy");
   const [brandContext, setBrandContext] = useState<BrandContext | null>(null);
   
@@ -796,7 +799,19 @@ export default function DashboardClient() {
                         : `Showing ${filteredAssets.length} of ${assets.length} assets`}
                     </CardDescription>
                   </div>
-                  <SaveSearchButton filters={filters} />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsBulkImportOpen(true)}
+                      className="gap-2"
+                    >
+                      <FileText className="h-4 w-4" />
+                      <span className="hidden sm:inline">Bulk Import Blog</span>
+                      <span className="sm:hidden">Import Blog</span>
+                    </Button>
+                    <SaveSearchButton filters={filters} />
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -914,6 +929,15 @@ export default function DashboardClient() {
         onOpenChange={setIsCriticalGapsModalOpen}
         gaps={kpis.criticalGapsList || []}
         totalAssets={kpis.totalAssets}
+      />
+
+      <BulkBlogImportModal
+        open={isBulkImportOpen}
+        onOpenChange={setIsBulkImportOpen}
+        onSuccess={() => {
+          // Refresh assets after successful import
+          fetchAssets(true);
+        }}
       />
     </div>
   );
