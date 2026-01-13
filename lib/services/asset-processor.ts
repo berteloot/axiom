@@ -134,11 +134,6 @@ export async function processAssetAsync(
     // Analyze with AI (pass accountId for CompanyProfile scoping)
     const analysis = await analyzeAsset(extractedText, fileType, s3Url, asset.accountId);
 
-    // Convert suggestedExpiryDate string to Date object
-    const expiryDate = analysis.suggestedExpiryDate 
-      ? new Date(analysis.suggestedExpiryDate)
-      : null;
-
     // Standardize ICP targets from AI analysis
     const standardizedIcpTargets = standardizeICPTargets(analysis.icpTargets);
 
@@ -146,6 +141,7 @@ export async function processAssetAsync(
     const normalizedAssetType = normalizeAssetType(analysis.assetType);
 
     // Update asset with analysis results and traceability fields
+    // Note: expiryDate is not prefilled - user must set it manually if needed
     await prisma.asset.update({
       where: { id: assetId },
       data: {
@@ -156,7 +152,7 @@ export async function processAssetAsync(
         outreachTip: analysis.outreachTip,
         atomicSnippets: analysis.atomicSnippets as any, // Prisma Json type
         contentQualityScore: analysis.contentQualityScore,
-        expiryDate: expiryDate,
+        // expiryDate is not set - user must set it manually
         dominantColor: dominantColor, // Store extracted dominant color
         status: "PROCESSED",
         // Traceability fields

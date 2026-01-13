@@ -154,6 +154,7 @@ export async function POST(request: NextRequest) {
             analyzedAt: isValidContent ? new Date() : null,
             contentQualityScore: isValidContent ? 70 : null,
             customCreatedAt, // Set creation date from extracted published date
+            inUse: true, // Bulk imported assets are in use by default
             atomicSnippets: {
               type: "blog_import",
               sourceUrl: post.url,
