@@ -277,9 +277,35 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
       /^\/rfxcel-[a-z-]+-mgt-[a-z]+$/i,          // e.g., /rfxcel-accurate-immunization-mgt-raim/
       /^\/rfxcel-[a-z-]+-traceability-[a-z]+$/i, // e.g., /rfxcel-ingredients-traceability-rit/
       /^\/rfxcel-[a-z-]+$/i,                      // e.g., /rfxcel-iris/
+      /^\/rfxcel-code-check-[a-z-]+$/i,          // e.g., /rfxcel-code-check-dispensers-eu/
+      /^\/diamind-sentry$/i,                     // e.g., /diamind-sentry/
     ];
     
     if (productPagePatterns.some(pattern => pattern.test(urlPath))) {
+      return true;
+    }
+    
+    // Exclude solution/feature pages (not library content)
+    const solutionPagePatterns = [
+      /^\/brand-protection$/i,
+      /^\/edge-warehouse-solutions$/i,
+      /^\/cold-chain-technology$/i,
+      /^\/returnable-asset-tracking$/i,
+      /^\/smart-digital-innovation$/i,
+      /^\/consumer-engagement$/i,
+    ];
+    
+    if (solutionPagePatterns.some(pattern => pattern.test(urlPath))) {
+      return true;
+    }
+    
+    // Exclude resource/product listing pages (not individual library items)
+    if (urlPath.endsWith("-resources") || urlPath.endsWith("-products") || urlPath.endsWith("-support")) {
+      return true;
+    }
+    
+    // Exclude careers/success pages
+    if (urlPath.includes("careers") || urlPath.includes("success")) {
       return true;
     }
     
