@@ -65,6 +65,37 @@ function getImpactColor(impact: "high" | "medium" | "low"): string {
   }
 }
 
+function getConfidenceColor(confidence: "high" | "medium" | "low"): string {
+  switch (confidence) {
+    case "high":
+      return "text-green-600 bg-green-50";
+    case "medium":
+      return "text-yellow-600 bg-yellow-50";
+    case "low":
+      return "text-orange-600 bg-orange-50";
+  }
+}
+
+function getObservationTypeColor(type: "observed" | "inferred" | "cannot_determine"): string {
+  switch (type) {
+    case "observed":
+      return "bg-green-100 text-green-800 border-green-300";
+    case "inferred":
+      return "bg-blue-100 text-blue-800 border-blue-300";
+    case "cannot_determine":
+      return "bg-gray-100 text-gray-800 border-gray-300";
+  }
+}
+
+// Helper to extract score value from score object or number (backwards compatible)
+function getScoreValue(score: number | { score: number; confidence: string }): number {
+  return typeof score === "number" ? score : score.score;
+}
+
+function getScoreConfidence(score: number | { score: number; confidence: string }): string | null {
+  return typeof score === "number" ? null : score.confidence;
+}
+
 export function SeoAuditResults({ result, url }: SeoAuditResultsProps) {
   const [copied, setCopied] = useState(false);
   const [copiedCodeIndex, setCopiedCodeIndex] = useState<number | null>(null);
@@ -144,16 +175,51 @@ export function SeoAuditResults({ result, url }: SeoAuditResultsProps) {
         </CardContent>
       </Card>
 
+      {/* Data Quality Indicator */}
+      {result.data_quality && (
+        <Card className="border-blue-200 bg-blue-50/50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Info className="h-4 w-4 text-blue-600" />
+              Data Quality
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2 text-xs">
+              <Badge variant="outline" className={result.data_quality.html_available ? "bg-green-50 border-green-200" : "bg-orange-50 border-orange-200"}>
+                HTML: {result.data_quality.html_available ? "Available" : "Unavailable"}
+              </Badge>
+              <Badge variant="outline" className={result.data_quality.dom_parse_success ? "bg-green-50 border-green-200" : "bg-orange-50 border-orange-200"}>
+                DOM Parse: {result.data_quality.dom_parse_success ? "Success" : "Failed"}
+              </Badge>
+              {result.data_quality.content_truncated && (
+                <Badge variant="outline" className="bg-yellow-50 border-yellow-200">
+                  Content Truncated
+                </Badge>
+              )}
+              <Badge variant="outline">
+                Content: {(result.data_quality.jina_content_length / 1000).toFixed(1)}k chars
+              </Badge>
+            </div>
+            {result.data_quality.limitations && result.data_quality.limitations.length > 0 && (
+              <p className="text-xs text-muted-foreground mt-2">
+                ⚠️ {result.data_quality.limitations.join("; ")}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Score Breakdown */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Extractability</CardTitle>
-            <Search className={`h-4 w-4 ${getScoreColor(result.scores.extractability)}`} />
+            <Search className={`h-4 w-4 ${getScoreColor(result.scores.extractability.score)}`} />
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${getScoreColor(result.scores.extractability)}`}>
-              {result.scores.extractability}
+            <div className={`text-2xl font-bold ${getScoreColor(result.scores.extractability.score)}`}>
+              {result.scores.extractability.score}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               How easily AI can extract content
@@ -164,11 +230,11 @@ export function SeoAuditResults({ result, url }: SeoAuditResultsProps) {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Structure</CardTitle>
-            <FileText className={`h-4 w-4 ${getScoreColor(result.scores.structure)}`} />
+            <FileText className={`h-4 w-4 ${getScoreColor(result.scores.structure.score)}`} />
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${getScoreColor(result.scores.structure)}`}>
-              {result.scores.structure}
+            <div className={`text-2xl font-bold ${getScoreColor(result.scores.structure.score)}`}>
+              {result.scores.structure.score}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               Page organization quality
@@ -179,11 +245,11 @@ export function SeoAuditResults({ result, url }: SeoAuditResultsProps) {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Trust</CardTitle>
-            <Shield className={`h-4 w-4 ${getScoreColor(result.scores.trust)}`} />
+            <Shield className={`h-4 w-4 ${getScoreColor(result.scores.trust.score)}`} />
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${getScoreColor(result.scores.trust)}`}>
-              {result.scores.trust}
+            <div className={`text-2xl font-bold ${getScoreColor(result.scores.trust.score)}`}>
+              {result.scores.trust.score}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               Authority & credibility signals
@@ -194,18 +260,229 @@ export function SeoAuditResults({ result, url }: SeoAuditResultsProps) {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Internal Discovery</CardTitle>
-            <Network className={`h-4 w-4 ${getScoreColor(result.scores.internal_discovery)}`} />
+            <Network className={`h-4 w-4 ${getScoreColor(result.scores.internal_discovery.score)}`} />
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${getScoreColor(result.scores.internal_discovery)}`}>
-              {result.scores.internal_discovery}
+            <div className={`text-2xl font-bold ${getScoreColor(result.scores.internal_discovery.score)}`}>
+              {result.scores.internal_discovery.score}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               Internal linking quality
             </p>
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Answer Block</CardTitle>
+            <TrendingUp className={`h-4 w-4 ${getScoreColor(result.scores.answer_block.score)}`} />
+          </CardHeader>
+          <CardContent>
+            <div className={`text-2xl font-bold ${getScoreColor(result.scores.answer_block.score)}`}>
+              {result.scores.answer_block.score}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              First 150-250 words value
+            </p>
+          </CardContent>
+        </Card>
       </div>
+
+      {/* Answer Block Analysis */}
+      {result.answer_block_analysis && (
+        <Card className={`border-l-4 ${
+          result.answer_block_analysis.answer_quality === "excellent" ? "border-l-green-500 bg-green-50/50" :
+          result.answer_block_analysis.answer_quality === "good" ? "border-l-blue-500 bg-blue-50/50" :
+          result.answer_block_analysis.answer_quality === "needs_improvement" ? "border-l-yellow-500 bg-yellow-50/50" :
+          "border-l-red-500 bg-red-50/50"
+        }`}>
+          <CardHeader>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5" />
+                  Answer Block Analysis
+                </CardTitle>
+                <CardDescription className="mt-1">
+                  AI systems extract content from the first 150-250 words. This analysis evaluates if your page provides immediate value.
+                </CardDescription>
+              </div>
+              <Badge className={
+                result.answer_block_analysis.answer_quality === "excellent" ? "bg-green-100 text-green-800" :
+                result.answer_block_analysis.answer_quality === "good" ? "bg-blue-100 text-blue-800" :
+                result.answer_block_analysis.answer_quality === "needs_improvement" ? "bg-yellow-100 text-yellow-800" :
+                "bg-red-100 text-red-800"
+              }>
+                {result.answer_block_analysis.answer_quality.replace("_", " ")}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="flex items-center gap-2">
+                <div className={`p-2 rounded-full ${result.answer_block_analysis.has_answer_block ? "bg-green-100" : "bg-red-100"}`}>
+                  {result.answer_block_analysis.has_answer_block ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  ) : (
+                    <AlertTriangle className="h-4 w-4 text-red-600" />
+                  )}
+                </div>
+                <div>
+                  <p className="text-sm font-medium">Answer Block Present</p>
+                  <p className="text-xs text-muted-foreground">
+                    {result.answer_block_analysis.has_answer_block ? "Yes" : "No"}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className={`p-2 rounded-full ${result.answer_block_analysis.primary_query_addressed ? "bg-green-100" : "bg-yellow-100"}`}>
+                  {result.answer_block_analysis.primary_query_addressed ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  ) : (
+                    <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                  )}
+                </div>
+                <div>
+                  <p className="text-sm font-medium">Query Addressed</p>
+                  <p className="text-xs text-muted-foreground">
+                    {result.answer_block_analysis.primary_query_addressed ? "Yes" : "No"}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-full bg-blue-100">
+                  <FileText className="h-4 w-4 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">Word Count</p>
+                  <p className="text-xs text-muted-foreground">
+                    {result.answer_block_analysis.answer_block_word_count} words
+                    {result.answer_block_analysis.answer_block_word_count >= 150 && result.answer_block_analysis.answer_block_word_count <= 250 
+                      ? " ✓" 
+                      : result.answer_block_analysis.answer_block_word_count < 150 
+                        ? " (target: 150-250)" 
+                        : " (could be more concise)"}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h4 className="text-sm font-semibold mb-2">Current Introduction Summary:</h4>
+              <p className="text-sm text-muted-foreground bg-muted p-3 rounded-lg">
+                {result.answer_block_analysis.current_intro_summary}
+              </p>
+            </div>
+
+            <div>
+              <h4 className="text-sm font-semibold mb-2">Why This Matters:</h4>
+              <p className="text-sm text-muted-foreground">
+                {result.answer_block_analysis.rationale}
+              </p>
+            </div>
+
+            {/* Search Queries from DataForSEO */}
+            {result.search_queries && result.search_queries.length > 0 && (
+              <div className="border-t pt-4">
+                <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                  <Search className="h-4 w-4 text-brand-blue" />
+                  Related Search Queries
+                  <Badge variant="outline" className="text-[10px]">DataForSEO</Badge>
+                </h4>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Real search data showing what users search for. Prioritize answering high-volume queries in your content.
+                </p>
+                <div className="space-y-2">
+                  {result.search_queries.slice(0, 8).map((query, idx) => (
+                    <div
+                      key={idx}
+                      className={`flex items-center justify-between p-2 rounded-lg text-sm ${
+                        query.isQuestion ? "bg-purple-50 border border-purple-200" : "bg-muted/50"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <span className="text-xs text-muted-foreground w-5 shrink-0">#{idx + 1}</span>
+                        <span className={`truncate ${query.isQuestion ? "text-purple-700 font-medium" : ""}`}>
+                          {query.query}
+                        </span>
+                        {query.isQuestion && (
+                          <Badge className="bg-purple-100 text-purple-700 text-[9px] shrink-0">Question</Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0 ml-2">
+                        <span className="text-xs font-medium">
+                          {query.searchVolume.toLocaleString()}/mo
+                        </span>
+                        {query.cpc > 0 && (
+                          <span className="text-xs text-muted-foreground">
+                            ${query.cpc.toFixed(2)} CPC
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {result.search_queries.filter(q => q.isQuestion).length > 0 && (
+                  <p className="text-xs text-purple-600 mt-2">
+                    💡 Question queries are highlighted - these are ideal for answer blocks and FAQ sections.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {result.answer_block_analysis.suggested_answer_block && (
+              <div className="border-t pt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-semibold flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-brand-blue" />
+                    Suggested Answer Block
+                  </h4>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      navigator.clipboard.writeText(result.answer_block_analysis.suggested_answer_block!);
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 2000);
+                    }}
+                    className="h-7 text-xs"
+                  >
+                    {copied ? (
+                      <>
+                        <CheckCircle2 className="h-3 w-3 mr-1" />
+                        Copied!
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3 w-3 mr-1" />
+                        Copy
+                      </>
+                    )}
+                  </Button>
+                </div>
+                <div className="p-4 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900 rounded-lg">
+                  <p className="text-sm whitespace-pre-line">
+                    {result.answer_block_analysis.suggested_answer_block}
+                  </p>
+                </div>
+                <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded-md">
+                  <div className="flex items-start gap-2">
+                    <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
+                    <div className="flex-1">
+                      <h5 className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-1">
+                        Where to Place This:
+                      </h5>
+                      <p className="text-sm text-blue-800 dark:text-blue-200">
+                        {result.answer_block_analysis.placement_recommendation}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Main Content Tabs */}
       <Tabs defaultValue="recommendations" className="w-full">
@@ -230,10 +507,15 @@ export function SeoAuditResults({ result, url }: SeoAuditResultsProps) {
                 <CardHeader>
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
+                      <div className="flex items-center gap-2 mb-2 flex-wrap">
                         <Badge className={getPriorityColor(rec.priority)}>
                           {rec.priority}
                         </Badge>
+                        {rec.observation_type && (
+                          <Badge className={getObservationTypeColor(rec.observation_type)}>
+                            {rec.observation_type.replace("_", " ")}
+                          </Badge>
+                        )}
                         <Badge variant="outline">{rec.expected_effort}</Badge>
                         <Badge variant="outline" className={getImpactColor(rec.expected_impact)}>
                           {rec.expected_impact} impact
@@ -335,9 +617,16 @@ export function SeoAuditResults({ result, url }: SeoAuditResultsProps) {
                       <CardTitle className="text-base">{issue.issue}</CardTitle>
                       <CardDescription className="mt-1">{issue.evidence}</CardDescription>
                     </div>
-                    <Badge variant="outline" className={getImpactColor(issue.impact)}>
-                      {issue.impact}
-                    </Badge>
+                    <div className="flex flex-col gap-1 items-end">
+                      <Badge variant="outline" className={getImpactColor(issue.impact)}>
+                        {issue.impact}
+                      </Badge>
+                      {issue.observation_type && (
+                        <Badge className={`text-[10px] ${getObservationTypeColor(issue.observation_type)}`}>
+                          {issue.observation_type.replace("_", " ")}
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                 </CardHeader>
               </Card>
@@ -366,6 +655,9 @@ export function SeoAuditResults({ result, url }: SeoAuditResultsProps) {
                     </Badge>
                     <div className="flex-1">
                       <p className="font-medium">{heading.text}</p>
+                      {heading.rationale && (
+                        <p className="text-xs text-blue-600 mt-1 italic">{heading.rationale}</p>
+                      )}
                       {heading.notes && (
                         <p className="text-sm text-muted-foreground mt-1">{heading.notes}</p>
                       )}
@@ -391,6 +683,9 @@ export function SeoAuditResults({ result, url }: SeoAuditResultsProps) {
                         <p className="text-xs text-muted-foreground mt-1">
                           Place: {module.where}
                         </p>
+                        {module.rationale && (
+                          <p className="text-xs text-blue-600 mt-1 italic">{module.rationale}</p>
+                        )}
                         <ul className="list-disc list-inside text-xs text-muted-foreground mt-2 space-y-1">
                           {module.what_to_include.slice(0, 2).map((item, itemIdx) => (
                             <li key={itemIdx}>{item}</li>
@@ -418,17 +713,24 @@ export function SeoAuditResults({ result, url }: SeoAuditResultsProps) {
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-base">{schema.schema_type}</CardTitle>
-                    <Badge
-                      variant={
-                        schema.action === "add"
-                          ? "default"
-                          : schema.action === "fix"
-                          ? "destructive"
-                          : "outline"
-                      }
-                    >
-                      {schema.action}
-                    </Badge>
+                    <div className="flex gap-2">
+                      {schema.observation_type && (
+                        <Badge className={`text-[10px] ${getObservationTypeColor(schema.observation_type)}`}>
+                          {schema.observation_type.replace("_", " ")}
+                        </Badge>
+                      )}
+                      <Badge
+                        variant={
+                          schema.action === "add"
+                            ? "default"
+                            : schema.action === "fix"
+                            ? "destructive"
+                            : "outline"
+                        }
+                      >
+                        {schema.action}
+                      </Badge>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>

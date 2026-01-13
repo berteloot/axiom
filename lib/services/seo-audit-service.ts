@@ -1,14 +1,52 @@
 import * as cheerio from "cheerio";
-import { generateSeoAudit, type SeoAuditContext, type PageAnalysis } from "@/lib/ai/seo-audit";
+import { 
+  generateSeoAudit, 
+  type SeoAuditContext, 
+  type PageAnalysis, 
+  type DataQualityInput, 
+  type SearchQueryData 
+} from "@/lib/ai/seo-audit";
 import { testBrandConsistency } from "@/lib/ai/brand-consistency";
 import { prisma } from "@/lib/prisma";
 
 const JINA_READER_URL = "https://r.jina.ai";
 const JINA_API_KEY = process.env.JINA_API_KEY;
+const DATAFORSEO_LOGIN = process.env.DATAFORSEO_LOGIN;
+const DATAFORSEO_PASSWORD = process.env.DATAFORSEO_PASSWORD;
 
-// Simple in-memory cache (URL -> { result, timestamp })
+// Simple in-memory cache with max size (URL -> { result, timestamp })
 const cache = new Map<string, { result: any; timestamp: number }>();
 const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+const CACHE_MAX_SIZE = 100; // Prevent unbounded memory growth
+
+/**
+ * Stable JSON stringify for cache keys - ensures consistent key ordering
+ */
+function stableStringify(obj: any): string {
+  if (obj === null || obj === undefined) return "";
+  if (typeof obj !== "object") return JSON.stringify(obj);
+  if (Array.isArray(obj)) {
+    return "[" + obj.map(stableStringify).join(",") + "]";
+  }
+  const keys = Object.keys(obj).sort();
+  return "{" + keys.map(k => `"${k}":${stableStringify(obj[k])}`).join(",") + "}";
+}
+
+/**
+ * Prune cache if it exceeds max size (LRU-style: remove oldest entries)
+ */
+function pruneCache(): void {
+  if (cache.size <= CACHE_MAX_SIZE) return;
+  
+  // Convert to array, sort by timestamp, remove oldest
+  const entries = Array.from(cache.entries())
+    .sort((a, b) => a[1].timestamp - b[1].timestamp);
+  
+  const toRemove = entries.slice(0, cache.size - CACHE_MAX_SIZE);
+  for (const [key] of toRemove) {
+    cache.delete(key);
+  }
+}
 
 /**
  * Normalize URL (add protocol if missing)
@@ -198,9 +236,19 @@ async function fetchHtml(url: string): Promise<string> {
 }
 
 /**
+ * Count words in text content
+ */
+function countWords(text: string): number {
+  return text
+    .replace(/[^\w\s]/g, " ")
+    .split(/\s+/)
+    .filter(word => word.length > 0).length;
+}
+
+/**
  * Parse DOM and extract structured data
  */
-function parseDom(html: string): PageAnalysis["domData"] {
+function parseDom(html: string, pageUrl: string): PageAnalysis["domData"] {
   const $ = cheerio.load(html);
 
   // Extract title
@@ -214,68 +262,170 @@ function parseDom(html: string): PageAnalysis["domData"] {
   const canonical =
     $('link[rel="canonical"]').attr("href")?.trim() || null;
 
-  // Extract robots meta
+  // Extract robots meta variants
   const robotsMeta =
     $('meta[name="robots"]').attr("content")?.trim() || null;
+  const googlebotMeta =
+    $('meta[name="googlebot"]').attr("content")?.trim() || null;
+  const bingbotMeta =
+    $('meta[name="bingbot"]').attr("content")?.trim() || null;
+
+  // Extract viewport meta
+  const viewport =
+    $('meta[name="viewport"]').attr("content")?.trim() || null;
+
+  // Extract Open Graph tags
+  const openGraph = {
+    title: $('meta[property="og:title"]').attr("content")?.trim() || null,
+    description: $('meta[property="og:description"]').attr("content")?.trim() || null,
+    image: $('meta[property="og:image"]').attr("content")?.trim() || null,
+    url: $('meta[property="og:url"]').attr("content")?.trim() || null,
+    type: $('meta[property="og:type"]').attr("content")?.trim() || null,
+    siteName: $('meta[property="og:site_name"]').attr("content")?.trim() || null,
+  };
+
+  // Extract Twitter Card tags
+  const twitterCard = {
+    card: $('meta[name="twitter:card"]').attr("content")?.trim() || null,
+    title: $('meta[name="twitter:title"]').attr("content")?.trim() || null,
+    description: $('meta[name="twitter:description"]').attr("content")?.trim() || null,
+    image: $('meta[name="twitter:image"]').attr("content")?.trim() || null,
+    site: $('meta[name="twitter:site"]').attr("content")?.trim() || null,
+    creator: $('meta[name="twitter:creator"]').attr("content")?.trim() || null,
+  };
+
+  // Extract hreflang tags for international SEO
+  const hreflangTags: Array<{ hreflang: string; href: string }> = [];
+  $('link[rel="alternate"][hreflang]').each((_: number, el: cheerio.Element) => {
+    const hreflang = $(el).attr("hreflang")?.trim();
+    const href = $(el).attr("href")?.trim();
+    if (hreflang && href) {
+      hreflangTags.push({ hreflang, href });
+    }
+  });
 
   // Extract headings (H1-H3)
   const headings: Array<{ level: number; text: string }> = [];
-  $("h1, h2, h2, h3, h3").each((_, el) => {
-    const level = parseInt(el.tagName.charAt(1), 10);
+  $("h1, h2, h3").each((_: number, el: cheerio.Element) => {
+    const tag = ((el as any).tagName || (el as any).name || "").toLowerCase();
+    const level = tag && /^h[1-6]$/.test(tag) ? parseInt(tag.slice(1), 10) : 0;
     const text = $(el).text().trim();
-    if (text) {
+    if (text && level) {
       headings.push({ level, text });
     }
   });
 
-  // Extract links
+  // Calculate word count from body text
+  const bodyText = $("body").text() || "";
+  const wordCount = countWords(bodyText);
+
   const internalLinks: Array<{ href: string; anchorText: string }> = [];
   const externalLinks: Array<{ href: string; anchorText: string }> = [];
-  const baseUrl = $('base').attr('href') || '';
 
-  $("a[href]").each((_, el) => {
-    const href = $(el).attr("href");
-    const anchorText = $(el).text().trim();
-    if (!href || !anchorText) return;
+  // Resolve relative URLs against the actual page URL (not a placeholder).
+  const normalizedPageUrl = normalizeUrl(pageUrl);
+  let pageHostname = "";
+  try {
+    pageHostname = new URL(normalizedPageUrl).hostname.replace(/^www\./, "");
+  } catch {
+    pageHostname = "";
+  }
 
-    // Determine if internal or external
+  const baseHref = $("base").attr("href") || "";
+  let baseForResolve = normalizedPageUrl;
+  try {
+    baseForResolve = baseHref ? new URL(baseHref, normalizedPageUrl).toString() : normalizedPageUrl;
+  } catch {
+    baseForResolve = normalizedPageUrl;
+  }
+
+  $("a[href]").each((_: number, el: cheerio.Element) => {
+    const hrefRaw = $(el).attr("href");
+    if (!hrefRaw) return;
+
+    // Anchor text can be empty for icon links; fall back to aria-label/title.
+    const anchorText =
+      $(el).text().trim() ||
+      $(el).attr("aria-label")?.trim() ||
+      $(el).attr("title")?.trim() ||
+      "";
+
+    // Ignore non-navigational schemes.
+    const href = hrefRaw.trim();
+    if (!href || href.startsWith("javascript:") || href.startsWith("mailto:") || href.startsWith("tel:")) {
+      return;
+    }
+
     try {
-      const url = new URL(href, baseUrl || 'https://example.com');
-      const isInternal = url.hostname === new URL(baseUrl || url.href).hostname || href.startsWith('/');
+      const resolved = new URL(href, baseForResolve);
+      const hrefNormalized = resolved.toString();
+      const linkHostname = resolved.hostname.replace(/^www\./, "");
+      const isInternal = !!pageHostname && linkHostname === pageHostname;
+
       if (isInternal) {
-        internalLinks.push({ href, anchorText });
+        internalLinks.push({ href: hrefNormalized, anchorText });
       } else {
-        externalLinks.push({ href, anchorText });
+        externalLinks.push({ href: hrefNormalized, anchorText });
       }
     } catch {
-      // Relative URL - treat as internal
-      if (href.startsWith('/') || href.startsWith('./') || href.startsWith('../')) {
+      // If parsing fails but it is clearly a relative path, treat as internal.
+      if (href.startsWith("/") || href.startsWith("./") || href.startsWith("../") || href.startsWith("#")) {
         internalLinks.push({ href, anchorText });
       }
     }
   });
 
-  // Extract images
-  const images: Array<{ src: string; alt: string | null }> = [];
-  $("img").each((_, el) => {
-    const src = $(el).attr("src");
-    const alt = $(el).attr("alt") || null;
+  // Extract images with extended data
+  const images: PageAnalysis["domData"]["images"] = [];
+  let imagesWithoutAlt = 0;
+  let imagesWithoutDimensions = 0;
+
+  $("img").each((_: number, el: cheerio.Element) => {
+    const $el = $(el);
+    const src = $el.attr("src") || $el.attr("data-src") || $el.attr("data-lazy-src") || null;
+    const alt = $el.attr("alt") || null;
+    const width = $el.attr("width") || null;
+    const height = $el.attr("height") || null;
+    const loading = $el.attr("loading") || null;
+    const srcset = $el.attr("srcset") || $el.attr("data-srcset") || null;
+    
+    // Check for lazy loading patterns
+    const hasLazySrc = !!($el.attr("data-src") || $el.attr("data-lazy-src") || $el.attr("data-srcset"));
+
     if (src) {
-      images.push({ src, alt });
+      images.push({
+        src,
+        alt,
+        width,
+        height,
+        loading,
+        hasLazySrc,
+        srcset,
+      });
+
+      if (!alt || alt.trim() === "") {
+        imagesWithoutAlt++;
+      }
+      if (!width || !height) {
+        imagesWithoutDimensions++;
+      }
     }
   });
 
   // Extract JSON-LD schema blocks
   const schemaJsonLd: Array<Record<string, any>> = [];
-  $('script[type="application/ld+json"]').each((_, el) => {
+  let schemaParseErrors = 0;
+  
+  $('script[type="application/ld+json"]').each((_: number, el: cheerio.Element) => {
     try {
       const content = $(el).html();
       if (content) {
         const parsed = JSON.parse(content);
         schemaJsonLd.push(parsed);
       }
-    } catch (e) {
-      // Invalid JSON-LD - skip
+    } catch {
+      // Invalid JSON-LD - count as error
+      schemaParseErrors++;
     }
   });
 
@@ -284,12 +434,165 @@ function parseDom(html: string): PageAnalysis["domData"] {
     metaDescription,
     canonical,
     robotsMeta,
+    googlebotMeta,
+    bingbotMeta,
+    viewport,
+    openGraph,
+    twitterCard,
+    hreflangTags,
     headings,
+    wordCount,
     internalLinks,
     externalLinks,
     images,
+    imagesWithoutAlt,
+    imagesWithoutDimensions,
     schemaJsonLd,
+    schemaParseErrors,
   };
+}
+
+/**
+ * Fetch related search queries from DataForSEO
+ * Uses keyword_suggestions endpoint to find what users are actually searching for
+ */
+async function fetchSearchQueries(
+  seedKeyword: string,
+  locationName: string = "United States",
+  languageName: string = "English"
+): Promise<{ queries: SearchQueryData[]; available: boolean }> {
+  if (!DATAFORSEO_LOGIN || !DATAFORSEO_PASSWORD) {
+    console.log("[SEO Audit] DataForSEO credentials not configured - skipping search query research");
+    return { queries: [], available: false };
+  }
+
+  console.log(`[SEO Audit] Fetching search queries for: "${seedKeyword}"`);
+
+  const credentials = Buffer.from(`${DATAFORSEO_LOGIN}:${DATAFORSEO_PASSWORD}`).toString("base64");
+
+  try {
+    // Use keyword_suggestions for broader coverage
+    const response = await fetch(
+      "https://api.dataforseo.com/v3/dataforseo_labs/google/keyword_suggestions/live",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${credentials}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify([
+          {
+            keyword: seedKeyword,
+            location_name: locationName,
+            language_name: languageName,
+            limit: 30, // Get top 30 related queries
+            include_seed_keyword: true,
+          },
+        ]),
+        signal: AbortSignal.timeout(15000),
+      }
+    );
+
+    if (!response.ok) {
+      console.warn(`[SEO Audit] DataForSEO API error: ${response.status}`);
+      return { queries: [], available: true }; // Available but failed
+    }
+
+    const data = await response.json();
+    
+    if (data.status_code !== 20000) {
+      console.warn(`[SEO Audit] DataForSEO returned error: ${data.status_message}`);
+      return { queries: [], available: true };
+    }
+
+    const task = data.tasks?.[0];
+    if (!task || task.status_code !== 20000) {
+      console.warn("[SEO Audit] DataForSEO task failed");
+      return { queries: [], available: true };
+    }
+
+    // Extract items from various response structures
+    let items: any[] = [];
+    if (task.result?.[0]?.items) {
+      items = task.result[0].items;
+    } else if (task.data?.[0]?.items) {
+      items = task.data[0].items;
+    }
+
+    if (!items || items.length === 0) {
+      console.log("[SEO Audit] No related queries found");
+      return { queries: [], available: true };
+    }
+
+    // Transform to our format, prioritizing by search volume
+    const queries: SearchQueryData[] = items
+      .map((item: any) => {
+        const keyword = item.keyword || item.keyword_data?.keyword_info?.keyword;
+        const searchVolume = item.search_volume ?? item.keyword_data?.keyword_info?.search_volume ?? 0;
+        const cpc = item.cpc ?? item.keyword_data?.keyword_info?.cpc ?? 0;
+        const competition = item.competition_level ?? item.keyword_data?.keyword_info?.competition_level ?? "unknown";
+        
+        if (!keyword) return null;
+        
+        return {
+          query: keyword,
+          searchVolume,
+          cpc,
+          competition,
+          isQuestion: /^(what|how|why|when|where|who|which|can|do|does|is|are|should|would|could)\s/i.test(keyword),
+        };
+      })
+      .filter((q: SearchQueryData | null): q is SearchQueryData => q !== null)
+      .sort((a: SearchQueryData, b: SearchQueryData) => b.searchVolume - a.searchVolume)
+      .slice(0, 20); // Top 20 by volume
+
+    console.log(`[SEO Audit] Found ${queries.length} related search queries`);
+    if (queries.length > 0) {
+      console.log(`[SEO Audit] Top query: "${queries[0].query}" (${queries[0].searchVolume} monthly searches)`);
+    }
+
+    return { queries, available: true };
+  } catch (error) {
+    console.error("[SEO Audit] Error fetching search queries:", error);
+    return { queries: [], available: true }; // Service available but request failed
+  }
+}
+
+/**
+ * Extract a seed keyword from page content for search query research
+ */
+function extractSeedKeyword(
+  title: string | null,
+  h1: string | null,
+  targetKeyword?: string
+): string {
+  // Priority: user-provided target keyword > H1 > title
+  if (targetKeyword && targetKeyword.trim()) {
+    return targetKeyword.trim();
+  }
+  
+  if (h1 && h1.trim()) {
+    // Clean up H1 - remove common patterns
+    let cleaned = h1.trim()
+      .replace(/^(how to|guide to|the ultimate|complete guide|everything about)\s*/i, "")
+      .replace(/\s*(\|.*|\-.*|:.*|–.*)$/, "") // Remove suffix separators
+      .trim();
+    if (cleaned.length > 3 && cleaned.length < 80) {
+      return cleaned;
+    }
+  }
+  
+  if (title && title.trim()) {
+    // Clean up title - remove site name suffixes
+    let cleaned = title.trim()
+      .replace(/\s*(\|.*|\-.*|–.*|::.*)$/, "")
+      .trim();
+    if (cleaned.length > 3 && cleaned.length < 80) {
+      return cleaned;
+    }
+  }
+  
+  return "";
 }
 
 /**
@@ -301,6 +604,9 @@ export interface AuditOptions {
   enableSiteCrawl?: boolean; // Not implemented in Phase 1
   accountId?: string; // Required for brand consistency analysis
   includeBrandConsistency?: boolean; // Whether to include brand consistency analysis
+  includeSearchQueries?: boolean; // Whether to fetch related search queries from DataForSEO
+  location?: string; // Location for search query research (default: "United States")
+  language?: string; // Language for search query research (default: "English")
 }
 
 export interface AuditResult {
@@ -309,14 +615,64 @@ export interface AuditResult {
   errors?: Array<{ stage: "jina" | "fetch" | "parse" | "analyze"; message: string }>;
 }
 
+/**
+ * Create empty DOM data structure for fallback scenarios
+ */
+function createEmptyDomData(): PageAnalysis["domData"] {
+  return {
+    title: null,
+    metaDescription: null,
+    canonical: null,
+    robotsMeta: null,
+    googlebotMeta: null,
+    bingbotMeta: null,
+    viewport: null,
+    openGraph: {
+      title: null,
+      description: null,
+      image: null,
+      url: null,
+      type: null,
+      siteName: null,
+    },
+    twitterCard: {
+      card: null,
+      title: null,
+      description: null,
+      image: null,
+      site: null,
+      creator: null,
+    },
+    hreflangTags: [],
+    headings: [],
+    wordCount: 0,
+    internalLinks: [],
+    externalLinks: [],
+    images: [],
+    imagesWithoutAlt: 0,
+    imagesWithoutDimensions: 0,
+    schemaJsonLd: [],
+    schemaParseErrors: 0,
+  };
+}
+
 export async function auditSeoPage(
   options: AuditOptions
 ): Promise<AuditResult> {
   const { url, context } = options;
   const errors: Array<{ stage: "jina" | "fetch" | "parse" | "analyze"; message: string }> = [];
 
-  // Check cache
-  const cacheKey = `${url}-${JSON.stringify(context || {})}`;
+  // Track data quality throughout the pipeline
+  const dataQuality: DataQualityInput = {
+    htmlAvailable: false,
+    jinaContentLength: 0,
+    domParseSuccess: false,
+    contentTruncated: false,
+    limitations: [],
+  };
+
+  // Check cache with stable key
+  const cacheKey = `${url}-${stableStringify(context || {})}`;
   const cached = cache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
     return { success: true, data: cached.result };
@@ -327,11 +683,13 @@ export async function auditSeoPage(
     let jinaContent: string;
     try {
       jinaContent = await fetchJinaContent(url);
+      dataQuality.jinaContentLength = jinaContent.length;
     } catch (error) {
       errors.push({
         stage: "jina",
         message: error instanceof Error ? error.message : "Failed to fetch from Jina",
       });
+      dataQuality.limitations.push("Jina content fetch failed");
       throw error;
     }
 
@@ -339,11 +697,13 @@ export async function auditSeoPage(
     let html: string;
     try {
       html = await fetchHtml(url);
+      dataQuality.htmlAvailable = true;
     } catch (error) {
       errors.push({
         stage: "fetch",
         message: error instanceof Error ? error.message : "Failed to fetch HTML",
       });
+      dataQuality.limitations.push("HTML fetch failed - structure analysis limited");
       // Continue with Jina content only if HTML fetch fails
       html = "";
     }
@@ -352,20 +712,11 @@ export async function auditSeoPage(
     let domData: PageAnalysis["domData"];
     try {
       if (html) {
-        domData = parseDom(html);
+        domData = parseDom(html, url);
+        dataQuality.domParseSuccess = true;
       } else {
         // Fallback if HTML fetch failed
-        domData = {
-          title: null,
-          metaDescription: null,
-          canonical: null,
-          robotsMeta: null,
-          headings: [],
-          internalLinks: [],
-          externalLinks: [],
-          images: [],
-          schemaJsonLd: [],
-        };
+        domData = createEmptyDomData();
         errors.push({
           stage: "parse",
           message: "HTML fetch failed, using Jina content only",
@@ -376,21 +727,44 @@ export async function auditSeoPage(
         stage: "parse",
         message: error instanceof Error ? error.message : "Failed to parse DOM",
       });
+      dataQuality.limitations.push("DOM parse failed - structure analysis unavailable");
       // Use minimal DOM data
-      domData = {
-        title: null,
-        metaDescription: null,
-        canonical: null,
-        robotsMeta: null,
-        headings: [],
-        internalLinks: [],
-        externalLinks: [],
-        images: [],
-        schemaJsonLd: [],
-      };
+      domData = createEmptyDomData();
     }
 
-    // Step 4: Generate audit with AI
+    // Step 4: Fetch search queries (if enabled)
+    let searchQueries: import("@/lib/ai/seo-audit").SearchQueryData[] = [];
+    if (options.includeSearchQueries !== false) { // Default to true
+      try {
+        // Extract seed keyword from page content
+        const h1Text = domData.headings.find(h => h.level === 1)?.text || null;
+        const seedKeyword = extractSeedKeyword(domData.title, h1Text, context?.target_keyword);
+        
+        if (seedKeyword) {
+          console.log(`[SEO Audit] Using seed keyword: "${seedKeyword}"`);
+          const queryResult = await fetchSearchQueries(
+            seedKeyword,
+            options.location || "United States",
+            options.language || "English"
+          );
+          searchQueries = queryResult.queries;
+          
+          if (!queryResult.available) {
+            dataQuality.limitations.push("DataForSEO not configured - using inferred primary query");
+          } else if (searchQueries.length === 0) {
+            dataQuality.limitations.push("No related search queries found for this topic");
+          }
+        } else {
+          console.log("[SEO Audit] Could not extract seed keyword from page content");
+          dataQuality.limitations.push("Could not extract seed keyword - using inferred primary query");
+        }
+      } catch (error) {
+        console.error("[SEO Audit] Error fetching search queries:", error);
+        // Continue without search queries - not a critical failure
+      }
+    }
+
+    // Step 5: Generate audit with AI
     const analysis: PageAnalysis = {
       jinaContent,
       html,
@@ -399,7 +773,7 @@ export async function auditSeoPage(
 
     let auditResult: Awaited<ReturnType<typeof generateSeoAudit>>;
     try {
-      auditResult = await generateSeoAudit(url, analysis, context);
+      auditResult = await generateSeoAudit(url, analysis, context, dataQuality, searchQueries);
     } catch (error) {
       errors.push({
         stage: "analyze",
@@ -446,11 +820,12 @@ export async function auditSeoPage(
       auditResult.errors = [...(auditResult.errors || []), ...errors];
     }
 
-    // Cache the result
+    // Cache the result and prune if needed
     cache.set(cacheKey, {
       result: auditResult,
       timestamp: Date.now(),
     });
+    pruneCache();
 
     return {
       success: true,
