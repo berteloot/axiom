@@ -678,39 +678,41 @@ export function TeamMembersSection({ accountId, accountName, colorScheme }: Team
                             {new Date(member.createdAt).toLocaleDateString()}
                           </TableCell>
                           <TableCell>
-                            {!isOwner && (
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                    <MoreVertical className="h-4 w-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem onClick={() => handleEditMember(member)}>
-                                    <Edit2 className="h-4 w-4 mr-2" />
-                                    Edit Details
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem 
-                                    onClick={() => handleSendLoginEmail(member.id, member.email)}
-                                    disabled={sendingLoginEmailId === member.id}
-                                  >
-                                    {sendingLoginEmailId === member.id ? (
-                                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                    ) : (
-                                      <Send className="h-4 w-4 mr-2" />
-                                    )}
-                                    Send Login Email
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem 
-                                    onClick={() => setDeleteMemberId(member.id)}
-                                    className="text-destructive focus:text-destructive"
-                                  >
-                                    <Trash2 className="h-4 w-4 mr-2" />
-                                    Remove Member
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            )}
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => handleEditMember(member)}>
+                                  <Edit2 className="h-4 w-4 mr-2" />
+                                  Edit Details
+                                </DropdownMenuItem>
+                                {!isOwner && (
+                                  <>
+                                    <DropdownMenuItem 
+                                      onClick={() => handleSendLoginEmail(member.id, member.email)}
+                                      disabled={sendingLoginEmailId === member.id}
+                                    >
+                                      {sendingLoginEmailId === member.id ? (
+                                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                      ) : (
+                                        <Send className="h-4 w-4 mr-2" />
+                                      )}
+                                      Send Login Email
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem 
+                                      onClick={() => setDeleteMemberId(member.id)}
+                                      className="text-destructive focus:text-destructive"
+                                    >
+                                      <Trash2 className="h-4 w-4 mr-2" />
+                                      Remove Member
+                                    </DropdownMenuItem>
+                                  </>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </TableCell>
                         </TableRow>
                       );
