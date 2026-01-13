@@ -106,6 +106,8 @@ export const updateAssetSchema = z.object({
   lastReviewedAt: z.string().datetime().nullable().optional(),
   expiryDate: z.string().datetime().nullable().optional(),
   inUse: z.boolean().optional(),
+  uploadedById: z.string().nullable().optional(),
+  uploadedByNameOverride: z.string().max(255).nullable().optional(),
 });
 
 /**

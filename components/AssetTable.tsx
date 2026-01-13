@@ -412,7 +412,11 @@ export function AssetTable({
                     </Badge>
                   </TableCell>
                   <TableCell className="w-24 px-2">
-                    {asset.uploadedBy?.name ? (
+                    {(asset as any).uploadedByNameOverride ? (
+                      <span className="text-xs text-muted-foreground truncate" title={(asset as any).uploadedByNameOverride}>
+                        {(asset as any).uploadedByNameOverride}
+                      </span>
+                    ) : asset.uploadedBy?.name ? (
                       <span className="text-xs text-muted-foreground truncate" title={asset.uploadedBy.name}>
                         {asset.uploadedBy.name}
                       </span>

@@ -49,6 +49,8 @@ export function ReviewModal({
     outreachTip: asset.outreachTip,
     productLineIds: asset.productLines?.map(pl => pl.id) || [],
     inUse: asset.inUse || false,
+    uploadedById: asset.uploadedBy?.id || null,
+    uploadedByNameOverride: (asset as any).uploadedByNameOverride || null,
   });
   const [customCreatedAt, setCustomCreatedAt] = useState<Date | null>(
     asset.customCreatedAt ? new Date(asset.customCreatedAt) : null
@@ -77,6 +79,8 @@ export function ReviewModal({
         outreachTip: asset.outreachTip,
         productLineIds: asset.productLines?.map(pl => pl.id) || [],
         inUse: asset.inUse || false,
+        uploadedById: asset.uploadedBy?.id || null,
+        uploadedByNameOverride: (asset as any).uploadedByNameOverride || null,
       });
       setCustomCreatedAt(asset.customCreatedAt ? new Date(asset.customCreatedAt) : null);
       setLastReviewedAt(asset.lastReviewedAt ? new Date(asset.lastReviewedAt) : null);
@@ -117,6 +121,8 @@ export function ReviewModal({
           lastReviewedAt: lastReviewedAt?.toISOString() || null,
           expiryDate: expiryDate?.toISOString() || null,
           inUse: formData.inUse,
+          uploadedById: formData.uploadedById,
+          uploadedByNameOverride: formData.uploadedByNameOverride,
         }),
       });
 

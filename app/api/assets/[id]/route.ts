@@ -22,6 +22,12 @@ export async function GET(
         accountId, // Ensure asset belongs to current account
       },
       include: {
+        uploadedBy: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
         productLines: {
           include: {
             productLine: {
@@ -108,6 +114,8 @@ export async function PATCH(
       lastReviewedAt,
       expiryDate,
       inUse,
+      uploadedById,
+      uploadedByNameOverride,
     } = validationResult.data;
 
     // First verify the asset belongs to the current account
@@ -153,6 +161,22 @@ export async function PATCH(
       ? standardizeICPTargets(icpTargets)
       : undefined;
 
+    // Verify uploadedById belongs to the account if provided
+    if (uploadedById !== undefined && uploadedById !== null) {
+      const userAccount = await prisma.userAccount.findFirst({
+        where: {
+          userId: uploadedById,
+          accountId,
+        },
+      });
+      if (!userAccount) {
+        return NextResponse.json(
+          { error: "User does not belong to this account" },
+          { status: 400 }
+        );
+      }
+    }
+
     // Build update data object, conditionally including inUse if provided
     const updateData: Record<string, any> = {
       ...(title !== undefined && { title }),
@@ -166,6 +190,8 @@ export async function PATCH(
       ...(customCreatedAt !== undefined && { customCreatedAt: customCreatedAt ? new Date(customCreatedAt) : null }),
       ...(lastReviewedAt !== undefined && { lastReviewedAt: lastReviewedAt ? new Date(lastReviewedAt) : null }),
       ...(expiryDate !== undefined && { expiryDate: expiryDate ? new Date(expiryDate) : null }),
+      ...(uploadedById !== undefined && { uploadedById: uploadedById || null }),
+      ...(uploadedByNameOverride !== undefined && { uploadedByNameOverride: uploadedByNameOverride || null }),
     };
 
     // Only include inUse if explicitly provided (gracefully handle if column doesn't exist yet)
@@ -178,6 +204,12 @@ export async function PATCH(
       where: { id: params.id },
       data: updateData,
       include: {
+        uploadedBy: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
         productLines: {
           include: {
             productLine: {
@@ -215,6 +247,12 @@ export async function PATCH(
       const updatedAsset = await prisma.asset.findUnique({
         where: { id: params.id },
         include: {
+          uploadedBy: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
           productLines: {
             include: {
               productLine: {

@@ -49,6 +49,7 @@ export interface Asset {
   inUse?: boolean; // Whether the asset is currently being used
   // Upload tracking
   uploadedBy?: { id: string; name: string | null; } | null; // User who uploaded the asset
+  uploadedByNameOverride?: string | null; // Custom name override for uploader
   // Product lines relation (many-to-many)
   productLines?: ProductLine[]; // Product/Service lines this asset belongs to
 }

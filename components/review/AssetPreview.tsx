@@ -278,7 +278,21 @@ export function AssetPreview({ asset }: AssetPreviewProps) {
   return (
     <div className="border rounded-lg p-4 bg-muted/50">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="font-semibold">Asset Preview</h3>
+        <div className="space-y-1">
+          <h3 className="font-semibold">Asset Preview</h3>
+          <div className="text-xs text-muted-foreground space-y-0.5">
+            {asset.uploadedBy?.name || (asset as any).uploadedByNameOverride ? (
+              <div>Uploaded by: {(asset as any).uploadedByNameOverride || asset.uploadedBy?.name}</div>
+            ) : null}
+            <div>Uploaded: {new Date(asset.createdAt).toLocaleDateString("en-US", { 
+              year: "numeric", 
+              month: "short", 
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit"
+            })}</div>
+          </div>
+        </div>
         {isImage && (
           <div className="flex items-center gap-1.5 text-xs text-purple-600 dark:text-purple-400 bg-purple-500/10 px-2 py-1 rounded-full">
             <Sparkles className="w-3 h-3" />

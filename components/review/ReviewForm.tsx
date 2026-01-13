@@ -39,6 +39,9 @@ interface ReviewFormProps {
     outreachTip: string;
     productLineIds: string[];
     inUse: boolean;
+    uploadedById?: string | null;
+    uploadedByNameOverride?: string | null;
+    users?: Array<{ id: string; email: string; name: string | null }>;
   };
   customCreatedAt: Date | null;
   lastReviewedAt: Date | null;
@@ -67,6 +70,8 @@ export function ReviewForm({
   const [customTargets, setCustomTargets] = useState<string[]>([]);
   const [productLines, setProductLines] = useState<ProductLine[]>([]);
   const [isLoadingProductLines, setIsLoadingProductLines] = useState(true);
+  const [users, setUsers] = useState<Array<{ id: string; email: string; name: string | null }>>([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(true);
 
   // Fetch unified ICP targets on mount (component remounts when modal opens)
   useEffect(() => {
@@ -118,6 +123,29 @@ export function ReviewForm({
     };
     fetchProductLines();
   }, []); // Only on mount - component remounts when modal opens due to key prop
+
+  // Fetch users on mount
+  useEffect(() => {
+    const fetchUsers = async () => {
+      setIsLoadingUsers(true);
+      try {
+        const response = await fetch("/api/users");
+        if (response.ok) {
+          const data = await response.json();
+          setUsers(data.users || []);
+          // Update formData with users list
+          onFormDataChange({ users: data.users || [] });
+        } else {
+          console.error("[ReviewForm] Failed to fetch users:", response.status);
+        }
+      } catch (error) {
+        console.error("[ReviewForm] Error fetching users:", error);
+      } finally {
+        setIsLoadingUsers(false);
+      }
+    };
+    fetchUsers();
+  }, []); // Only on mount
 
   // Auto-save custom ICP targets when they're created
   const handleIcpTargetsChange = async (selected: string[]) => {
@@ -494,6 +522,68 @@ export function ReviewForm({
             return compareDate < today
           }}
         />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="uploadedBy">Uploaded By</Label>
+        <div className="space-y-2">
+          <Select
+            value={formData.uploadedById || ""}
+            onValueChange={(value) => {
+              onFormDataChange({ 
+                uploadedById: value || null,
+                uploadedByNameOverride: value ? null : formData.uploadedByNameOverride // Clear custom name if user selected
+              });
+            }}
+            disabled={isLoadingUsers}
+          >
+            <SelectTrigger id="uploadedBy">
+              <SelectValue placeholder={isLoadingUsers ? "Loading users..." : "Select user"} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">None</SelectItem>
+              {users.map((user) => (
+                <SelectItem key={user.id} value={user.id}>
+                  {user.name || user.email}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="text-xs text-muted-foreground">OR</div>
+          <Input
+            placeholder="Enter custom name"
+            value={formData.uploadedByNameOverride || ""}
+            onChange={(e) => {
+              onFormDataChange({ 
+                uploadedByNameOverride: e.target.value || null,
+                uploadedById: e.target.value ? null : formData.uploadedById // Clear user selection if custom name entered
+              });
+            }}
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {formData.uploadedByNameOverride 
+            ? `Custom name: ${formData.uploadedByNameOverride}`
+            : asset.uploadedBy?.name 
+            ? `Current: ${asset.uploadedBy.name}` 
+            : "No uploader assigned"}
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="uploadDate">Upload Date</Label>
+        <div className="text-sm text-muted-foreground p-2 border rounded-md bg-muted/30">
+          {new Date(asset.createdAt).toLocaleDateString("en-US", { 
+            year: "numeric", 
+            month: "long", 
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit"
+          })}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          This is the actual date when the asset was uploaded to the system
+        </p>
       </div>
 
       <div className="flex items-center space-x-3 p-4 border rounded-lg bg-muted/30">

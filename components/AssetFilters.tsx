@@ -616,12 +616,21 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
 export function applyAssetFilters(assets: Asset[], filters: AssetFiltersState): Asset[] {
   let filtered = [...assets];
 
-  // Text search
+  // Text search (includes title, uploaded by name, custom name override, and upload date)
   if (filters.search) {
     const searchLower = filters.search.toLowerCase();
-    filtered = filtered.filter((asset) =>
-      asset.title.toLowerCase().includes(searchLower)
-    );
+    filtered = filtered.filter((asset) => {
+      const titleMatch = asset.title.toLowerCase().includes(searchLower);
+      const userMatch = asset.uploadedBy?.name?.toLowerCase().includes(searchLower);
+      const customNameMatch = (asset as any).uploadedByNameOverride?.toLowerCase().includes(searchLower);
+      // Check if search matches date format or date string
+      const uploadDate = new Date(asset.createdAt);
+      const dateMatch = 
+        uploadDate.toLocaleDateString().toLowerCase().includes(searchLower) ||
+        uploadDate.toISOString().toLowerCase().includes(searchLower) ||
+        uploadDate.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }).toLowerCase().includes(searchLower);
+      return titleMatch || userMatch || customNameMatch || dateMatch;
+    });
   }
 
   // Funnel Stage filter
