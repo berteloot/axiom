@@ -455,6 +455,12 @@ function parseDom(html: string, pageUrl: string): PageAnalysis["domData"] {
 /**
  * Fetch related search queries from DataForSEO
  * Uses related_keywords endpoint which includes search volume data
+ * 
+ * Per DataForSEO docs: https://docs.dataforseo.com/v3/dataforseo_labs-related_keywords-live/
+ * - Returns keywords from "searches related to" SERP feature
+ * - Includes search volume, CPC, competition for each keyword
+ * - depth parameter controls how many levels of related keywords to fetch
+ * - replace_with_core_keyword helps get data for keyword variations
  */
 async function fetchSearchQueries(
   seedKeyword: string,
@@ -472,6 +478,7 @@ async function fetchSearchQueries(
 
   try {
     // Use related_keywords endpoint - includes keyword_data with search volume
+    // Per docs: https://docs.dataforseo.com/v3/dataforseo_labs/google/related_keywords/live/
     const response = await fetch(
       "https://api.dataforseo.com/v3/dataforseo_labs/google/related_keywords/live",
       {
@@ -486,45 +493,68 @@ async function fetchSearchQueries(
             location_name: locationName,
             language_name: languageName,
             limit: 30,
+            depth: 1, // Get first level of related keywords (can increase for more)
             include_seed_keyword: true,
+            replace_with_core_keyword: true, // Better data coverage per docs
           },
         ]),
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(20000), // Increased timeout for API call
       }
     );
 
+    // Monitor rate limits from response headers (best practice)
+    const rateLimitRemaining = response.headers.get("X-RateLimit-Remaining");
+    const rateLimitLimit = response.headers.get("X-RateLimit-Limit");
+    if (rateLimitRemaining && rateLimitLimit) {
+      const remaining = parseInt(rateLimitRemaining);
+      const limit = parseInt(rateLimitLimit);
+      console.log(`[SEO Audit] DataForSEO rate limit: ${remaining}/${limit} remaining`);
+      if (remaining < limit * 0.2) {
+        console.warn(`[SEO Audit] DataForSEO rate limit low: ${remaining}/${limit}`);
+      }
+    }
+
     if (!response.ok) {
-      console.warn(`[SEO Audit] DataForSEO API error: ${response.status}`);
+      const errorText = await response.text().catch(() => "");
+      console.warn(`[SEO Audit] DataForSEO API error: ${response.status} - ${errorText.substring(0, 200)}`);
       return { queries: [], available: true }; // Available but failed
     }
 
     const data = await response.json();
     
+    // Log cost for monitoring (per DataForSEO best practices)
+    if (data.cost) {
+      console.log(`[SEO Audit] DataForSEO API cost: ${data.cost} credits`);
+    }
+    
     if (data.status_code !== 20000) {
-      console.warn(`[SEO Audit] DataForSEO returned error: ${data.status_message}`);
+      console.warn(`[SEO Audit] DataForSEO returned error: ${data.status_code} - ${data.status_message}`);
       return { queries: [], available: true };
     }
 
     const task = data.tasks?.[0];
     if (!task || task.status_code !== 20000) {
-      console.warn(`[SEO Audit] DataForSEO task failed: ${task?.status_message || 'unknown error'}`);
+      console.warn(`[SEO Audit] DataForSEO task failed: ${task?.status_code} - ${task?.status_message || 'unknown error'}`);
       return { queries: [], available: true };
     }
 
     // Extract items from result structure
+    // Per docs: result[0].items contains the related keywords
     let items: any[] = [];
     if (task.result?.[0]?.items) {
       items = task.result[0].items;
     }
 
     // Also check for seed_keyword_data to include the original keyword
+    // Per docs: seed_keyword_data contains metrics for the seed keyword itself
     const seedKeywordData = task.result?.[0]?.seed_keyword_data;
 
     if (!items || items.length === 0) {
-      console.log("[SEO Audit] No related queries found");
-      // If we have seed keyword data, use that
+      console.log("[SEO Audit] No related queries found in DataForSEO response");
+      // If we have seed keyword data, use that as fallback
       if (seedKeywordData?.keyword_info) {
         const info = seedKeywordData.keyword_info;
+        console.log(`[SEO Audit] Using seed keyword data: "${info.keyword}" (${info.search_volume || 0} monthly searches)`);
         return {
           queries: [{
             query: info.keyword || seedKeyword,
@@ -540,9 +570,9 @@ async function fetchSearchQueries(
     }
 
     // Transform to our format - related_keywords uses keyword_data structure
+    // Per docs: each item has keyword_data.keyword_info with search metrics
     const queries: SearchQueryData[] = items
       .map((item: any) => {
-        // related_keywords endpoint structure: item.keyword_data.keyword_info
         const keywordInfo = item.keyword_data?.keyword_info;
         if (!keywordInfo?.keyword) return null;
         
@@ -560,7 +590,8 @@ async function fetchSearchQueries(
 
     console.log(`[SEO Audit] Found ${queries.length} related search queries`);
     if (queries.length > 0) {
-      console.log(`[SEO Audit] Top query: "${queries[0].query}" (${queries[0].searchVolume.toLocaleString()} monthly searches)`);
+      const topQuery = queries[0];
+      console.log(`[SEO Audit] Top query: "${topQuery.query}" (${topQuery.searchVolume.toLocaleString()} monthly searches, $${topQuery.cpc.toFixed(2)} CPC)`);
     }
 
     return { queries, available: true };
