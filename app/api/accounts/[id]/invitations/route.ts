@@ -7,6 +7,7 @@ import { randomBytes } from "crypto";
 import sgMail from "@sendgrid/mail";
 import { generateVerificationToken } from "@/lib/token-utils";
 import { inviteMemberSchema } from "@/lib/validations";
+import { isAllowedEmailDomain, getEmailDomainError } from "@/lib/email-validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -141,6 +142,14 @@ export async function POST(
     }
 
     const { email, role = "MEMBER" } = validation.data;
+
+    // Check if email is from allowed domain
+    if (!isAllowedEmailDomain(email)) {
+      return NextResponse.json(
+        { error: getEmailDomainError() },
+        { status: 403 }
+      );
+    }
 
     // Check if user is already a member of this account
     const existingMember = await prisma.userAccount.findFirst({

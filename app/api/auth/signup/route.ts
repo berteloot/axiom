@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import sgMail from "@sendgrid/mail";
 import { setAccountType } from "@/lib/account-type-store";
 import { generateVerificationToken } from "@/lib/token-utils";
+import { isAllowedEmailDomain, getEmailDomainError } from "@/lib/email-validation";
 
 // Configure SendGrid
 const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
@@ -26,6 +27,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "Valid email address is required" },
         { status: 400 }
+      );
+    }
+
+    // Check if email is from allowed domain
+    if (!isAllowedEmailDomain(email)) {
+      return NextResponse.json(
+        { error: getEmailDomainError() },
+        { status: 403 }
       );
     }
 

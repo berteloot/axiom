@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { hashToken } from "@/lib/token-utils";
 import { encode } from "next-auth/jwt";
 import { randomUUID } from "crypto";
+import { isAllowedEmailDomain, getEmailDomainError } from "@/lib/email-validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +27,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "Valid 6-digit code is required" },
         { status: 400 }
+      );
+    }
+
+    // Check if email is from allowed domain
+    if (!isAllowedEmailDomain(email)) {
+      return NextResponse.json(
+        { error: getEmailDomainError() },
+        { status: 403 }
       );
     }
 

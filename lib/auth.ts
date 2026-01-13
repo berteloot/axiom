@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma"
 import { randomBytes, createHash } from "crypto"
 import sgMail from "@sendgrid/mail"
 import { getAccountType, getAccountName, removeAccountType } from "@/lib/account-type-store"
+import { isAllowedEmailDomain, getEmailDomainError } from "@/lib/email-validation"
 
 // Configure SendGrid
 const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
@@ -89,6 +90,12 @@ export const authOptions: NextAuthOptions = {
       console.log("📧 [EmailProvider] NOTE: NextAuth should have called createVerificationToken BEFORE this");
       console.log("📧 [EmailProvider] Check logs above for 'createVerificationToken' logs");
       console.log("📧 [EmailProvider] ========================================");
+      
+      // Check if email is from allowed domain
+      if (!isAllowedEmailDomain(email)) {
+        console.error("❌ [EmailProvider] Unauthorized email domain:", email);
+        throw new Error(getEmailDomainError());
+      }
       
       // Log token hashing for verification and diagnose casing issues
       try {
@@ -277,6 +284,12 @@ export const authOptions: NextAuthOptions = {
       return session
     },
     async signIn({ user, account, profile }) {
+      // Check if email is from allowed domain
+      if (user.email && !isAllowedEmailDomain(user.email)) {
+        console.error("❌ [SignIn Callback] Unauthorized email domain:", user.email);
+        return false;
+      }
+      
       // For passwordless email auth, clicking the email link IS the verification step
       // Don't block sign-in - the email link itself proves ownership
       // We mark email as verified in the signIn event instead

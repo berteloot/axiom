@@ -6,6 +6,7 @@ import { randomBytes } from "crypto";
 import { generateVerificationToken } from "@/lib/token-utils";
 import { bulkInviteMemberSchema } from "@/lib/validations";
 import sgMail from "@sendgrid/mail";
+import { isAllowedEmailDomain, getEmailDomainError } from "@/lib/email-validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -109,6 +110,14 @@ export async function POST(request: NextRequest) {
     }
 
     const { email, accountIds, role = "MEMBER" } = validation.data;
+
+    // Check if email is from allowed domain
+    if (!isAllowedEmailDomain(email)) {
+      return NextResponse.json(
+        { error: getEmailDomainError() },
+        { status: 403 }
+      );
+    }
 
     // Verify user has permission to invite to all specified accounts
     const userAccounts = await prisma.userAccount.findMany({
