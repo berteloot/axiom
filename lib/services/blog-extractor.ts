@@ -887,6 +887,8 @@ async function fetchAllPagesWithPagination(
   const pagesToVisit = [initialUrl];
   
   let pageCount = 0;
+  let consecutiveEmptyPages = 0;
+  let lastPaginationPattern: string | null = null; // Track which pattern worked
   
   while (pagesToVisit.length > 0 && pageCount < maxPages) {
     const currentUrl = pagesToVisit.shift()!;
@@ -918,28 +920,58 @@ async function fetchAllPagesWithPagination(
       
       console.log(`[Blog Extractor] Page ${pageCount}: Found ${posts.length} posts, ${paginationLinks.length} pagination links`);
       
-      // If we got 0 posts, this page doesn't exist or has no content - stop trying more pages
+      // If we got 0 posts, increment empty page counter
       if (posts.length === 0) {
-        console.log(`[Blog Extractor] Page ${currentUrl} returned 0 posts, stopping pagination`);
-        break;
+        consecutiveEmptyPages++;
+        // Stop after 2 consecutive empty pages (likely reached the end)
+        if (consecutiveEmptyPages >= 2) {
+          console.log(`[Blog Extractor] Found ${consecutiveEmptyPages} consecutive empty pages, stopping pagination`);
+          break;
+        }
+      } else {
+        consecutiveEmptyPages = 0; // Reset counter if we found posts
       }
       
       // If no pagination links found and we have posts, try constructing next page URL
-      // Only try ONE pattern at a time, not all patterns
-      if (paginationLinks.length === 0 && posts.length > 0 && pageCount === 1) {
-        // Try common pagination patterns, but only one pattern at a time
+      // Only try ONE pattern at a time, and only if we haven't found a working pattern yet
+      if (paginationLinks.length === 0 && posts.length > 0) {
         const basePath = new URL(currentUrl).pathname;
-        const nextPage = 2;
+        const currentPageNum = pageCount;
+        const nextPage = currentPageNum + 1;
         
-        // Try the most common pattern first: ?page=2
-        const nextPageUrl = `${baseUrl.origin}${basePath}?page=${nextPage}`;
+        // Determine which pattern to try based on what worked before, or try the most common first
+        let nextPageUrl: string;
+        if (lastPaginationPattern === 'query') {
+          // Continue with query parameter pattern
+          nextPageUrl = `${baseUrl.origin}${basePath}?page=${nextPage}`;
+        } else if (lastPaginationPattern === 'path') {
+          // Continue with path pattern
+          nextPageUrl = `${baseUrl.origin}${basePath}/page/${nextPage}`;
+        } else if (lastPaginationPattern === 'paged') {
+          // Continue with paged pattern
+          nextPageUrl = `${baseUrl.origin}${basePath}?paged=${nextPage}`;
+        } else {
+          // First time - try the most common pattern: ?page=2
+          nextPageUrl = `${baseUrl.origin}${basePath}?page=${nextPage}`;
+          lastPaginationPattern = 'query';
+        }
+        
         if (!visitedPages.has(nextPageUrl) && !pagesToVisit.includes(nextPageUrl)) {
           pagesToVisit.push(nextPageUrl);
           console.log(`[Blog Extractor] No pagination links found, trying constructed URL: ${nextPageUrl}`);
         }
+      } else if (paginationLinks.length > 0) {
+        // Found real pagination links, clear the pattern tracking
+        lastPaginationPattern = null;
       }
     } catch (error) {
       console.warn(`[Blog Extractor] Error fetching page ${currentUrl}:`, error);
+      consecutiveEmptyPages++;
+      // Stop after errors too
+      if (consecutiveEmptyPages >= 2) {
+        console.log(`[Blog Extractor] Too many errors, stopping pagination`);
+        break;
+      }
       continue;
     }
   }
