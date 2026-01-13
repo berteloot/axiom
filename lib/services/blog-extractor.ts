@@ -150,7 +150,7 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
     }
 
     // Always exclude common non-content utility/admin paths
-    const alwaysExcludePatterns = [
+    const alwaysExcludeStringPatterns = [
       "/category/",
       "/tag/",
       "/tags/",
@@ -179,6 +179,16 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
       "/wp-content",
       "/wp-includes",
       "/.well-known",
+      "/solutions/",
+      "/customers/",
+      "/event/",
+      "/book-a-demo/",
+      "/thank-you",
+    ];
+    
+    // Regex patterns for always-excluded paths
+    const alwaysExcludeRegexPatterns = [
+      /^\/\d+(-2)?\/$/, // Draft/unpublished posts (numeric slugs like /3467-2/)
     ];
 
     // Blog-only exclusions (too aggressive for library listings)
@@ -206,11 +216,26 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
       // because those are core content types in library mode.
     ];
 
-    const excludePatterns = isLibraryContext
-      ? alwaysExcludePatterns
-      : [...alwaysExcludePatterns, ...blogOnlyExcludePatterns, "/page/", "/pages/", "/news/"];
-
-    if (excludePatterns.some((pattern) => urlPath.includes(pattern))) {
+    // Check string patterns
+    const stringPatterns = isLibraryContext
+      ? alwaysExcludeStringPatterns
+      : [...alwaysExcludeStringPatterns, ...blogOnlyExcludePatterns, "/page/", "/pages/", "/news/"];
+      
+    for (const pattern of stringPatterns) {
+      if (urlPath.includes(pattern)) {
+        return true;
+      }
+    }
+    
+    // Check regex patterns (always applied)
+    for (const pattern of alwaysExcludeRegexPatterns) {
+      if (pattern.test(urlPath)) {
+        return true;
+      }
+    }
+    
+    // Exclude "old" pages (archived/outdated content)
+    if (urlPath.includes("-old") || urlPath.includes("-tmp")) {
       return true;
     }
 
