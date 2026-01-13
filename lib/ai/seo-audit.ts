@@ -108,6 +108,11 @@ const SeoAuditSchema = z.object({
       top_recommendations: z.array(z.string()),
     }),
   }).nullable(),
+  // Added when brand consistency is skipped (e.g., for third-party URLs)
+  brand_consistency_skipped: z.object({
+    reason: z.enum(["third_party_url", "no_brand_context", "error"]),
+    message: z.string(),
+  }).optional(),
 });
 
 export type SeoAuditResult = z.infer<typeof SeoAuditSchema>;

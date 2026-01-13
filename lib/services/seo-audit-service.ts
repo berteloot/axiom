@@ -397,7 +397,12 @@ export async function auditSeoPage(
       domData,
     };
 
-    let auditResult;
+    let auditResult: Awaited<ReturnType<typeof generateSeoAudit>> & {
+      brand_consistency_skipped?: {
+        reason: "third_party_url" | "no_brand_context" | "error";
+        message: string;
+      };
+    };
     try {
       auditResult = await generateSeoAudit(url, analysis, context);
     } catch (error) {
@@ -409,33 +414,27 @@ export async function auditSeoPage(
     }
 
     // Add brand consistency analysis if requested
+    // IMPORTANT: Brand consistency only runs for URLs that match an account in the database.
+    // For third-party URLs (like analyzing a competitor's blog), we skip brand consistency
+    // because we don't have their canonical brand context to compare against.
     if (options.includeBrandConsistency) {
       try {
-        // Try to find account from URL first (e.g., CaseGuard blog post should use CaseGuard's brand context)
-        // Fallback to provided accountId if URL doesn't match any account
-        let accountIdForBrandCheck: string | null = null;
+        // Try to find account from URL - only run brand consistency if we find a matching account
+        const accountIdForBrandCheck = await findAccountByUrl(url);
         
-        try {
-          accountIdForBrandCheck = await findAccountByUrl(url);
-          if (accountIdForBrandCheck) {
-            console.log(`[SEO Audit] Found account ${accountIdForBrandCheck} for URL ${url} based on domain match`);
-          }
-        } catch (error) {
-          console.warn("Error finding account by URL, will use provided accountId:", error);
-        }
-
-        // Use accountId from URL match, or fallback to provided accountId
-        const accountIdToUse = accountIdForBrandCheck || options.accountId;
-
-        if (accountIdToUse) {
-          const brandConsistency = await testBrandConsistency(accountIdToUse);
+        if (accountIdForBrandCheck) {
+          console.log(`[SEO Audit] Found account ${accountIdForBrandCheck} for URL ${url} based on domain match - running brand consistency`);
+          const brandConsistency = await testBrandConsistency(accountIdForBrandCheck);
           auditResult.brand_consistency = brandConsistency;
         } else {
-          const errorMessage = "Brand consistency analysis requested but no matching account found for URL and no accountId provided";
-          errors.push({
-            stage: "analyze" as const,
-            message: errorMessage,
-          });
+          // No matching account found - this is a third-party URL
+          // Skip brand consistency (don't fallback to user's selected account)
+          console.log(`[SEO Audit] No matching account found for URL ${url} - skipping brand consistency (third-party URL)`);
+          // Add informational note (not an error, just info)
+          auditResult.brand_consistency_skipped = {
+            reason: "third_party_url",
+            message: "Brand consistency analysis skipped. This URL does not match any account in your system. Brand consistency is only available when auditing your own website URLs.",
+          };
         }
       } catch (error) {
         console.error("Error generating brand consistency analysis:", error);
