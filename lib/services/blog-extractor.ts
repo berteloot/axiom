@@ -258,6 +258,7 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
     }
 
     // Skip image/media file URLs
+    // In library context, allow PDFs as they are valid assets
     const binaryExtensions = [
       ".jpg",
       ".jpeg",
@@ -268,7 +269,6 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
       ".ico",
       ".bmp",
       ".tiff",
-      ".pdf",
       ".mp4",
       ".mp3",
       ".avi",
@@ -279,6 +279,10 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
       ".exe",
       ".dmg",
     ];
+    // Only exclude PDFs in blog context, not library context
+    if (!isLibraryContext && urlPath.endsWith(".pdf")) {
+      return true;
+    }
     if (binaryExtensions.some((ext) => urlPath.endsWith(ext))) {
       return true;
     }
@@ -359,33 +363,20 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
     // Library-mode exclusions: only exclude true non-content paths (admin/legal/auth)
     // CRITICAL: Do NOT exclude /resources/, /library/, or content-type paths like /whitepaper/, /webinar/
     // These are the actual content assets in library mode
+    // Keep exclusions minimal - let downstream classification decide what to keep
     const libraryModeExcludePatterns = [
-      // Navigation/landing pages (not individual assets)
-      "/overview",
-      "/solutions/",
-      "/customers/",
-      "/event/",
-      "/book-a-demo/",
-      // Industry/audience landing pages (not library content)
-      "/pharmacies/",
-      "/wholesale-distributors/",
-      "/repackagers/",
-      "/manufacturers/",
-      "/distributors/",
-      "/growers-shippers/",
-      "/contract-manufacturing-packaging-organizations-cmos-cpos/",
-      // Product/solution landing pages (not library content)
-      "/food-and-beverage/",
-      "/cpg-manufacturers/",
-      "/government-usa/",
-      "/consumer-goods-products/",
-      "/pharmaceuticals-overview/",
-      "/f-b-overview/",
-      "/government-overview/",
-      "/consumer-goods-overview/",
-      "/pharmaceuticals/",
-      "/3pl/",
-      "/aim/",
+      // Only exclude admin/auth/legal paths, not content paths
+      "/wp-admin",
+      "/wp-content",
+      "/wp-includes",
+      "/login",
+      "/register",
+      "/signup",
+      "/sign-in",
+      "/privacy",
+      "/terms",
+      "/legal",
+      "/cookie-declaration",
     ];
 
     // Blog-mode exclusions (more aggressive - excludes product/service pages)
@@ -735,6 +726,29 @@ async function fetchListingPageWithJina(url: string, retries = 2): Promise<strin
 function extractUrlsFromMarkdown(content: string, baseUrl: URL): Array<{ url: string; title: string }> {
   const blogPosts: Array<{ url: string; title: string }> = [];
   const seenUrls = new Set<string>();
+  
+  // Check if we're in library context
+  const basePath = (baseUrl.pathname || "").toLowerCase();
+  const isLibraryContext =
+    basePath.includes("/library") ||
+    basePath.includes("/resources") ||
+    basePath.includes("/all-media") ||
+    basePath.includes("/media");
+  
+  // Helper to derive title from URL slug if title is too short
+  const deriveTitleFromSlug = (url: string): string => {
+    try {
+      const urlObj = new URL(url);
+      const pathParts = urlObj.pathname.split('/').filter(p => p);
+      const slug = pathParts[pathParts.length - 1] || '';
+      // Convert slug to readable title (replace hyphens with spaces, capitalize)
+      return slug
+        .replace(/-/g, ' ')
+        .replace(/\b\w/g, (char) => char.toUpperCase());
+    } catch {
+      return '';
+    }
+  };
 
   // Try parsing as HTML first (Jina might return HTML despite requesting markdown)
   try {
@@ -807,8 +821,17 @@ function extractUrlsFromMarkdown(content: string, baseUrl: URL): Array<{ url: st
             }
           }
 
-          // Only add if we have a good title
-          if (title && title.length >= 10 && absoluteUrl.startsWith('http')) {
+          // In library context, allow shorter titles and use slug fallback
+          if (isLibraryContext && (!title || title.length < 10)) {
+            const slugTitle = deriveTitleFromSlug(absoluteUrl);
+            if (slugTitle) {
+              title = slugTitle;
+            }
+          }
+          
+          // Only add if we have a title (relaxed length check in library context)
+          const minTitleLength = isLibraryContext ? 3 : 10;
+          if (title && title.length >= minTitleLength && absoluteUrl.startsWith('http')) {
             blogPosts.push({ url: absoluteUrl, title });
             seenUrls.add(absoluteUrl);
           }
@@ -831,7 +854,7 @@ function extractUrlsFromMarkdown(content: string, baseUrl: URL): Array<{ url: st
   const markdownLinkPattern = /\[([^\]]+)\]\(([^)]+)\)/g;
   let match;
   while ((match = markdownLinkPattern.exec(content)) !== null) {
-    const title = match[1].trim();
+    let title = match[1].trim();
     const href = match[2].trim();
     if (!href || !title) continue;
 
@@ -840,7 +863,16 @@ function extractUrlsFromMarkdown(content: string, baseUrl: URL): Array<{ url: st
       if (seenUrls.has(absoluteUrl)) continue;
       if (shouldExcludeUrl(absoluteUrl, baseUrl)) continue;
 
-      if (title.length >= 10 && absoluteUrl.startsWith('http')) {
+      // In library context, allow shorter titles and use slug fallback
+      if (isLibraryContext && (!title || title.length < 10)) {
+        const slugTitle = deriveTitleFromSlug(absoluteUrl);
+        if (slugTitle) {
+          title = slugTitle;
+        }
+      }
+      
+      const minTitleLength = isLibraryContext ? 3 : 10;
+      if (title && title.length >= minTitleLength && absoluteUrl.startsWith('http')) {
         blogPosts.push({ url: absoluteUrl, title });
         seenUrls.add(absoluteUrl);
       }
@@ -874,7 +906,16 @@ function extractUrlsFromMarkdown(content: string, baseUrl: URL): Array<{ url: st
       }
     }
 
-    if (title.length >= 10 && url.startsWith('http')) {
+    // In library context, allow shorter titles and use slug fallback
+    if (isLibraryContext && (!title || title.length < 10)) {
+      const slugTitle = deriveTitleFromSlug(url);
+      if (slugTitle) {
+        title = slugTitle;
+      }
+    }
+    
+    const minTitleLength = isLibraryContext ? 3 : 10;
+    if (title && title.length >= minTitleLength && url.startsWith('http')) {
       blogPosts.push({ url, title });
       seenUrls.add(url);
     }
@@ -1029,10 +1070,10 @@ function extractPaginationLinks(content: string, baseUrl: URL): string[] {
         try {
           const absoluteUrl = resolveUrl(baseUrl.href, href);
           // Only include URLs that look like pagination (contain page number or pagination keywords)
+          // Removed /\d+\/ pattern as it's too permissive (matches years, IDs, etc.)
           if (
             absoluteUrl.includes('page=') ||
             absoluteUrl.includes('/page/') ||
-            absoluteUrl.match(/\/\d+\//) || // URL contains a number segment
             $link.text().toLowerCase().match(/^(next|more|load|page|\d+)$/)
           ) {
             if (!seenUrls.has(absoluteUrl) && absoluteUrl.startsWith('http')) {
@@ -1135,29 +1176,59 @@ async function fetchAllPagesWithPagination(
       // Also, don't construct URLs if we're getting duplicate content (no new posts)
       if (paginationLinks.length === 0 && posts.length > 0 && newPostsCount > 0) {
         const basePath = new URL(currentUrl).pathname;
-        const currentPageNum = pageCount;
+        const urlObj = new URL(currentUrl);
+        
+        // Parse actual page number from current URL, not pageCount
+        let currentPageNum: number | null = null;
+        let detectedPattern: 'query' | 'path' | 'paged' | null = null;
+        
+        // Try query parameter: ?page=2 or ?paged=2
+        const pageParam = urlObj.searchParams.get('page') || urlObj.searchParams.get('paged');
+        if (pageParam) {
+          currentPageNum = parseInt(pageParam, 10);
+          detectedPattern = urlObj.searchParams.has('paged') ? 'paged' : 'query';
+        }
+        
+        // Try path pattern: /page/2
+        if (currentPageNum === null) {
+          const pathMatch = basePath.match(/\/page\/(\d+)/);
+          if (pathMatch) {
+            currentPageNum = parseInt(pathMatch[1], 10);
+            detectedPattern = 'path';
+          }
+        }
+        
+        // Fall back to pageCount only if we couldn't parse the URL
+        if (currentPageNum === null) {
+          currentPageNum = pageCount;
+        }
+        
+        // Use detected pattern if available, otherwise use lastPaginationPattern
+        const patternToUse: 'query' | 'path' | 'paged' = 
+          detectedPattern || 
+          (lastPaginationPattern && (lastPaginationPattern as 'query' | 'path' | 'paged')) || 
+          'query';
         const nextPage = currentPageNum + 1;
         
-        // Determine which pattern to try based on what worked before, or try the most common first
+        // Determine which pattern to try
         let nextPageUrl: string;
-        if (lastPaginationPattern === 'query') {
-          // Continue with query parameter pattern
+        if (patternToUse === 'query') {
           nextPageUrl = `${baseUrl.origin}${basePath}?page=${nextPage}`;
-        } else if (lastPaginationPattern === 'path') {
-          // Continue with path pattern
+        } else if (patternToUse === 'path') {
           nextPageUrl = `${baseUrl.origin}${basePath}/page/${nextPage}`;
-        } else if (lastPaginationPattern === 'paged') {
-          // Continue with paged pattern
+        } else if (patternToUse === 'paged') {
           nextPageUrl = `${baseUrl.origin}${basePath}?paged=${nextPage}`;
         } else {
-          // First time - try the most common pattern: ?page=2
+          // Default fallback
           nextPageUrl = `${baseUrl.origin}${basePath}?page=${nextPage}`;
-          lastPaginationPattern = 'query';
         }
+        
+        // Update lastPaginationPattern for next iteration
+        lastPaginationPattern = patternToUse;
         
         if (!visitedPages.has(nextPageUrl) && !pagesToVisit.includes(nextPageUrl)) {
           pagesToVisit.push(nextPageUrl);
-          console.log(`[Blog Extractor] No pagination links found, trying constructed URL: ${nextPageUrl}`);
+          console.log(`[Blog Extractor] No pagination links found, trying constructed URL: ${nextPageUrl} (parsed page ${currentPageNum} from URL)`);
         }
       } else if (paginationLinks.length > 0) {
         // Found real pagination links, clear the pattern tracking
@@ -1343,6 +1414,29 @@ export async function extractBlogPostUrls(
       const html = await fetchHtml(blogUrl);
       const $ = cheerio.load(html);
       const seenUrls = new Set(blogPosts.map(p => p.url));
+      
+      // Check if we're in library context
+      const basePath = baseUrl.pathname.toLowerCase();
+      const isLibraryContext =
+        basePath.includes("/library") ||
+        basePath.includes("/resources") ||
+        basePath.includes("/all-media") ||
+        basePath.includes("/media");
+      
+      // Helper to derive title from URL slug if title is too short
+      const deriveTitleFromSlug = (url: string): string => {
+        try {
+          const urlObj = new URL(url);
+          const pathParts = urlObj.pathname.split('/').filter(p => p);
+          const slug = pathParts[pathParts.length - 1] || '';
+          // Convert slug to readable title (replace hyphens with spaces, capitalize)
+          return slug
+            .replace(/-/g, ' ')
+            .replace(/\b\w/g, (char) => char.toUpperCase());
+        } catch {
+          return '';
+        }
+      };
 
       // Common selectors for blog post links
       const selectors = [
@@ -1394,9 +1488,18 @@ export async function extractBlogPostUrls(
             // Try to find title in parent or nearby elements
             title = $link.closest('article, .post, .blog-post, .card').find('h1, h2, h3, .title, .entry-title').first().text().trim() || title;
           }
+          
+          // In library context, allow shorter titles and use slug fallback
+          if (isLibraryContext && (!title || title.length < 10)) {
+            const slugTitle = deriveTitleFromSlug(absoluteUrl);
+            if (slugTitle) {
+              title = slugTitle;
+            }
+          }
 
-          // Only add if we have a reasonable title and URL
-          if (title && title.length >= 10 && absoluteUrl.startsWith('http')) {
+          // Only add if we have a reasonable title and URL (relaxed length check in library context)
+          const minTitleLength = isLibraryContext ? 3 : 10;
+          if (title && title.length >= minTitleLength && absoluteUrl.startsWith('http')) {
             // Extract date from URL
             const publishedDate = extractPublishedDate(absoluteUrl);
             // Filter by date range if provided
