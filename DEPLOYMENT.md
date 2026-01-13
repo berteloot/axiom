@@ -221,6 +221,7 @@ AWS_S3_BUCKET_NAME=<From Step 3.1>
 
 # OpenAI Configuration
 OPENAI_API_KEY=<From Step 5>
+OPENAI_WEB_SEARCH_MODEL=gpt-4o  # Optional: Model for web search (defaults to gpt-5, set to gpt-4o if you don't have gpt-5 access)
 
 # SendGrid Configuration
 SENDGRID_API_KEY=<From Step 4.2>

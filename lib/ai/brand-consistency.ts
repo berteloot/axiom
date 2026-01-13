@@ -35,6 +35,29 @@ export interface BrandContext {
 }
 
 /**
+ * Safely extract hostname from a URL, removing www. prefix
+ * Returns undefined if URL cannot be parsed
+ */
+function safeHostname(url: string | null | undefined): string | undefined {
+  if (!url) return undefined;
+
+  try {
+    // Normalize URL - add protocol if missing
+    let normalizedUrl = url.trim();
+    if (!normalizedUrl.startsWith("http://") && !normalizedUrl.startsWith("https://")) {
+      normalizedUrl = `https://${normalizedUrl}`;
+    }
+
+    const urlObj = new URL(normalizedUrl);
+    return urlObj.hostname.replace(/^www\./, "");
+  } catch {
+    // If URL parsing fails, try simple regex extraction
+    const match = url.match(/https?:\/\/(?:www\.)?([^\/]+)/);
+    return match ? match[1] : undefined;
+  }
+}
+
+/**
  * Query ChatGPT about a brand
  */
 async function queryChatGPT(brandName: string, websiteUrl?: string): Promise<string> {
@@ -57,6 +80,57 @@ Base your response on publicly available information. Be detailed and specific.`
 - Any notable achievements or positioning
 
 Base your response on publicly available information. Be detailed and specific.`;
+
+  // If we have a website URL, prefer web search so the model can use up-to-date public info.
+  if (websiteUrl) {
+    try {
+      const host = safeHostname(websiteUrl);
+      const allowedDomains = host ? [host, "www." + host] : undefined;
+
+      const response = await openai.responses.create({
+        // Allow overriding the model used for web search in env.
+        // If you do not have access to gpt-5, set OPENAI_WEB_SEARCH_MODEL to a model you do have.
+        model: process.env.OPENAI_WEB_SEARCH_MODEL || "gpt-5",
+        tools: [
+          host
+            ? {
+                type: "web_search",
+                filters: {
+                  allowed_domains: allowedDomains,
+                },
+              }
+            : { type: "web_search" },
+        ],
+        tool_choice: "auto",
+        include: ["web_search_call.action.sources"],
+        input: [
+          {
+            role: "system",
+            content:
+              "You are a careful company researcher. Use web search to gather publicly available information. If the company is small or information is sparse, say so clearly and avoid guessing.",
+          },
+          {
+            role: "user",
+            content:
+              prompt +
+              "\n\nImportant: Use web search for this request and only include facts supported by public sources. If you cannot confirm something, label it as uncertain.",
+          },
+        ],
+        text: {
+          verbosity: "medium",
+        },
+      });
+
+      const out = (response as any).output_text || "";
+
+      // If the model returned something useful, use it.
+      if (out && out.trim().length > 0) {
+        return out;
+      }
+    } catch (err) {
+      console.warn("Web search call failed; falling back to Chat Completions.", err);
+    }
+  }
 
   try {
     const completion = await openai.chat.completions.create({
@@ -208,8 +282,8 @@ export async function testBrandConsistency(
     productName: brandName,
   };
 
-  // Determine brand name for queries
-  const brandNameToQuery = brandName || context.websiteUrl?.replace(/^https?:\/\//, "").replace(/\/$/, "") || "the company";
+  // Determine brand name for queries - use safeHostname to get clean hostname
+  const brandNameToQuery = brandName || safeHostname(context.websiteUrl) || "the company";
 
   // Query AI platforms (currently only ChatGPT via OpenAI)
   // Note: Claude and Perplexity would require their respective APIs

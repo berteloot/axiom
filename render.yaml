@@ -47,6 +47,8 @@ services:
       # OpenAI Configuration (set in Render dashboard)
       - key: OPENAI_API_KEY
         sync: false
+      - key: OPENAI_WEB_SEARCH_MODEL
+        sync: false  # Optional: Model for web search (defaults to gpt-5, set to gpt-4o if you don't have gpt-5 access)
       
       # SendGrid Configuration (set in Render dashboard)
       - key: SENDGRID_API_KEY

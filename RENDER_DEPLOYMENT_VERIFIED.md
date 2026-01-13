@@ -32,6 +32,7 @@ This document confirms that the application is properly configured for Render de
 - ✅ `SENDGRID_API_KEY`, `EMAIL_FROM`
 
 **Optional (App works without, features disabled):**
+- ✅ `OPENAI_WEB_SEARCH_MODEL` - Model for brand research web search (defaults to gpt-5, set to gpt-4o if you don't have gpt-5 access)
 - ✅ `JINA_API_KEY` - Trending topics discovery (graceful fallback)
 - ✅ `DATAFORSEO_LOGIN`, `DATAFORSEO_PASSWORD` - Keyword research (graceful fallback)
 

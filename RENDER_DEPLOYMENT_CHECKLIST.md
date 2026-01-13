@@ -33,6 +33,7 @@ This checklist ensures your application deploys successfully on Render.
 - [ ] `EMAIL_FROM` - Verified sender email
 
 **Optional Variables (app works without these, but features disabled):**
+- [ ] `OPENAI_WEB_SEARCH_MODEL` - Model for brand research web search (defaults to gpt-5, set to gpt-4o if you don't have gpt-5 access)
 - [ ] `JINA_API_KEY` - For trending topics discovery (optional)
 - [ ] `DATAFORSEO_LOGIN` - For keyword research (optional)
 - [ ] `DATAFORSEO_PASSWORD` - For keyword research (optional)
