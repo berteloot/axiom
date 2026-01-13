@@ -20,9 +20,19 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { ALL_JOB_TITLES } from "@/lib/job-titles"
-import { Loader2, Package, Users, X, Sparkles } from "lucide-react"
+import { Loader2, Package, Users, X, Sparkles, Trash2, AlertTriangle } from "lucide-react"
 import { FunnelStage } from "@/lib/types"
 import { Checkbox } from "@/components/ui/checkbox"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 interface ProductLine {
   id: string
@@ -39,6 +49,7 @@ interface BulkEditModalProps {
     funnelStage?: FunnelStage
   }) => Promise<void>
   onReanalyze?: () => Promise<void>
+  onDelete?: () => Promise<void>
 }
 
 export function BulkEditModal({
@@ -47,6 +58,7 @@ export function BulkEditModal({
   selectedCount,
   onSave,
   onReanalyze,
+  onDelete,
 }: BulkEditModalProps) {
   const [productLines, setProductLines] = React.useState<ProductLine[]>([])
   const [isLoadingProductLines, setIsLoadingProductLines] = React.useState(true)
@@ -57,6 +69,8 @@ export function BulkEditModal({
   const [selectedFunnelStage, setSelectedFunnelStage] = React.useState<FunnelStage | undefined>(undefined)
   const [shouldReanalyze, setShouldReanalyze] = React.useState(false)
   const [isSaving, setIsSaving] = React.useState(false)
+  const [isDeleting, setIsDeleting] = React.useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
   // Fetch product lines
@@ -102,9 +116,27 @@ export function BulkEditModal({
       setSelectedIcpTargets([])
       setSelectedFunnelStage(undefined)
       setShouldReanalyze(false)
+      setShowDeleteConfirm(false)
       setError(null)
     }
   }, [open])
+
+  const handleDelete = async () => {
+    if (!onDelete) return;
+
+    setIsDeleting(true)
+    setError(null)
+
+    try {
+      await onDelete()
+      setShowDeleteConfirm(false)
+      onOpenChange(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete assets")
+    } finally {
+      setIsDeleting(false)
+    }
+  }
 
   const handleSave = async () => {
     // Check if at least one action is being performed
@@ -324,7 +356,7 @@ export function BulkEditModal({
                 id="reanalyze"
                 checked={shouldReanalyze}
                 onCheckedChange={(checked) => setShouldReanalyze(checked === true)}
-                disabled={isSaving}
+                disabled={isSaving || isDeleting}
                 className="mt-1"
               />
               <div className="space-y-2 flex-1">
@@ -362,19 +394,48 @@ export function BulkEditModal({
               </div>
             </div>
           </div>
+
+          {/* Delete Option */}
+          {onDelete && (
+            <div className="space-y-3 border-t pt-4">
+              <div className="flex items-start space-x-3 p-4 rounded-lg bg-destructive/5 border border-destructive/20">
+                <div className="flex-1 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                    <Label className="font-medium text-destructive">
+                      Delete Assets
+                    </Label>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Permanently delete all selected assets. This action cannot be undone. Files will be removed from storage and all associated data will be deleted.
+                  </p>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    disabled={isSaving || isDeleting}
+                    className="mt-2"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete {selectedCount} Asset{selectedCount !== 1 ? "s" : ""}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex gap-2 justify-end mt-6">
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
-            disabled={isSaving}
+            disabled={isSaving || isDeleting}
           >
             Cancel
           </Button>
           <Button
             onClick={handleSave}
-            disabled={isSaving || !hasChanges}
+            disabled={isSaving || isDeleting || !hasChanges}
           >
             {isSaving ? (
               <>
@@ -394,6 +455,46 @@ export function BulkEditModal({
           </Button>
         </div>
       </DialogContent>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Delete {selectedCount} Asset{selectedCount !== 1 ? "s" : ""}?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2 pt-2">
+              <p>
+                Are you sure you want to permanently delete {selectedCount} asset{selectedCount !== 1 ? "s" : ""}? This action cannot be undone.
+              </p>
+              <p className="font-medium text-destructive">
+                All files will be removed from storage and all associated data will be permanently deleted.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete {selectedCount} Asset{selectedCount !== 1 ? "s" : ""}
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   )
 }

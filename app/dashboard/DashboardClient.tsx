@@ -914,6 +914,36 @@ export default function DashboardClient() {
             throw error
           }
         }}
+        onDelete={async () => {
+          try {
+            const response = await fetch("/api/assets/bulk-delete", {
+              method: "DELETE",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                assetIds: selectedAssetIds,
+              }),
+            });
+
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}))
+              throw new Error(errorData.error || "Failed to delete assets")
+            }
+
+            const data = await response.json()
+            // Show success message
+            alert(data.message || `Successfully deleted ${data.results?.deleted || selectedAssetIds.length} asset(s)`)
+            
+            // Refresh assets to show updated list
+            await fetchAssets()
+            // Clear selection
+            setSelectedAssetIds([])
+          } catch (error) {
+            console.error("Error bulk deleting assets:", error)
+            throw error
+          }
+        }}
       />
 
       <SequenceModal
