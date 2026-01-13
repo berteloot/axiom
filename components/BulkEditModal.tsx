@@ -318,8 +318,8 @@ export function BulkEditModal({
           </div>
 
           {/* Re-analyze Option */}
-          <div className="space-y-2 border-t pt-4">
-            <div className="flex items-start space-x-3">
+          <div className="space-y-3 border-t pt-4">
+            <div className="flex items-start space-x-3 p-4 rounded-lg bg-muted/50 border border-muted">
               <Checkbox
                 id="reanalyze"
                 checked={shouldReanalyze}
@@ -327,17 +327,38 @@ export function BulkEditModal({
                 disabled={isSaving}
                 className="mt-1"
               />
-              <div className="space-y-1 flex-1">
+              <div className="space-y-2 flex-1">
                 <Label
                   htmlFor="reanalyze"
-                  className="flex items-center gap-2 cursor-pointer"
+                  className="flex items-center gap-2 cursor-pointer font-medium"
                 >
-                  <Sparkles className="h-4 w-4 text-muted-foreground" />
+                  <Sparkles className="h-4 w-4 text-primary" />
                   Re-analyze with AI
                 </Label>
-                <p className="text-xs text-muted-foreground">
-                  Trigger AI re-analysis for all selected assets. This will update funnel stage, ICP targets, pain clusters, and other AI-generated fields using the latest analysis logic. Assets will be processed in the background.
+                <p className="text-sm text-muted-foreground">
+                  Trigger AI re-analysis for all selected assets. This will update funnel stage, ICP targets, pain clusters, and other AI-generated fields using the latest analysis logic.
                 </p>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  <Badge variant="outline" className="text-xs">
+                    Updates funnel stage
+                  </Badge>
+                  <Badge variant="outline" className="text-xs">
+                    Updates ICP targets
+                  </Badge>
+                  <Badge variant="outline" className="text-xs">
+                    Updates pain clusters
+                  </Badge>
+                  <Badge variant="outline" className="text-xs">
+                    Background processing
+                  </Badge>
+                </div>
+                {shouldReanalyze && (
+                  <div className="mt-2 p-2 rounded bg-primary/10 border border-primary/20">
+                    <p className="text-xs text-primary font-medium">
+                      ✓ AI re-analysis will be triggered for {selectedCount} asset{selectedCount !== 1 ? "s" : ""} after saving
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -358,7 +379,14 @@ export function BulkEditModal({
             {isSaving ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Updating...
+                {shouldReanalyze && !(selectedProductLineIds.length > 0 || selectedIcpTargets.length > 0 || selectedFunnelStage !== undefined) 
+                  ? "Re-analyzing..." 
+                  : "Updating..."}
+              </>
+            ) : shouldReanalyze && !(selectedProductLineIds.length > 0 || selectedIcpTargets.length > 0 || selectedFunnelStage !== undefined) ? (
+              <>
+                <Sparkles className="h-4 w-4 mr-2" />
+                Re-analyze {selectedCount} Asset{selectedCount !== 1 ? "s" : ""}
               </>
             ) : (
               `Update ${selectedCount} Asset${selectedCount !== 1 ? "s" : ""}`
