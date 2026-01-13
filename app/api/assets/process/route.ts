@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getS3Url } from "@/lib/s3";
-import { requireAccountId } from "@/lib/account-utils";
+import { requireAccountId, getUserId } from "@/lib/account-utils";
 import { processAssetAsync } from "@/lib/services/asset-processor";
 import { processAssetSchema } from "@/lib/validations";
 
@@ -35,8 +35,9 @@ export async function POST(request: NextRequest) {
     const s3Url = getS3Url(key);
     console.log("S3 URL:", s3Url);
 
-    // Get current account ID
+    // Get current account ID and user ID
     const accountId = await requireAccountId(request);
+    const userId = await getUserId(request);
 
     // Create asset record in database with PENDING status
     console.log("Creating asset in database...");
@@ -47,6 +48,7 @@ export async function POST(request: NextRequest) {
       asset = await prisma.asset.create({
         data: {
           accountId,
+          uploadedById: userId || undefined,
           title: title || key.split("/").pop() || "Untitled Asset",
           s3Url: s3Url,
           s3Key: key, // Store S3 key as source of truth

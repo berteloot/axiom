@@ -75,6 +75,7 @@ model User {
   sentInvitations     Invitation[]      @relation("InvitationSender")
   receivedInvitations Invitation[]      @relation("InvitationRecipient")
   smartCollections    SmartCollection[]
+  uploadedAssets      Asset[]
 
   @@map("users")
 }
@@ -288,10 +289,12 @@ model Asset {
   analyzedAt          DateTime? // When AI analysis was performed
   aiConfidence        Float? // Overall confidence score (0-1)
   dominantColor       String? // Dominant color hex code (e.g., "#FF5733")
-  inUse               Boolean  @default(false) // Whether the asset is currently being used
+  inUse               Boolean     @default(false) // Whether the asset is currently being used
+  uploadedById        String? // User who uploaded this asset
 
   // Relations
   account            Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  uploadedBy         User?               @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
   productLines       AssetProductLine[]
   collectionAssets   CollectionAsset[]
   derivativeAssets   DerivativeAsset[]   @relation("DerivedFrom")

@@ -15,6 +15,12 @@ export async function GET(request: NextRequest) {
         accountId,
       },
       include: {
+        uploadedBy: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
         productLines: {
           include: {
             productLine: {

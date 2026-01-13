@@ -50,6 +50,8 @@ export interface AssetFiltersState {
   assetTypes: string[]; // Asset types (e.g., "Case Study", "Whitepaper")
   color: string; // Hex color code for filtering (e.g., "#FF5733")
   inUse: InUseFilter; // Filter by in use status
+  uploadedBy: string[]; // User IDs who uploaded assets
+  dateRange: { start: string | null; end: string | null }; // Date range for upload date
   sortBy: SortField;
   sortDirection: SortDirection;
 }
@@ -109,6 +111,7 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
     const icpTargets = new Set<string>();
     const painClusters = new Set<string>();
     const productLines = new Map<string, string>(); // id -> name
+    const users = new Map<string, string>(); // id -> name
 
     assets.forEach((asset) => {
       asset.icpTargets.forEach((icp) => icpTargets.add(icp));
@@ -118,12 +121,18 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
           productLines.set(pl.id, pl.name);
         });
       }
+      if (asset.uploadedBy) {
+        users.set(asset.uploadedBy.id, asset.uploadedBy.name || "Unknown");
+      }
     });
 
     return {
       icpTargets: Array.from(icpTargets).sort(),
       painClusters: Array.from(painClusters).sort(),
       productLines: Array.from(productLines.entries())
+        .map(([id, name]) => ({ id, name }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+      users: Array.from(users.entries())
         .map(([id, name]) => ({ id, name }))
         .sort((a, b) => a.name.localeCompare(b.name)),
     };
@@ -144,6 +153,8 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
       assetTypes: [],
       color: "",
       inUse: "all",
+      uploadedBy: [],
+      dateRange: { start: null, end: null },
       sortBy: "createdAt",
       sortDirection: "desc",
     });
@@ -158,7 +169,9 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
     filters.assetTypes.length +
     (filters.search ? 1 : 0) +
     (filters.color ? 1 : 0) +
-    (filters.inUse !== "all" ? 1 : 0);
+    (filters.inUse !== "all" ? 1 : 0) +
+    filters.uploadedBy.length +
+    (filters.dateRange.start || filters.dateRange.end ? 1 : 0);
 
   const hasActiveFilters = activeFilterCount > 0;
 
@@ -170,7 +183,7 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search assets by title..."
+            placeholder="Search assets by title or uploader..."
             value={filters.search}
             onChange={(e) => updateFilters({ search: e.target.value })}
             className="pl-9"
@@ -559,6 +572,40 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
               </button>
             </Badge>
           )}
+          {filters.uploadedBy.map((userId) => {
+            const user = filterOptions.users.find((u) => u.id === userId);
+            const displayName = user?.name || userId;
+            return (
+              <Badge key={userId} variant="secondary" className="gap-1">
+                User: {displayName}
+                <button
+                  onClick={() =>
+                    updateFilters({
+                      uploadedBy: filters.uploadedBy.filter((id) => id !== userId),
+                    })
+                  }
+                  className="ml-1 hover:bg-destructive/20 rounded-full p-0.5"
+                  aria-label={`Remove ${displayName} filter`}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            );
+          })}
+          {(filters.dateRange.start || filters.dateRange.end) && (
+            <Badge variant="secondary" className="gap-1">
+              Date: {filters.dateRange.start || "..."} to {filters.dateRange.end || "..."}
+              <button
+                onClick={() =>
+                  updateFilters({ dateRange: { start: null, end: null } })
+                }
+                className="ml-1 hover:bg-destructive/20 rounded-full p-0.5"
+                aria-label="Remove date range filter"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          )}
         </div>
       )}
     </div>
@@ -633,6 +680,31 @@ export function applyAssetFilters(assets: Asset[], filters: AssetFiltersState): 
     filtered = filtered.filter((asset) => asset.inUse === true);
   } else if (filters.inUse === "available") {
     filtered = filtered.filter((asset) => asset.inUse !== true);
+  }
+
+  // Uploaded By filter
+  if (filters.uploadedBy.length > 0) {
+    filtered = filtered.filter((asset) =>
+      asset.uploadedBy && filters.uploadedBy.includes(asset.uploadedBy.id)
+    );
+  }
+
+  // Date Range filter
+  if (filters.dateRange.start || filters.dateRange.end) {
+    filtered = filtered.filter((asset) => {
+      const uploadDate = new Date(asset.createdAt);
+      if (filters.dateRange.start) {
+        const startDate = new Date(filters.dateRange.start);
+        startDate.setHours(0, 0, 0, 0);
+        if (uploadDate < startDate) return false;
+      }
+      if (filters.dateRange.end) {
+        const endDate = new Date(filters.dateRange.end);
+        endDate.setHours(23, 59, 59, 999);
+        if (uploadDate > endDate) return false;
+      }
+      return true;
+    });
   }
 
   // Sorting

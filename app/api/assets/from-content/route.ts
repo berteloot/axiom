@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAccountId } from "@/lib/account-utils";
+import { requireAccountId, getUserId } from "@/lib/account-utils";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { z } from "zod";
 import { FunnelStage } from "@/lib/types";
@@ -57,10 +57,12 @@ const SaveContentRequestSchema = z.object({
  */
 export async function POST(request: NextRequest) {
   try {
-    // Authenticate and get account ID
+    // Authenticate and get account ID and user ID
     let accountId: string;
+    let userId: string | null;
     try {
       accountId = await requireAccountId(request);
+      userId = await getUserId(request);
     } catch (error) {
       return NextResponse.json(
         { error: error instanceof Error ? error.message : "Unauthorized" },
@@ -193,6 +195,7 @@ export async function POST(request: NextRequest) {
     const asset = await prisma.asset.create({
       data: {
         accountId,
+        uploadedById: userId || undefined,
         title,
         s3Url,
         s3Key,

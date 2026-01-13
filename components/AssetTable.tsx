@@ -260,7 +260,8 @@ export function AssetTable({
               <TableHead className="w-24 px-2">ICP</TableHead>
               <TableHead className="w-20 px-2">Stage</TableHead>
               <TableHead className="w-24 px-2">Status</TableHead>
-              <TableHead className="w-20 px-2">Date</TableHead>
+              <TableHead className="w-24 px-2">Uploaded By</TableHead>
+              <TableHead className="w-20 px-2">Upload Date</TableHead>
               <TableHead className="text-right w-32 px-2">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -410,18 +411,27 @@ export function AssetTable({
                       {asset.status}
                     </Badge>
                   </TableCell>
+                  <TableCell className="w-24 px-2">
+                    {asset.uploadedBy?.name ? (
+                      <span className="text-xs text-muted-foreground truncate" title={asset.uploadedBy.name}>
+                        {asset.uploadedBy.name}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
                   <TableCell className="w-20 px-2">
                     <div className="flex flex-col gap-0.5">
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <span className="text-[10px] text-muted-foreground cursor-help truncate">
-                              {formatDate(getPrimaryDate(asset))}
+                              {formatDate(asset.createdAt)}
                             </span>
                           </TooltipTrigger>
                           <TooltipContent>
                             <div className="text-xs">
-                              {new Date(getPrimaryDate(asset) || "").toLocaleDateString()}
+                              {new Date(asset.createdAt).toLocaleDateString()}
                             </div>
                           </TooltipContent>
                         </Tooltip>

@@ -85,6 +85,17 @@ function parseFiltersFromUrl(searchParams: URLSearchParams): Partial<AssetFilter
   if (inUse && ["all", "in_use", "available"].includes(inUse)) {
     filters.inUse = inUse as InUseFilter;
   }
+
+  const uploadedBy = searchParams.get("uploadedBy");
+  if (uploadedBy) {
+    filters.uploadedBy = uploadedBy.split(",");
+  }
+
+  const dateStart = searchParams.get("dateStart");
+  const dateEnd = searchParams.get("dateEnd");
+  if (dateStart || dateEnd) {
+    filters.dateRange = { start: dateStart || null, end: dateEnd || null };
+  }
   
   const sort = searchParams.get("sort");
   if (sort && ["title", "createdAt", "updatedAt", "customCreatedAt", "lastReviewedAt", "funnelStage", "status", "contentQualityScore"].includes(sort)) {
@@ -140,6 +151,8 @@ export default function DashboardClient() {
       assetTypes: urlFilters.assetTypes ?? [],
       color: urlFilters.color ?? "",
       inUse: urlFilters.inUse ?? "all",
+      uploadedBy: urlFilters.uploadedBy ?? [],
+      dateRange: urlFilters.dateRange ?? { start: null, end: null },
       sortBy: urlFilters.sortBy ?? "createdAt",
       sortDirection: urlFilters.sortDirection ?? "desc",
     };
