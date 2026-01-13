@@ -532,6 +532,137 @@ async function tryFetchFromSitemapOrRSS(baseUrl: URL): Promise<Array<{ url: stri
 }
 
 /**
+ * Extract pagination links from HTML content
+ */
+function extractPaginationLinks(content: string, baseUrl: URL): string[] {
+  const paginationUrls: string[] = [];
+  const seenUrls = new Set<string>();
+  
+  try {
+    const $ = cheerio.load(content);
+    
+    // Look for pagination links
+    const paginationSelectors = [
+      '.pagination a[href]',
+      '.pager a[href]',
+      '.page-numbers a[href]',
+      'a[rel="next"]',
+      'a[aria-label*="next" i]',
+      'a[aria-label*="page" i]',
+      'a[href*="page="]',
+      'a[href*="/page/"]',
+      '.load-more',
+      'button[data-page]',
+      '[class*="pagination"] a[href]',
+      '[class*="pager"] a[href]',
+    ];
+    
+    for (const selector of paginationSelectors) {
+      $(selector).each((_, element) => {
+        const $link = $(element);
+        const href = $link.attr('href') || $link.attr('data-href') || '';
+        if (!href) return;
+        
+        try {
+          const absoluteUrl = resolveUrl(baseUrl.href, href);
+          // Only include URLs that look like pagination (contain page number or pagination keywords)
+          if (
+            absoluteUrl.includes('page=') ||
+            absoluteUrl.includes('/page/') ||
+            absoluteUrl.match(/\/\d+\//) || // URL contains a number segment
+            $link.text().toLowerCase().match(/^(next|more|load|page|\d+)$/)
+          ) {
+            if (!seenUrls.has(absoluteUrl) && absoluteUrl.startsWith('http')) {
+              paginationUrls.push(absoluteUrl);
+              seenUrls.add(absoluteUrl);
+            }
+          }
+        } catch {
+          // Skip invalid URLs
+        }
+      });
+    }
+  } catch (error) {
+    console.warn(`[Blog Extractor] Error extracting pagination links:`, error);
+  }
+  
+  return paginationUrls;
+}
+
+/**
+ * Try to fetch multiple pages by following pagination
+ */
+async function fetchAllPagesWithPagination(
+  initialUrl: string,
+  baseUrl: URL,
+  maxPages: number = 50
+): Promise<Array<{ url: string; title: string }>> {
+  const allPosts: Array<{ url: string; title: string }> = [];
+  const seenPostUrls = new Set<string>();
+  const visitedPages = new Set<string>();
+  const pagesToVisit = [initialUrl];
+  
+  let pageCount = 0;
+  
+  while (pagesToVisit.length > 0 && pageCount < maxPages) {
+    const currentUrl = pagesToVisit.shift()!;
+    if (visitedPages.has(currentUrl)) continue;
+    
+    visitedPages.add(currentUrl);
+    pageCount++;
+    
+    try {
+      console.log(`[Blog Extractor] Fetching page ${pageCount}: ${currentUrl}`);
+      const content = await fetchListingPageWithJina(currentUrl);
+      const posts = extractUrlsFromMarkdown(content, baseUrl);
+      
+      // Add new posts
+      for (const post of posts) {
+        if (!seenPostUrls.has(post.url)) {
+          allPosts.push(post);
+          seenPostUrls.add(post.url);
+        }
+      }
+      
+      // Extract pagination links
+      const paginationLinks = extractPaginationLinks(content, baseUrl);
+      for (const link of paginationLinks) {
+        if (!visitedPages.has(link) && !pagesToVisit.includes(link)) {
+          pagesToVisit.push(link);
+        }
+      }
+      
+      console.log(`[Blog Extractor] Page ${pageCount}: Found ${posts.length} posts, ${paginationLinks.length} pagination links`);
+      
+      // If no pagination links found and we have posts, try constructing next page URL
+      if (paginationLinks.length === 0 && posts.length > 0 && pageCount === 1) {
+        // Try common pagination patterns
+        const basePath = new URL(currentUrl).pathname;
+        for (let page = 2; page <= 10; page++) {
+          const nextPageUrls = [
+            `${baseUrl.origin}${basePath}?page=${page}`,
+            `${baseUrl.origin}${basePath}/page/${page}`,
+            `${baseUrl.origin}${basePath}page/${page}`,
+            `${baseUrl.origin}${basePath}?paged=${page}`,
+          ];
+          
+          for (const nextUrl of nextPageUrls) {
+            if (!visitedPages.has(nextUrl) && !pagesToVisit.includes(nextUrl)) {
+              pagesToVisit.push(nextUrl);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.warn(`[Blog Extractor] Error fetching page ${currentUrl}:`, error);
+      continue;
+    }
+  }
+  
+  return allPosts;
+}
+
+/**
  * Extract blog post URLs from a blog homepage
  * Uses Jina Reader for JavaScript-rendered pages, falls back to HTML parsing
  */
@@ -551,31 +682,49 @@ export async function extractBlogPostUrls(blogUrl: string): Promise<Array<{ url:
       console.log(`[Blog Extractor] Sitemap/RSS fetch failed, continuing with page extraction`);
     }
     
-    // If sitemap didn't work or found few posts, try Jina Reader
+    // If sitemap didn't work or found few posts, try Jina Reader with pagination
     if (blogPosts.length < 50) {
       try {
         console.log(`[Blog Extractor] Attempting to extract with Jina Reader from ${blogUrl}...`);
-        const jinaContent = await fetchListingPageWithJina(blogUrl);
         
-        // Log content preview for debugging
-        console.log(`[Blog Extractor] Jina content preview (first 500 chars): ${jinaContent.substring(0, 500)}`);
-        console.log(`[Blog Extractor] Jina content length: ${jinaContent.length} characters`);
-        
-        const jinaPosts = extractUrlsFromMarkdown(jinaContent, baseUrl);
-        console.log(`[Blog Extractor] Jina extraction found ${jinaPosts.length} blog posts`);
+        // Try fetching all pages with pagination
+        const paginatedPosts = await fetchAllPagesWithPagination(blogUrl, baseUrl, 50);
         
         // Merge with sitemap posts (avoid duplicates)
         const existingUrls = new Set(blogPosts.map(p => p.url));
-        for (const post of jinaPosts) {
+        for (const post of paginatedPosts) {
           if (!existingUrls.has(post.url)) {
             blogPosts.push(post);
             existingUrls.add(post.url);
           }
         }
         
-        // If we found very few posts, log a sample of the content to debug
+        console.log(`[Blog Extractor] Total posts found after pagination: ${blogPosts.length}`);
+        
+        // If we still found very few posts, try single page extraction as fallback
         if (blogPosts.length < 20) {
-          console.warn(`[Blog Extractor] Only found ${blogPosts.length} posts total, content sample:`, jinaContent.substring(0, 1000));
+          console.log(`[Blog Extractor] Trying single page extraction as fallback...`);
+          const jinaContent = await fetchListingPageWithJina(blogUrl);
+          
+          // Log content preview for debugging
+          console.log(`[Blog Extractor] Jina content preview (first 500 chars): ${jinaContent.substring(0, 500)}`);
+          console.log(`[Blog Extractor] Jina content length: ${jinaContent.length} characters`);
+          
+          const jinaPosts = extractUrlsFromMarkdown(jinaContent, baseUrl);
+          console.log(`[Blog Extractor] Single page extraction found ${jinaPosts.length} blog posts`);
+          
+          // Merge with existing posts
+          for (const post of jinaPosts) {
+            if (!existingUrls.has(post.url)) {
+              blogPosts.push(post);
+              existingUrls.add(post.url);
+            }
+          }
+          
+          // If we found very few posts, log a sample of the content to debug
+          if (blogPosts.length < 20) {
+            console.warn(`[Blog Extractor] Only found ${blogPosts.length} posts total, content sample:`, jinaContent.substring(0, 1000));
+          }
         }
       } catch (jinaError) {
         console.warn(`[Blog Extractor] Jina extraction failed, falling back to HTML:`, jinaError);
