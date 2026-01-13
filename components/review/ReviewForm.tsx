@@ -528,7 +528,7 @@ export function ReviewForm({
         <Label htmlFor="uploadedBy">Uploaded By</Label>
         <div className="space-y-2">
           <Select
-            value={formData.uploadedById || ""}
+            value={formData.uploadedById || undefined}
             onValueChange={(value) => {
               onFormDataChange({ 
                 uploadedById: value || null,
@@ -538,15 +538,20 @@ export function ReviewForm({
             disabled={isLoadingUsers}
           >
             <SelectTrigger id="uploadedBy">
-              <SelectValue placeholder={isLoadingUsers ? "Loading users..." : "Select user"} />
+              <SelectValue placeholder={isLoadingUsers ? "Loading users..." : "Select user or enter custom name"} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">None</SelectItem>
-              {users.map((user) => (
-                <SelectItem key={user.id} value={user.id}>
-                  {user.name || user.email}
+              {users.length > 0 ? (
+                users.map((user) => (
+                  <SelectItem key={user.id} value={user.id}>
+                    {user.name || user.email}
+                  </SelectItem>
+                ))
+              ) : (
+                <SelectItem value="no-users" disabled>
+                  No users found
                 </SelectItem>
-              ))}
+              )}
             </SelectContent>
           </Select>
           <div className="text-xs text-muted-foreground">OR</div>

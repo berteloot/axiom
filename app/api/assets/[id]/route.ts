@@ -162,7 +162,7 @@ export async function PATCH(
       : undefined;
 
     // Verify uploadedById belongs to the account if provided
-    if (uploadedById !== undefined && uploadedById !== null) {
+    if (uploadedById !== undefined && uploadedById !== null && uploadedById !== "") {
       const userAccount = await prisma.userAccount.findFirst({
         where: {
           userId: uploadedById,

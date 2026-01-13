@@ -50,6 +50,14 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Error fetching assets:", error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    const errorCode = (error as any)?.code || "";
+    
+    // Check if it's a missing column error (common Prisma/PostgreSQL error codes)
+    const isMissingColumnError = 
+      errorMessage.includes("column") && 
+      (errorMessage.includes("does not exist") || errorMessage.includes("uploadedByNameOverride")) ||
+      errorCode === "P2021" || // Table does not exist
+      errorCode === "P2025"; // Record not found (sometimes used for schema issues)
     
     if (errorMessage.includes("No account selected")) {
       return NextResponse.json(
@@ -58,8 +66,25 @@ export async function GET(request: NextRequest) {
       );
     }
     
+    // If it's a missing column error, provide helpful message
+    if (isMissingColumnError) {
+      console.error("Database migration required: 'uploadedByNameOverride' column missing. Run migration script.");
+      return NextResponse.json(
+        { 
+          error: "Database migration required",
+          details: "The 'uploadedByNameOverride' column is missing. Please run the migration script: prisma/manual-migrations/add-upload-tracking.sql",
+          code: "MIGRATION_REQUIRED"
+        },
+        { status: 500 }
+      );
+    }
+    
     return NextResponse.json(
-      { error: "Failed to fetch assets" },
+      { 
+        error: "Failed to fetch assets",
+        details: errorMessage,
+        ...(isMissingColumnError && { code: "SCHEMA_ERROR" })
+      },
       { status: 500 }
     );
   }
