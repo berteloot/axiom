@@ -134,7 +134,7 @@ export function SeoAuditForm({ accountId }: SeoAuditFormProps) {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="targetAudience">Target Audience (Optional)</Label>
+                <Label htmlFor="targetAudience">ICP Target (Optional)</Label>
                 <MultiSelectCombobox
                   options={ALL_JOB_TITLES}
                   value={targetAudience}
