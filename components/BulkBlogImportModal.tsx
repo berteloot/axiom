@@ -179,6 +179,7 @@ export function BulkBlogImportModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           blogUrl: blogUrl.trim(),
+          maxPosts: maxPosts,
           dateRangeStart: dateRangeStart || null,
           dateRangeEnd: dateRangeEnd || null,
           languageFilter: languageFilter !== "all" ? languageFilter : null,

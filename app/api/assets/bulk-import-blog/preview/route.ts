@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
   try {
     const accountId = await requireAccountId(request);
     const body = await request.json();
-    const { blogUrl, dateRangeStart, dateRangeEnd, languageFilter } = body;
+    const { blogUrl, maxPosts, dateRangeStart, dateRangeEnd, languageFilter } = body;
 
     if (!blogUrl || typeof blogUrl !== "string") {
       return NextResponse.json(
@@ -95,9 +95,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Extract blog post URLs
-    console.log(`[Bulk Import Preview] Extracting blog posts from ${blogUrl}...`);
-    const blogPosts = await extractBlogPostUrls(blogUrl);
+    // Extract blog post URLs with maxPosts and date range limits
+    // This will stop early when enough matching posts are found
+    console.log(`[Bulk Import Preview] Extracting blog posts from ${blogUrl}... (maxPosts: ${maxPosts || 'unlimited'}, dateRange: ${dateRangeStart || 'none'} to ${dateRangeEnd || 'none'})`);
+    const blogPosts = await extractBlogPostUrls(
+      blogUrl,
+      maxPosts ? Number(maxPosts) : undefined,
+      dateRangeStart || null,
+      dateRangeEnd || null
+    );
     
     if (blogPosts.length === 0) {
       return NextResponse.json(

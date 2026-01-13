@@ -1058,7 +1058,8 @@ function extractPaginationLinks(content: string, baseUrl: URL): string[] {
 async function fetchAllPagesWithPagination(
   initialUrl: string,
   baseUrl: URL,
-  maxPages: number = 50
+  maxPages: number = 50,
+  maxPosts?: number
 ): Promise<Array<{ url: string; title: string }>> {
   const allPosts: Array<{ url: string; title: string }> = [];
   const seenPostUrls = new Set<string>();
@@ -1070,6 +1071,12 @@ async function fetchAllPagesWithPagination(
   let lastPaginationPattern: string | null = null; // Track which pattern worked
   
   while (pagesToVisit.length > 0 && pageCount < maxPages) {
+    // Stop early if we've reached maxPosts
+    if (maxPosts !== undefined && allPosts.length >= maxPosts) {
+      console.log(`[Blog Extractor] Reached maxPosts limit (${maxPosts}), stopping pagination`);
+      break;
+    }
+    
     const currentUrl = pagesToVisit.shift()!;
     if (visitedPages.has(currentUrl)) continue;
     
@@ -1085,10 +1092,20 @@ async function fetchAllPagesWithPagination(
       let newPostsCount = 0;
       for (const post of posts) {
         if (!seenPostUrls.has(post.url)) {
+          // Stop if we've reached maxPosts
+          if (maxPosts !== undefined && allPosts.length >= maxPosts) {
+            break;
+          }
           allPosts.push(post);
           seenPostUrls.add(post.url);
           newPostsCount++;
         }
+      }
+      
+      // Stop if we've reached maxPosts
+      if (maxPosts !== undefined && allPosts.length >= maxPosts) {
+        console.log(`[Blog Extractor] Reached maxPosts limit (${maxPosts}) after page ${pageCount}, stopping pagination`);
+        break;
       }
       
       // Extract pagination links
@@ -1168,10 +1185,46 @@ async function fetchAllPagesWithPagination(
  * Extract blog post URLs from a blog homepage
  * Uses Jina Reader for JavaScript-rendered pages, falls back to HTML parsing
  * Also extracts published dates from URLs when available
+ * 
+ * @param blogUrl - The blog URL to extract from
+ * @param maxPosts - Optional maximum number of posts to extract (stops early when reached)
+ * @param dateRangeStart - Optional start date for filtering (ISO date string)
+ * @param dateRangeEnd - Optional end date for filtering (ISO date string)
  */
-export async function extractBlogPostUrls(blogUrl: string): Promise<Array<{ url: string; title: string; publishedDate: string | null }>> {
+export async function extractBlogPostUrls(
+  blogUrl: string,
+  maxPosts?: number,
+  dateRangeStart?: string | null,
+  dateRangeEnd?: string | null
+): Promise<Array<{ url: string; title: string; publishedDate: string | null }>> {
   const baseUrl = new URL(normalizeUrl(blogUrl));
   let blogPosts: Array<{ url: string; title: string; publishedDate: string | null }> = [];
+  
+  // Parse date range if provided
+  const startDate = dateRangeStart ? new Date(dateRangeStart) : null;
+  const endDate = dateRangeEnd ? new Date(dateRangeEnd) : null;
+  if (endDate) {
+    endDate.setHours(23, 59, 59, 999); // Include full end day
+  }
+  
+  // Helper function to check if a post matches date range
+  const matchesDateRange = (publishedDate: string | null): boolean => {
+    if (!publishedDate) {
+      // Include posts without dates if date range is specified
+      return true;
+    }
+    if (!startDate && !endDate) {
+      return true;
+    }
+    const postDate = new Date(publishedDate);
+    if (startDate && postDate < startDate) {
+      return false;
+    }
+    if (endDate && postDate > endDate) {
+      return false;
+    }
+    return true;
+  };
   
   try {
     // First, try sitemap/RSS feeds (most reliable for getting all posts)
@@ -1179,41 +1232,68 @@ export async function extractBlogPostUrls(blogUrl: string): Promise<Array<{ url:
       const sitemapPosts = await tryFetchFromSitemapOrRSS(baseUrl);
       if (sitemapPosts.length > 0) {
         console.log(`[Blog Extractor] Found ${sitemapPosts.length} posts from sitemap/RSS`);
-        blogPosts = sitemapPosts.map(post => ({
-          url: post.url,
-          title: post.title,
-          publishedDate: null, // Will be extracted later from URL
-        }));
+        for (const post of sitemapPosts) {
+          // Extract date from URL first
+          const publishedDate = extractPublishedDate(post.url);
+          // Filter by date range if provided
+          if (matchesDateRange(publishedDate)) {
+            blogPosts.push({
+              url: post.url,
+              title: post.title,
+              publishedDate,
+            });
+            // Stop early if we've reached maxPosts
+            if (maxPosts !== undefined && blogPosts.length >= maxPosts) {
+              console.log(`[Blog Extractor] Reached maxPosts limit (${maxPosts}) from sitemap, stopping`);
+              break;
+            }
+          }
+        }
       }
     } catch (error) {
       console.log(`[Blog Extractor] Sitemap/RSS fetch failed, continuing with page extraction`);
     }
     
     // If sitemap didn't work or found few posts, try Jina Reader with pagination
-    if (blogPosts.length < 50) {
+    // Only continue if we haven't reached maxPosts yet
+    if ((maxPosts === undefined || blogPosts.length < maxPosts) && blogPosts.length < 50) {
       try {
         console.log(`[Blog Extractor] Attempting to extract with Jina Reader from ${blogUrl}...`);
         
-        // Try fetching all pages with pagination
-        const paginatedPosts = await fetchAllPagesWithPagination(blogUrl, baseUrl, 50);
+        // Calculate how many more posts we need
+        const remainingPosts = maxPosts !== undefined ? Math.max(0, maxPosts - blogPosts.length) : undefined;
         
-        // Merge with sitemap posts (avoid duplicates)
+        // Try fetching pages with pagination (respecting maxPosts)
+        const paginatedPosts = await fetchAllPagesWithPagination(blogUrl, baseUrl, 50, remainingPosts);
+        
+        // Merge with sitemap posts (avoid duplicates) and apply date filtering
         const existingUrls = new Set(blogPosts.map(p => p.url));
         for (const post of paginatedPosts) {
           if (!existingUrls.has(post.url)) {
-            blogPosts.push({
-              url: post.url,
-              title: post.title,
-              publishedDate: null, // Will be extracted later from URL
-            });
-            existingUrls.add(post.url);
+            // Extract date from URL
+            const publishedDate = extractPublishedDate(post.url);
+            // Filter by date range if provided
+            if (matchesDateRange(publishedDate)) {
+              blogPosts.push({
+                url: post.url,
+                title: post.title,
+                publishedDate,
+              });
+              existingUrls.add(post.url);
+              // Stop early if we've reached maxPosts
+              if (maxPosts !== undefined && blogPosts.length >= maxPosts) {
+                console.log(`[Blog Extractor] Reached maxPosts limit (${maxPosts}) during pagination, stopping`);
+                break;
+              }
+            }
           }
         }
         
         console.log(`[Blog Extractor] Total posts found after pagination: ${blogPosts.length}`);
         
         // If we still found very few posts, try single page extraction as fallback
-        if (blogPosts.length < 20) {
+        // Only if we haven't reached maxPosts yet
+        if ((maxPosts === undefined || blogPosts.length < maxPosts) && blogPosts.length < 20) {
           console.log(`[Blog Extractor] Trying single page extraction as fallback...`);
           const jinaContent = await fetchListingPageWithJina(blogUrl);
           
@@ -1224,15 +1304,25 @@ export async function extractBlogPostUrls(blogUrl: string): Promise<Array<{ url:
           const jinaPosts = extractUrlsFromMarkdown(jinaContent, baseUrl);
           console.log(`[Blog Extractor] Single page extraction found ${jinaPosts.length} blog posts`);
           
-          // Merge with existing posts
+          // Merge with existing posts and apply date filtering
           for (const post of jinaPosts) {
             if (!existingUrls.has(post.url)) {
-              blogPosts.push({
-                url: post.url,
-                title: post.title,
-                publishedDate: null, // Will be extracted later from URL
-              });
-              existingUrls.add(post.url);
+              // Extract date from URL
+              const publishedDate = extractPublishedDate(post.url);
+              // Filter by date range if provided
+              if (matchesDateRange(publishedDate)) {
+                blogPosts.push({
+                  url: post.url,
+                  title: post.title,
+                  publishedDate,
+                });
+                existingUrls.add(post.url);
+                // Stop early if we've reached maxPosts
+                if (maxPosts !== undefined && blogPosts.length >= maxPosts) {
+                  console.log(`[Blog Extractor] Reached maxPosts limit (${maxPosts}) during single page extraction, stopping`);
+                  break;
+                }
+              }
             }
           }
           
@@ -1247,7 +1337,8 @@ export async function extractBlogPostUrls(blogUrl: string): Promise<Array<{ url:
     }
 
     // Fallback to HTML parsing if Jina didn't find enough posts or failed
-    if (blogPosts.length < 5) {
+    // Only if we haven't reached maxPosts yet
+    if ((maxPosts === undefined || blogPosts.length < maxPosts) && blogPosts.length < 5) {
       console.log(`[Blog Extractor] Falling back to HTML parsing (found ${blogPosts.length} posts with Jina)...`);
       const html = await fetchHtml(blogUrl);
       const $ = cheerio.load(html);
@@ -1271,7 +1362,17 @@ export async function extractBlogPostUrls(blogUrl: string): Promise<Array<{ url:
 
       // Try each selector
       for (const selector of selectors) {
+        // Stop early if we've reached maxPosts
+        if (maxPosts !== undefined && blogPosts.length >= maxPosts) {
+          break;
+        }
+        
         $(selector).each((_, element) => {
+          // Stop early if we've reached maxPosts
+          if (maxPosts !== undefined && blogPosts.length >= maxPosts) {
+            return false; // Break out of each loop
+          }
+          
           const $link = $(element);
           const href = $link.attr('href');
           if (!href) return;
@@ -1296,12 +1397,21 @@ export async function extractBlogPostUrls(blogUrl: string): Promise<Array<{ url:
 
           // Only add if we have a reasonable title and URL
           if (title && title.length >= 10 && absoluteUrl.startsWith('http')) {
-            blogPosts.push({ 
-              url: absoluteUrl, 
-              title,
-              publishedDate: null, // Will be extracted later from URL
-            });
-            seenUrls.add(absoluteUrl);
+            // Extract date from URL
+            const publishedDate = extractPublishedDate(absoluteUrl);
+            // Filter by date range if provided
+            if (matchesDateRange(publishedDate)) {
+              blogPosts.push({ 
+                url: absoluteUrl, 
+                title,
+                publishedDate,
+              });
+              seenUrls.add(absoluteUrl);
+              // Stop early if we've reached maxPosts
+              if (maxPosts !== undefined && blogPosts.length >= maxPosts) {
+                return false; // Break out of each loop
+              }
+            }
           }
         });
       }
