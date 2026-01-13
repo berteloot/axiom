@@ -106,6 +106,25 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
       '/search',
       '/sitemap',
       '/feed',
+      '/solutions/',
+      '/products/',
+      '/product/',
+      '/careers/',
+      '/contact',
+      '/about',
+      '/request-pricing',
+      '/pricing',
+      '/overview',
+      '/global-compliance',
+      '/pharmaceutical-compliance',
+      '/food-safety-compliance',
+      '/government',
+      '/technology',
+      '/engagement',
+      '/protection',
+      '/warehouse',
+      '/tracking',
+      '/innovation',
       '/rss',
       '/atom',
       '/contact',
@@ -146,6 +165,19 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
       '/resources/',
       '/resource/',
       '/library',
+      '/request-pricing',
+      '/pharmaceuticals-global-compliance',
+      '/f-b-global-compliance',
+      '/government-overview',
+      '/diamind-sentry',
+      '/pharmaceutical-compliance',
+      '/food-safety-compliance',
+      '/cold-chain-technology',
+      '/consumer-engagement',
+      '/brand-protection',
+      '/edge-warehouse-solutions',
+      '/returnable-asset-tracking',
+      '/smart-digital-innovation',
       '/whitepaper/',
       '/whitepapers/',
       '/webinar/',
@@ -209,6 +241,27 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
     const pathSegments = urlPath.split('/').filter(seg => seg.length > 0);
     if (pathSegments.length === 0 || (pathSegments.length === 1 && pathSegments[0].length < 5)) {
       return true;
+    }
+    
+    // Skip URLs with very short last segment (likely not blog posts)
+    // Blog posts usually have descriptive slugs with multiple words
+    const lastSegment = pathSegments[pathSegments.length - 1];
+    if (lastSegment && lastSegment.length < 20 && !lastSegment.includes('-')) {
+      // Single word or very short - likely a solution/product page
+      return true;
+    }
+    
+    // Blog posts typically have longer, hyphenated slugs
+    // Skip if the last segment is short and doesn't look like a blog post slug
+    if (lastSegment && lastSegment.length < 30) {
+      // Check if it's a common non-blog page pattern
+      const shortNonBlogPatterns = [
+        /^(pricing|overview|compliance|technology|engagement|protection|warehouse|tracking|innovation|government|sentry)$/i,
+        /^[a-z]+-[a-z]+$/i, // Two short words (like "food-safety")
+      ];
+      if (shortNonBlogPatterns.some(pattern => pattern.test(lastSegment))) {
+        return true;
+      }
     }
     
     return false;
@@ -748,13 +801,39 @@ async function fetchAllPostsWithPuppeteer(
       
       previousPostCount = currentPostCount;
       
-      // Scroll down
+      // Scroll down incrementally to trigger infinite scroll
+      const scrollHeight = await page.evaluate(() => document.body.scrollHeight);
+      const viewportHeight = await page.evaluate(() => window.innerHeight);
+      const currentScroll = await page.evaluate(() => window.scrollY);
+      
+      // Scroll in smaller increments to ensure we trigger all load events
+      const scrollIncrement = viewportHeight * 0.8; // Scroll 80% of viewport at a time
+      let scrollPosition = currentScroll;
+      
+      while (scrollPosition < scrollHeight) {
+        scrollPosition += scrollIncrement;
+        await page.evaluate((pos) => {
+          window.scrollTo(0, pos);
+        }, scrollPosition);
+        
+        // Wait a bit for content to load
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Check if page height increased (new content loaded)
+        const newScrollHeight = await page.evaluate(() => document.body.scrollHeight);
+        if (newScrollHeight > scrollHeight) {
+          // New content loaded, continue scrolling
+          break;
+        }
+      }
+      
+      // Final scroll to bottom
       await page.evaluate(() => {
         window.scrollTo(0, document.body.scrollHeight);
       });
       
-      // Wait for new content to load (check for loading indicators or new content)
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds for content to load
+      // Wait longer for content to load after scrolling
+      await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds for content to load
       
       // Check if page height increased (new content loaded)
       const newHeight = await page.evaluate(() => document.body.scrollHeight);
