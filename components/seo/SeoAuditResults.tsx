@@ -689,6 +689,70 @@ export function SeoAuditResults({ result, url }: SeoAuditResultsProps) {
                     </div>
                   </div>
                 </div>
+
+                {/* Search Queries Context - Shows which queries the answer block targets */}
+                {result.search_queries && result.search_queries.length > 0 && (
+                  <div className="mt-4 p-3 bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-900 rounded-md">
+                    <div className="flex items-start gap-2 mb-3">
+                      <Search className="h-4 w-4 text-purple-600 dark:text-purple-400 mt-0.5 shrink-0" />
+                      <div className="flex-1">
+                        <h5 className="text-sm font-semibold text-purple-900 dark:text-purple-100 mb-1 flex items-center gap-2">
+                          Optimized For These Search Queries
+                          <Badge variant="outline" className="text-[9px] h-4">DataForSEO</Badge>
+                        </h5>
+                        <p className="text-xs text-purple-700 dark:text-purple-300 mb-3">
+                          This answer block is optimized to address the highest-volume search queries for this topic.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      {result.search_queries.slice(0, 5).map((query, idx) => {
+                        const isPrimary = idx === 0; // Top query by volume is the primary one
+                        return (
+                          <div
+                            key={idx}
+                            className={`flex items-center justify-between p-2.5 rounded-lg text-sm transition-colors ${
+                              isPrimary
+                                ? "bg-purple-100 dark:bg-purple-900/40 border border-purple-300 dark:border-purple-700"
+                                : "bg-white dark:bg-gray-800/50 border border-purple-200 dark:border-purple-800"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                              {isPrimary && (
+                                <Badge className="bg-purple-600 text-white text-[9px] h-4 px-1.5 shrink-0">
+                                  Primary
+                                </Badge>
+                              )}
+                              <span className={`truncate ${isPrimary ? "font-semibold text-purple-900 dark:text-purple-100" : "text-gray-700 dark:text-gray-300"}`}>
+                                {query.query}
+                              </span>
+                              {query.isQuestion && (
+                                <Badge className="bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 text-[9px] shrink-0">
+                                  Question
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-3 shrink-0 ml-2">
+                              <span className={`text-xs font-medium ${isPrimary ? "text-purple-900 dark:text-purple-100" : "text-gray-600 dark:text-gray-400"}`}>
+                                {query.searchVolume.toLocaleString()}/mo
+                              </span>
+                              {query.cpc > 0 && (
+                                <span className="text-xs text-gray-500 dark:text-gray-500">
+                                  ${query.cpc.toFixed(2)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {result.search_queries.length > 5 && (
+                      <p className="text-xs text-purple-600 dark:text-purple-400 mt-2 text-center">
+                        + {result.search_queries.length - 5} more queries available above
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </CardContent>
