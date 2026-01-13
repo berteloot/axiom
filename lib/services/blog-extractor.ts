@@ -1069,11 +1069,13 @@ async function fetchAllPagesWithPagination(
       const content = await fetchListingPageWithJina(currentUrl);
       const posts = extractUrlsFromMarkdown(content, baseUrl);
       
-      // Add new posts
+      // Count new posts (not duplicates)
+      let newPostsCount = 0;
       for (const post of posts) {
         if (!seenPostUrls.has(post.url)) {
           allPosts.push(post);
           seenPostUrls.add(post.url);
+          newPostsCount++;
         }
       }
       
@@ -1085,23 +1087,24 @@ async function fetchAllPagesWithPagination(
         }
       }
       
-      console.log(`[Blog Extractor] Page ${pageCount}: Found ${posts.length} posts, ${paginationLinks.length} pagination links`);
+      console.log(`[Blog Extractor] Page ${pageCount}: Found ${posts.length} posts (${newPostsCount} new), ${paginationLinks.length} pagination links`);
       
-      // If we got 0 posts, increment empty page counter
-      if (posts.length === 0) {
+      // If we got 0 posts OR 0 new posts (all duplicates), increment empty page counter
+      if (posts.length === 0 || newPostsCount === 0) {
         consecutiveEmptyPages++;
-        // Stop after 2 consecutive empty pages (likely reached the end)
+        // Stop after 2 consecutive pages with no new posts (likely reached the end or stuck in loop)
         if (consecutiveEmptyPages >= 2) {
-          console.log(`[Blog Extractor] Found ${consecutiveEmptyPages} consecutive empty pages, stopping pagination`);
+          console.log(`[Blog Extractor] Found ${consecutiveEmptyPages} consecutive pages with no new posts, stopping pagination`);
           break;
         }
       } else {
-        consecutiveEmptyPages = 0; // Reset counter if we found posts
+        consecutiveEmptyPages = 0; // Reset counter if we found new posts
       }
       
       // If no pagination links found and we have posts, try constructing next page URL
       // Only try ONE pattern at a time, and only if we haven't found a working pattern yet
-      if (paginationLinks.length === 0 && posts.length > 0) {
+      // Also, don't construct URLs if we're getting duplicate content (no new posts)
+      if (paginationLinks.length === 0 && posts.length > 0 && newPostsCount > 0) {
         const basePath = new URL(currentUrl).pathname;
         const currentPageNum = pageCount;
         const nextPage = currentPageNum + 1;
@@ -1130,6 +1133,9 @@ async function fetchAllPagesWithPagination(
       } else if (paginationLinks.length > 0) {
         // Found real pagination links, clear the pattern tracking
         lastPaginationPattern = null;
+      } else if (paginationLinks.length === 0 && posts.length > 0 && newPostsCount === 0) {
+        // We have posts but they're all duplicates - don't construct more URLs
+        console.log(`[Blog Extractor] Page has posts but all are duplicates, not constructing more URLs`);
       }
     } catch (error) {
       console.warn(`[Blog Extractor] Error fetching page ${currentUrl}:`, error);
