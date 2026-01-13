@@ -54,220 +54,300 @@ async function fetchHtml(url: string): Promise<string> {
 }
 
 /**
- * Check if a URL should be excluded from blog post extraction
+ * Check if a URL should be excluded from extraction.
+ *
+ * NOTE: The extractor is used for both pure blog listings and broader "library/resources" listings.
+ * For library-style listings we must NOT exclude content types like /whitepaper/, /webinar/, /brochure/, etc.
  */
 function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
   try {
     const urlObj = new URL(url);
     const urlPath = urlObj.pathname.toLowerCase();
-    
-    // Skip if it's the same as the blog URL or homepage
+
+    const basePath = (baseUrl.pathname || "").toLowerCase();
+    const isLibraryContext =
+      basePath.includes("/library") ||
+      basePath.includes("/resources") ||
+      basePath.includes("/all-media") ||
+      basePath.includes("/media");
+
+    // Skip if it's the same as the listing URL or homepage
     if (url === baseUrl.href || url === `${baseUrl.protocol}//${baseUrl.host}/`) return true;
-    
+
     // Skip URLs with fragments (anchors)
-    if (url.includes('#')) return true;
-    
+    if (url.includes("#")) return true;
+
     // Skip if URL is from a different domain (CDN, external links, etc.)
-    if (urlObj.hostname !== baseUrl.hostname && urlObj.hostname !== `www.${baseUrl.hostname}` && baseUrl.hostname !== `www.${urlObj.hostname}`) {
+    if (
+      urlObj.hostname !== baseUrl.hostname &&
+      urlObj.hostname !== `www.${baseUrl.hostname}` &&
+      baseUrl.hostname !== `www.${urlObj.hostname}`
+    ) {
       return true;
     }
-    
+
     // Skip image/media file URLs
-    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico', '.bmp', '.tiff', '.pdf', '.mp4', '.mp3', '.avi', '.mov', '.wmv', '.zip', '.rar', '.exe', '.dmg'];
-    if (imageExtensions.some(ext => urlPath.toLowerCase().endsWith(ext))) {
+    const binaryExtensions = [
+      ".jpg",
+      ".jpeg",
+      ".png",
+      ".gif",
+      ".webp",
+      ".svg",
+      ".ico",
+      ".bmp",
+      ".tiff",
+      ".pdf",
+      ".mp4",
+      ".mp3",
+      ".avi",
+      ".mov",
+      ".wmv",
+      ".zip",
+      ".rar",
+      ".exe",
+      ".dmg",
+    ];
+    if (binaryExtensions.some((ext) => urlPath.endsWith(ext))) {
       return true;
     }
-    
-    // Skip CDN URLs
-    if (urlObj.hostname.includes('cdn.') || urlObj.hostname.includes('static.') || urlObj.hostname.includes('assets.')) {
+
+    // Skip CDN/static asset hosts
+    if (
+      urlObj.hostname.includes("cdn.") ||
+      urlObj.hostname.includes("static.") ||
+      urlObj.hostname.includes("assets.")
+    ) {
       return true;
     }
-    
+
     // Skip URLs with query parameters that indicate filtering/listing
     const searchParams = urlObj.searchParams;
-    const excludeParams = ['category', 'tag', 'author', 'page', 'paged', 'search', 's', 'filter', 'sort', 'orderby', 'order'];
+    const excludeParams = [
+      "category",
+      "tag",
+      "author",
+      "search",
+      "s",
+      "filter",
+      "sort",
+      "orderby",
+      "order",
+    ];
     for (const param of excludeParams) {
       if (searchParams.has(param)) {
         return true;
       }
     }
-    
-    // Skip common non-post URL patterns (expanded list)
-    const excludePatterns = [
-      '/category/',
-      '/tag/',
-      '/tags/',
-      '/author/',
-      '/authors/',
-      '/page/',
-      '/pages/',
-      '/archive/',
-      '/archives/',
-      '/search',
-      '/sitemap',
-      '/feed',
-      '/solutions/',
-      '/products/',
-      '/product/',
-      '/careers/',
-      '/contact',
-      '/about',
-      '/request-pricing',
-      '/pricing',
-      '/overview',
-      '/global-compliance',
-      '/pharmaceutical-compliance',
-      '/food-safety-compliance',
-      '/government',
-      '/technology',
-      '/engagement',
-      '/protection',
-      '/warehouse',
-      '/tracking',
-      '/innovation',
-      '/rss',
-      '/atom',
-      '/contact',
-      '/about',
-      '/about-us',
-      '/privacy',
-      '/terms',
-      '/legal',
-      '/subscribe',
-      '/newsletter',
-      '/login',
-      '/register',
-      '/signup',
-      '/sign-in',
-      '/wp-admin',
-      '/wp-content',
-      '/wp-includes',
-      '/.well-known',
-      '/solutions/',
-      '/products/',
-      '/product/',
-      '/services/',
-      '/service/',
-      '/industries/',
-      '/industry/',
-      '/company/',
-      '/team/',
-      '/careers/',
-      '/career/',
-      '/jobs/',
-      '/job/',
-      '/pricing/',
-      '/prices/',
-      '/demo/',
-      '/demos/',
-      '/download/',
-      '/downloads/',
-      '/resources/',
-      '/resource/',
-      '/library',
-      '/request-pricing',
-      '/pharmaceuticals-global-compliance',
-      '/f-b-global-compliance',
-      '/government-overview',
-      '/diamind-sentry',
-      '/pharmaceutical-compliance',
-      '/food-safety-compliance',
-      '/cold-chain-technology',
-      '/consumer-engagement',
-      '/brand-protection',
-      '/edge-warehouse-solutions',
-      '/returnable-asset-tracking',
-      '/smart-digital-innovation',
-      '/whitepaper/',
-      '/whitepapers/',
-      '/webinar/',
-      '/webinars/',
-      '/video/',
-      '/videos/',
-      '/news/',
-      '/publication/',
-      '/publications/',
-      '/customer-story/',
-      '/customer-stories/',
-      '/case-study/',
-      '/case-studies/',
-      '/brochure/',
-      '/brochures/',
+
+    // In blog context, also exclude obvious pagination/listing query params.
+    // In library context we may still want to crawl pagination pages and still capture item URLs.
+    if (!isLibraryContext) {
+      const paginationParams = ["page", "paged"];
+      for (const param of paginationParams) {
+        if (searchParams.has(param)) return true;
+      }
+    }
+
+    // Always exclude common non-content utility/admin paths
+    const alwaysExcludePatterns = [
+      "/category/",
+      "/tag/",
+      "/tags/",
+      "/author/",
+      "/authors/",
+      "/archive/",
+      "/archives/",
+      "/search",
+      "/sitemap",
+      "/feed",
+      "/rss",
+      "/atom",
+      "/contact",
+      "/about",
+      "/about-us",
+      "/privacy",
+      "/terms",
+      "/legal",
+      "/subscribe",
+      "/newsletter",
+      "/login",
+      "/register",
+      "/signup",
+      "/sign-in",
+      "/wp-admin",
+      "/wp-content",
+      "/wp-includes",
+      "/.well-known",
     ];
-    
-    // Check if URL path contains any exclude pattern
-    if (excludePatterns.some(pattern => urlPath.includes(pattern))) {
+
+    // Blog-only exclusions (too aggressive for library listings)
+    const blogOnlyExcludePatterns = [
+      "/solutions/",
+      "/products/",
+      "/product/",
+      "/services/",
+      "/service/",
+      "/industries/",
+      "/industry/",
+      "/company/",
+      "/team/",
+      "/careers/",
+      "/career/",
+      "/jobs/",
+      "/job/",
+      "/pricing/",
+      "/prices/",
+      "/demo/",
+      "/demos/",
+      "/download/",
+      "/downloads/",
+      // NOTE: We intentionally do NOT exclude /resources/, /whitepaper/, /webinar/, /brochure/, etc.
+      // because those are core content types in library mode.
+    ];
+
+    const excludePatterns = isLibraryContext
+      ? alwaysExcludePatterns
+      : [...alwaysExcludePatterns, ...blogOnlyExcludePatterns, "/page/", "/pages/", "/news/"];
+
+    if (excludePatterns.some((pattern) => urlPath.includes(pattern))) {
       return true;
     }
-    
+
     // Skip date-based archive URLs (e.g., /2024/, /2024/01/)
     const dateArchivePattern = /^\/(\d{4})\/(\d{2})?\/?$/;
     if (dateArchivePattern.test(urlPath)) {
       return true;
     }
-    
-    // Skip if URL ends with common non-post extensions or paths
-    if (urlPath.endsWith('/feed') || 
-        urlPath.endsWith('/rss') || 
-        urlPath.endsWith('/atom') ||
-        urlPath.endsWith('/sitemap.xml') ||
-        urlPath.endsWith('/robots.txt')) {
+
+    // Skip if URL ends with common non-post endpoints
+    if (
+      urlPath.endsWith("/feed") ||
+      urlPath.endsWith("/rss") ||
+      urlPath.endsWith("/atom") ||
+      urlPath.endsWith("/sitemap.xml") ||
+      urlPath.endsWith("/robots.txt")
+    ) {
       return true;
     }
-    
-    // Additional positive validation: exclude obvious non-blog pages
-    // Skip if URL looks like a product/solution page (common patterns)
-    const nonBlogPatterns = [
-      /^\/solutions\//,
-      /^\/products\//,
-      /^\/product\//,
-      /^\/services\//,
-      /^\/service\//,
-      /^\/industries\//,
-      /^\/industry\//,
-      /^\/company\//,
-      /^\/contact/,
-      /^\/about/,
-      /^\/pricing/,
-      /^\/demo/,
-      /^\/download/,
-    ];
-    
-    if (nonBlogPatterns.some(pattern => pattern.test(urlPath))) {
-      return true;
-    }
-    
-    // If URL is very short (just root or one segment), it's likely not a blog post
-    const pathSegments = urlPath.split('/').filter(seg => seg.length > 0);
-    if (pathSegments.length === 0 || (pathSegments.length === 1 && pathSegments[0].length < 5)) {
-      return true;
-    }
-    
-    // Skip URLs with very short last segment (likely not blog posts)
-    // Blog posts usually have descriptive slugs with multiple words
-    const lastSegment = pathSegments[pathSegments.length - 1];
-    if (lastSegment && lastSegment.length < 20 && !lastSegment.includes('-')) {
-      // Single word or very short - likely a solution/product page
-      return true;
-    }
-    
-    // Blog posts typically have longer, hyphenated slugs
-    // Skip if the last segment is short and doesn't look like a blog post slug
-    if (lastSegment && lastSegment.length < 30) {
-      // Check if it's a common non-blog page pattern
-      const shortNonBlogPatterns = [
-        /^(pricing|overview|compliance|technology|engagement|protection|warehouse|tracking|innovation|government|sentry)$/i,
-        /^[a-z]+-[a-z]+$/i, // Two short words (like "food-safety")
+
+    // Additional positive validation in blog context: exclude obvious non-content pages
+    if (!isLibraryContext) {
+      const nonBlogPatterns = [
+        /^\/solutions\//,
+        /^\/products\//,
+        /^\/product\//,
+        /^\/services\//,
+        /^\/service\//,
+        /^\/industries\//,
+        /^\/industry\//,
+        /^\/company\//,
+        /^\/contact/,
+        /^\/about/,
+        /^\/pricing/,
+        /^\/demo/,
+        /^\/download/,
       ];
-      if (shortNonBlogPatterns.some(pattern => pattern.test(lastSegment))) {
+
+      if (nonBlogPatterns.some((pattern) => pattern.test(urlPath))) {
+        return true;
+      }
+
+      // If URL is very short, it's likely not a blog post
+      const pathSegments = urlPath.split("/").filter((seg) => seg.length > 0);
+      if (pathSegments.length === 0 || (pathSegments.length === 1 && pathSegments[0].length < 5)) {
         return true;
       }
     }
-    
+
     return false;
   } catch {
     // If URL parsing fails, exclude it to be safe
     return true;
+  }
+}
+/**
+ * Fetch listing page content using Puppeteer (for JS-driven listings with "Load more" or infinite scroll).
+ * This is used as a last-resort fallback when sitemap/Jina do not return enough items.
+ */
+async function fetchListingPageWithPuppeteer(url: string, maxIterations = 30): Promise<string> {
+  const normalizedUrl = normalizeUrl(url);
+
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+  });
+
+  try {
+    const page = await browser.newPage();
+    await page.setUserAgent("Mozilla/5.0 (compatible; BlogExtractor/1.0)");
+    await page.goto(normalizedUrl, { waitUntil: "networkidle2", timeout: 60000 });
+
+    // Repeatedly try: click "Load more" and/or scroll to bottom.
+    let lastHeight = await page.evaluate(() => document.body.scrollHeight);
+    let stableCount = 0;
+
+    for (let i = 0; i < maxIterations; i++) {
+      const clicked = await page.evaluate(() => {
+        const candidates = Array.from(document.querySelectorAll('button, a, [role="button"]')) as Array<HTMLElement>;
+        const el = candidates.find((n) => {
+          const t = (n.innerText || n.textContent || "").trim().toLowerCase();
+          const ariaLabel = (n.getAttribute("aria-label") || "").toLowerCase();
+          const className = (n.className || "").toLowerCase();
+          const id = (n.id || "").toLowerCase();
+          
+          // Check text content
+          if (t === "load more" || t === "more" || t.includes("load more") || t.includes("show more") || t.includes("view more")) {
+            return true;
+          }
+          
+          // Check aria-label
+          if (ariaLabel.includes("load more") || ariaLabel.includes("show more") || ariaLabel.includes("view more")) {
+            return true;
+          }
+          
+          // Check class names and IDs (common patterns)
+          if (className.includes("load-more") || className.includes("loadmore") || 
+              id.includes("load-more") || id.includes("loadmore") ||
+              className.includes("show-more") || className.includes("showmore")) {
+            return true;
+          }
+          
+          return false;
+        });
+        if (!el) return false;
+        try {
+          // Check if element is visible and not disabled
+          const style = window.getComputedStyle(el);
+          if (style.display === "none" || style.visibility === "hidden" || (el as any).disabled) {
+            return false;
+          }
+          el.click();
+          return true;
+        } catch {
+          return false;
+        }
+      });
+
+      // Always scroll a bit to trigger lazy loading
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await new Promise((r) => setTimeout(r, clicked ? 2500 : 1500));
+
+      const newHeight = await page.evaluate(() => document.body.scrollHeight);
+      if (newHeight === lastHeight) {
+        stableCount++;
+      } else {
+        stableCount = 0;
+        lastHeight = newHeight;
+      }
+
+      // If nothing changes for a few iterations, assume we reached the end.
+      if (stableCount >= 3) break;
+    }
+
+    return await page.content();
+  } finally {
+    await browser.close();
   }
 }
 
@@ -521,18 +601,21 @@ function extractUrlsFromMarkdown(content: string, baseUrl: URL): Array<{ url: st
 async function tryFetchFromSitemapOrRSS(baseUrl: URL): Promise<Array<{ url: string; title: string }>> {
   const blogPosts: Array<{ url: string; title: string }> = [];
   const baseUrlString = `${baseUrl.protocol}//${baseUrl.host}`;
-  
-  // Try common sitemap/RSS locations
+
+  // Try common sitemap/RSS locations (expanded for WordPress and variants)
   const feedUrls = [
     `${baseUrlString}/sitemap.xml`,
     `${baseUrlString}/sitemap_index.xml`,
+    `${baseUrlString}/sitemap-index.xml`,
+    `${baseUrlString}/wp-sitemap.xml`,
+    `${baseUrlString}/wp-sitemap-index.xml`,
     `${baseUrlString}/blog/sitemap.xml`,
     `${baseUrlString}/feed`,
     `${baseUrlString}/rss`,
     `${baseUrlString}/blog/feed`,
     `${baseUrlString}/blog/rss`,
   ];
-  
+
   for (const feedUrl of feedUrls) {
     try {
       console.log(`[Blog Extractor] Trying sitemap/RSS: ${feedUrl}`);
@@ -540,37 +623,75 @@ async function tryFetchFromSitemapOrRSS(baseUrl: URL): Promise<Array<{ url: stri
         headers: { "User-Agent": "Mozilla/5.0 (compatible; BlogExtractor/1.0)" },
         signal: AbortSignal.timeout(10000),
       });
-      
+
       if (response.ok) {
         const content = await response.text();
         const $ = cheerio.load(content, { xmlMode: true });
-        
-        // Parse sitemap.xml
-        $('url loc').each((_, element) => {
-          const url = $(element).text().trim();
-          if (url && !shouldExcludeUrl(url, baseUrl)) {
-            // Extract title from sitemap if available
-            const $urlElement = $(element).parent();
-            const title = $urlElement.find('image\\:title, title').first().text().trim() || 
-                         url.split('/').pop()?.replace(/-/g, ' ') || '';
-            if (title.length >= 10) {
-              blogPosts.push({ url, title });
+
+        const addFromUrlset = (xml: string) => {
+          const $xml = cheerio.load(xml, { xmlMode: true });
+          $xml('url loc').each((_, el) => {
+            const u = $xml(el).text().trim();
+            if (!u) return;
+            if (shouldExcludeUrl(u, baseUrl)) return;
+
+            const slug = u.split('/').filter(Boolean).pop() || '';
+            const derivedTitle = slug.replace(/[-_]+/g, ' ').trim();
+            const title = derivedTitle.length >= 10 ? derivedTitle : u;
+
+            blogPosts.push({ url: u, title });
+          });
+        };
+
+        // If this is a sitemap index, follow child sitemaps.
+        const sitemapLocs = $('sitemap loc')
+          .map((_, el) => $(el).text().trim())
+          .get()
+          .filter(Boolean);
+
+        if (sitemapLocs.length > 0) {
+          // Prefer post/content sitemaps first, but still try all with a reasonable cap.
+          const prioritized = sitemapLocs.sort((a, b) => {
+            const aScore = /post|posts|wp-sitemap-posts|blog|news|resource|media/i.test(a) ? 0 : 1;
+            const bScore = /post|posts|wp-sitemap-posts|blog|news|resource|media/i.test(b) ? 0 : 1;
+            return aScore - bScore;
+          });
+
+          for (const loc of prioritized.slice(0, 25)) {
+            try {
+              const childResp = await fetch(loc, {
+                headers: { "User-Agent": "Mozilla/5.0 (compatible; BlogExtractor/1.0)" },
+                signal: AbortSignal.timeout(15000),
+              });
+              if (!childResp.ok) continue;
+              const childXml = await childResp.text();
+              addFromUrlset(childXml);
+            } catch {
+              continue;
             }
           }
-        });
-        
+
+          if (blogPosts.length > 0) {
+            console.log(`[Blog Extractor] Found ${blogPosts.length} posts from sitemap index ${feedUrl}`);
+            return blogPosts;
+          }
+        }
+
+        // Otherwise treat as a standard urlset sitemap
+        addFromUrlset(content);
+
         // Parse RSS feed
         $('item link, entry link[type="text/html"]').each((_, element) => {
           const url = $(element).text().trim() || $(element).attr('href') || '';
           if (url && !shouldExcludeUrl(url, baseUrl)) {
             const $item = $(element).closest('item, entry');
             const title = $item.find('title').first().text().trim() || '';
-            if (title.length >= 10) {
+            if (title) {
               blogPosts.push({ url, title });
             }
           }
         });
-        
+
         if (blogPosts.length > 0) {
           console.log(`[Blog Extractor] Found ${blogPosts.length} posts from ${feedUrl}`);
           return blogPosts;
@@ -581,7 +702,7 @@ async function tryFetchFromSitemapOrRSS(baseUrl: URL): Promise<Array<{ url: stri
       continue;
     }
   }
-  
+
   return [];
 }
 
@@ -717,193 +838,8 @@ async function fetchAllPagesWithPagination(
 }
 
 /**
- * Fetch all blog posts using Puppeteer to handle infinite scroll
- */
-async function fetchAllPostsWithPuppeteer(
-  blogUrl: string,
-  baseUrl: URL
-): Promise<Array<{ url: string; title: string }>> {
-  console.log(`[Blog Extractor] Using Puppeteer to handle infinite scroll for ${blogUrl}`);
-  
-  let browser;
-  try {
-    browser = await puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    });
-    
-    const page = await browser.newPage();
-    await page.setViewport({ width: 1920, height: 1080 });
-    await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-    
-    // Navigate to the page
-    await page.goto(blogUrl, { waitUntil: 'networkidle2', timeout: 60000 });
-    
-    let previousPostCount = 0;
-    let noNewPostsCount = 0;
-    const maxScrollAttempts = 50; // Limit to prevent infinite loops
-    let scrollAttempt = 0;
-    
-    // Scroll and wait for content to load
-    while (scrollAttempt < maxScrollAttempts) {
-      scrollAttempt++;
-      
-      // Get current post count
-      const currentPosts = await page.evaluate(() => {
-        const links: Array<{ url: string; title: string }> = [];
-        const seenUrls = new Set<string>();
-        
-        // Find all blog post links
-        document.querySelectorAll('a[href]').forEach((link) => {
-          const href = (link as HTMLAnchorElement).href;
-          if (!href || seenUrls.has(href)) return;
-          
-          // Check if it looks like a blog post URL
-          if (
-            href.includes('/blog/') ||
-            href.includes('/post/') ||
-            href.includes('/article/') ||
-            (href.includes('rfxcel.com/') && 
-             !href.includes('/library') &&
-             !href.includes('/solutions') &&
-             !href.includes('/products') &&
-             !href.includes('/careers') &&
-             !href.includes('/contact') &&
-             !href.includes('/about') &&
-             !href.match(/\.(jpg|jpeg|png|gif|pdf|zip)$/i))
-          ) {
-            const title = link.textContent?.trim() || '';
-            // Skip generic link texts
-            if (title && title.length > 10 && !title.match(/^(read more|learn more|view more|→|›|>)$/i)) {
-              links.push({ url: href, title });
-              seenUrls.add(href);
-            }
-          }
-        });
-        
-        return links;
-      });
-      
-      const currentPostCount = currentPosts.length;
-      console.log(`[Blog Extractor] Scroll attempt ${scrollAttempt}: Found ${currentPostCount} posts`);
-      
-      // Check if we got new posts
-      if (currentPostCount === previousPostCount) {
-        noNewPostsCount++;
-        // If no new posts for 3 consecutive scrolls, we're done
-        if (noNewPostsCount >= 3) {
-          console.log(`[Blog Extractor] No new posts found after ${noNewPostsCount} scrolls, stopping`);
-          break;
-        }
-      } else {
-        noNewPostsCount = 0; // Reset counter if we got new posts
-      }
-      
-      previousPostCount = currentPostCount;
-      
-      // Scroll down incrementally to trigger infinite scroll
-      const scrollHeight = await page.evaluate(() => document.body.scrollHeight);
-      const viewportHeight = await page.evaluate(() => window.innerHeight);
-      const currentScroll = await page.evaluate(() => window.scrollY);
-      
-      // Scroll in smaller increments to ensure we trigger all load events
-      const scrollIncrement = viewportHeight * 0.8; // Scroll 80% of viewport at a time
-      let incrementalScrollPos = currentScroll;
-      
-      while (incrementalScrollPos < scrollHeight) {
-        incrementalScrollPos += scrollIncrement;
-        await page.evaluate((pos) => {
-          window.scrollTo(0, pos);
-        }, incrementalScrollPos);
-        
-        // Wait a bit for content to load
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // Check if page height increased (new content loaded)
-        const newScrollHeight = await page.evaluate(() => document.body.scrollHeight);
-        if (newScrollHeight > scrollHeight) {
-          // New content loaded, continue scrolling
-          break;
-        }
-      }
-      
-      // Final scroll to bottom
-      await page.evaluate(() => {
-        window.scrollTo(0, document.body.scrollHeight);
-      });
-      
-      // Wait longer for content to load after scrolling
-      await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds for content to load
-      
-      // Check if page height increased (new content loaded)
-      const newHeight = await page.evaluate(() => document.body.scrollHeight);
-      const finalScrollPosition = await page.evaluate(() => window.scrollY);
-      
-      // If we're at the bottom and no new content, we're done
-      if (finalScrollPosition + 1000 >= newHeight && noNewPostsCount >= 2) {
-        console.log(`[Blog Extractor] Reached bottom of page, stopping`);
-        break;
-      }
-    }
-    
-    // Extract all posts from the fully loaded page
-    // We need to pass baseUrl info to the evaluate function, but we can't pass URL objects
-    // So we'll do the filtering outside of evaluate
-    const allLinks = await page.evaluate(() => {
-      const links: Array<{ url: string; title: string }> = [];
-      const seenUrls = new Set<string>();
-      
-      document.querySelectorAll('a[href]').forEach((link) => {
-        const href = (link as HTMLAnchorElement).href;
-        if (!href || seenUrls.has(href)) return;
-        seenUrls.add(href);
-        
-        let title = link.textContent?.trim() || '';
-        
-        // If title is generic, try to find title in parent elements
-        if (!title || title.length < 10 || title.match(/^(read more|learn more|view more|→|›|>)$/i)) {
-          const parent = link.closest('article, .post, .blog-post, .card, .entry, .item, [class*="blog"], [class*="post"]');
-          if (parent) {
-            const heading = parent.querySelector('h1, h2, h3, h4, .title, .entry-title, .post-title, [class*="title"]');
-            if (heading) {
-              title = heading.textContent?.trim() || title;
-            }
-          }
-        }
-        
-        if (title && title.length >= 10) {
-          links.push({ url: href, title });
-        }
-      });
-      
-      return links;
-    });
-    
-    // Filter links using the same logic as other extraction methods
-    const allPosts = allLinks.filter(link => {
-      try {
-        return !shouldExcludeUrl(link.url, baseUrl);
-      } catch {
-        return false;
-      }
-    });
-    
-    console.log(`[Blog Extractor] Puppeteer extraction found ${allPosts.length} blog posts`);
-    return allPosts;
-    
-  } catch (error) {
-    console.error(`[Blog Extractor] Puppeteer extraction failed:`, error);
-    throw error;
-  } finally {
-    if (browser) {
-      await browser.close();
-    }
-  }
-}
-
-/**
  * Extract blog post URLs from a blog homepage
- * Uses Puppeteer for infinite scroll, Jina Reader for JavaScript-rendered pages, falls back to HTML parsing
+ * Uses Jina Reader for JavaScript-rendered pages, falls back to HTML parsing
  */
 export async function extractBlogPostUrls(blogUrl: string): Promise<Array<{ url: string; title: string }>> {
   const baseUrl = new URL(normalizeUrl(blogUrl));
@@ -921,71 +857,52 @@ export async function extractBlogPostUrls(blogUrl: string): Promise<Array<{ url:
       console.log(`[Blog Extractor] Sitemap/RSS fetch failed, continuing with page extraction`);
     }
     
-    // If sitemap didn't work or found few posts, try Puppeteer for infinite scroll
+    // If sitemap didn't work or found few posts, try Jina Reader with pagination
     if (blogPosts.length < 50) {
       try {
-        console.log(`[Blog Extractor] Attempting to extract with Puppeteer (infinite scroll) from ${blogUrl}...`);
-        const puppeteerPosts = await fetchAllPostsWithPuppeteer(blogUrl, baseUrl);
+        console.log(`[Blog Extractor] Attempting to extract with Jina Reader from ${blogUrl}...`);
+        
+        // Try fetching all pages with pagination
+        const paginatedPosts = await fetchAllPagesWithPagination(blogUrl, baseUrl, 50);
         
         // Merge with sitemap posts (avoid duplicates)
         const existingUrls = new Set(blogPosts.map(p => p.url));
-        for (const post of puppeteerPosts) {
+        for (const post of paginatedPosts) {
           if (!existingUrls.has(post.url)) {
             blogPosts.push(post);
             existingUrls.add(post.url);
           }
         }
         
-        console.log(`[Blog Extractor] Total posts found after Puppeteer: ${blogPosts.length}`);
-      } catch (puppeteerError) {
-        console.warn(`[Blog Extractor] Puppeteer extraction failed, trying Jina Reader:`, puppeteerError);
+        console.log(`[Blog Extractor] Total posts found after pagination: ${blogPosts.length}`);
         
-        // Fallback to Jina Reader with pagination
-        try {
-          console.log(`[Blog Extractor] Attempting to extract with Jina Reader from ${blogUrl}...`);
+        // If we still found very few posts, try single page extraction as fallback
+        if (blogPosts.length < 20) {
+          console.log(`[Blog Extractor] Trying single page extraction as fallback...`);
+          const jinaContent = await fetchListingPageWithJina(blogUrl);
           
-          // Try fetching all pages with pagination
-          const paginatedPosts = await fetchAllPagesWithPagination(blogUrl, baseUrl, 50);
+          // Log content preview for debugging
+          console.log(`[Blog Extractor] Jina content preview (first 500 chars): ${jinaContent.substring(0, 500)}`);
+          console.log(`[Blog Extractor] Jina content length: ${jinaContent.length} characters`);
+          
+          const jinaPosts = extractUrlsFromMarkdown(jinaContent, baseUrl);
+          console.log(`[Blog Extractor] Single page extraction found ${jinaPosts.length} blog posts`);
           
           // Merge with existing posts
-          const existingUrls = new Set(blogPosts.map(p => p.url));
-          for (const post of paginatedPosts) {
+          for (const post of jinaPosts) {
             if (!existingUrls.has(post.url)) {
               blogPosts.push(post);
               existingUrls.add(post.url);
             }
           }
           
-          console.log(`[Blog Extractor] Total posts found after pagination: ${blogPosts.length}`);
-          
-          // If we still found very few posts, try single page extraction as fallback
+          // If we found very few posts, log a sample of the content to debug
           if (blogPosts.length < 20) {
-            console.log(`[Blog Extractor] Trying single page extraction as fallback...`);
-            const jinaContent = await fetchListingPageWithJina(blogUrl);
-            
-            // Log content preview for debugging
-            console.log(`[Blog Extractor] Jina content preview (first 500 chars): ${jinaContent.substring(0, 500)}`);
-            console.log(`[Blog Extractor] Jina content length: ${jinaContent.length} characters`);
-            
-            const jinaPosts = extractUrlsFromMarkdown(jinaContent, baseUrl);
-            console.log(`[Blog Extractor] Single page extraction found ${jinaPosts.length} blog posts`);
-            
-            // Merge with existing posts
-            for (const post of jinaPosts) {
-              if (!existingUrls.has(post.url)) {
-                blogPosts.push(post);
-                existingUrls.add(post.url);
-              }
-            }
-            
-            // If we found very few posts, log a sample of the content to debug
-            if (blogPosts.length < 20) {
-              console.warn(`[Blog Extractor] Only found ${blogPosts.length} posts total, content sample:`, jinaContent.substring(0, 1000));
-            }
+            console.warn(`[Blog Extractor] Only found ${blogPosts.length} posts total, content sample:`, jinaContent.substring(0, 1000));
           }
-        } catch (jinaError) {
-          console.warn(`[Blog Extractor] Jina extraction failed, falling back to HTML:`, jinaError);
         }
+      } catch (jinaError) {
+        console.warn(`[Blog Extractor] Jina extraction failed, falling back to HTML:`, jinaError);
       }
     }
 
@@ -1043,6 +960,27 @@ export async function extractBlogPostUrls(blogUrl: string): Promise<Array<{ url:
             seenUrls.add(absoluteUrl);
           }
         });
+      }
+    }
+
+    // Last resort: JS-rendered listings (common for /library/ and some /resources/ pages)
+    if (blogPosts.length < 50) {
+      try {
+        console.log(`[Blog Extractor] Attempting Puppeteer extraction (found ${blogPosts.length} posts so far)...`);
+        const renderedHtml = await fetchListingPageWithPuppeteer(blogUrl, 30);
+        const renderedPosts = extractUrlsFromMarkdown(renderedHtml, baseUrl);
+
+        const existingUrls = new Set(blogPosts.map((p) => p.url));
+        for (const post of renderedPosts) {
+          if (!existingUrls.has(post.url)) {
+            blogPosts.push(post);
+            existingUrls.add(post.url);
+          }
+        }
+
+        console.log(`[Blog Extractor] Puppeteer extraction added ${renderedPosts.length} items; total is now ${blogPosts.length}`);
+      } catch (error) {
+        console.warn(`[Blog Extractor] Puppeteer extraction failed:`, error);
       }
     }
 
