@@ -23,6 +23,8 @@ import {
 } from "lucide-react";
 import { SeoAuditResult } from "@/lib/ai/seo-audit";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { ChevronDown } from "lucide-react";
 
 interface SeoAuditResultsProps {
   result: SeoAuditResult;
@@ -95,6 +97,206 @@ function getObservationTypeColor(type: "observed" | "inferred" | "cannot_determi
     case "cannot_determine":
       return "bg-gray-100 text-gray-800 border-gray-300";
   }
+}
+
+// Schema Recommendation Item Component
+function SchemaRecommendationItem({
+  schema,
+  idx,
+}: {
+  schema: SeoAuditResult["schema_recommendations"][0];
+  idx: number;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+      <Card>
+        <CollapsibleTrigger asChild>
+          <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ChevronDown
+                  className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${
+                    isOpen ? "rotate-180" : ""
+                  }`}
+                />
+                <CardTitle className="text-base">{schema.schema_type}</CardTitle>
+              </div>
+              <div className="flex gap-2">
+                {schema.observation_type && (
+                  <Badge className={`text-[10px] ${getObservationTypeColor(schema.observation_type)}`}>
+                    {schema.observation_type.replace("_", " ")}
+                  </Badge>
+                )}
+                <Badge
+                  variant={
+                    schema.action === "add"
+                      ? "default"
+                      : schema.action === "fix"
+                      ? "destructive"
+                      : "outline"
+                  }
+                >
+                  {schema.action}
+                </Badge>
+                {schema.rich_results_benefit && (
+                  <Badge variant="secondary" className="text-[10px]">
+                    Rich Result Eligible
+                  </Badge>
+                )}
+              </div>
+            </div>
+            <div className="mt-2 text-sm text-muted-foreground">
+              {schema.rich_results_benefit || schema.llm_benefit ? (
+                <span>
+                  {schema.rich_results_benefit && `Rich Result: ${schema.rich_results_benefit}`}
+                  {schema.rich_results_benefit && schema.llm_benefit && " • "}
+                  {schema.llm_benefit && `LLM: ${schema.llm_benefit}`}
+                </span>
+              ) : (
+                <span>{schema.notes}</span>
+              )}
+            </div>
+          </CardHeader>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <CardContent className="space-y-4 pt-0">
+            {/* Rationale */}
+            {schema.rationale && (
+              <div>
+                <h4 className="text-sm font-semibold mb-1">Why This Matters</h4>
+                <p className="text-sm text-muted-foreground">{schema.rationale}</p>
+              </div>
+            )}
+
+            {/* Benefits */}
+            {(schema.rich_results_benefit || schema.llm_benefit) && (
+              <div>
+                <h4 className="text-sm font-semibold mb-2">Benefits</h4>
+                <div className="space-y-1">
+                  {schema.rich_results_benefit && (
+                    <div className="text-sm">
+                      <span className="font-medium">Rich Results: </span>
+                      <span className="text-muted-foreground">{schema.rich_results_benefit}</span>
+                    </div>
+                  )}
+                  {schema.llm_benefit && (
+                    <div className="text-sm">
+                      <span className="font-medium">LLM Processing: </span>
+                      <span className="text-muted-foreground">{schema.llm_benefit}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Implementation Steps */}
+            {schema.implementation_steps && schema.implementation_steps.length > 0 && (
+              <div>
+                <h4 className="text-sm font-semibold mb-2">Implementation Steps</h4>
+                <ol className="list-decimal list-inside space-y-1 text-sm text-muted-foreground">
+                  {schema.implementation_steps.map((step, stepIdx) => (
+                    <li key={stepIdx}>{step}</li>
+                  ))}
+                </ol>
+              </div>
+            )}
+
+            {/* Placement Instructions */}
+            {schema.placement_instructions && (
+              <div>
+                <h4 className="text-sm font-semibold mb-1">Placement</h4>
+                <p className="text-sm text-muted-foreground">{schema.placement_instructions}</p>
+              </div>
+            )}
+
+            {/* Properties */}
+            {(schema.required_properties?.length > 0 || schema.recommended_properties?.length > 0) && (
+              <div>
+                <h4 className="text-sm font-semibold mb-2">Properties</h4>
+                <div className="space-y-2">
+                  {schema.required_properties && schema.required_properties.length > 0 && (
+                    <div>
+                      <span className="text-xs font-medium text-red-600">Required: </span>
+                      <span className="text-xs text-muted-foreground">
+                        {schema.required_properties.join(", ")}
+                      </span>
+                    </div>
+                  )}
+                  {schema.recommended_properties && schema.recommended_properties.length > 0 && (
+                    <div>
+                      <span className="text-xs font-medium text-blue-600">Recommended: </span>
+                      <span className="text-xs text-muted-foreground">
+                        {schema.recommended_properties.join(", ")}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Code Example */}
+            {schema.code_example ? (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-semibold">Code Example</h4>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      navigator.clipboard.writeText(schema.code_example || "");
+                    }}
+                  >
+                    <Copy className="h-3 w-3 mr-1" />
+                    Copy
+                  </Button>
+                </div>
+                <pre className="bg-muted p-3 rounded-md text-xs overflow-x-auto">
+                  <code>{schema.code_example}</code>
+                </pre>
+              </div>
+            ) : (
+              schema.action === "remove" && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-1">Code Example</h4>
+                  <p className="text-sm text-muted-foreground italic">No code needed - removal steps above</p>
+                </div>
+              )
+            )}
+
+            {/* Testing Steps */}
+            {schema.testing_steps && schema.testing_steps.length > 0 && (
+              <div>
+                <h4 className="text-sm font-semibold mb-2">Testing</h4>
+                <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
+                  {schema.testing_steps.map((step, stepIdx) => (
+                    <li key={stepIdx}>{step}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Eligibility Note */}
+            {schema.eligibility_note && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
+                <h4 className="text-sm font-semibold mb-1 text-yellow-800">Important Note</h4>
+                <p className="text-xs text-yellow-700">{schema.eligibility_note}</p>
+              </div>
+            )}
+
+            {/* Notes (fallback if no other fields) */}
+            {schema.notes && !schema.rationale && (
+              <div>
+                <h4 className="text-sm font-semibold mb-1">Notes</h4>
+                <p className="text-sm text-muted-foreground">{schema.notes}</p>
+              </div>
+            )}
+          </CardContent>
+        </CollapsibleContent>
+      </Card>
+    </Collapsible>
+  );
 }
 
 function getScoreConfidence(score: number | { score: number; confidence: string } | undefined): string | null {
@@ -718,34 +920,7 @@ export function SeoAuditResults({ result, url }: SeoAuditResultsProps) {
 
           <div className="space-y-3">
             {result.schema_recommendations.map((schema, idx) => (
-              <Card key={idx}>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-base">{schema.schema_type}</CardTitle>
-                    <div className="flex gap-2">
-                      {schema.observation_type && (
-                        <Badge className={`text-[10px] ${getObservationTypeColor(schema.observation_type)}`}>
-                          {schema.observation_type.replace("_", " ")}
-                        </Badge>
-                      )}
-                      <Badge
-                        variant={
-                          schema.action === "add"
-                            ? "default"
-                            : schema.action === "fix"
-                            ? "destructive"
-                            : "outline"
-                        }
-                      >
-                        {schema.action}
-                      </Badge>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground">{schema.notes}</p>
-                </CardContent>
-              </Card>
+              <SchemaRecommendationItem key={idx} schema={schema} idx={idx} />
             ))}
           </div>
 

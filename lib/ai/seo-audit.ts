@@ -110,7 +110,32 @@ const SeoAuditSchema = z.object({
       action: z.enum(["add", "fix", "remove", "validate"]),
       notes: z.string(),
       observation_type: z.enum(["observed", "inferred", "cannot_determine"]),
+      // Enhanced fields for actionable structured data recommendations
+      code_example: z.string().nullable(), // JSON-LD schema markup (required for add/fix/validate, nullable for remove)
+      implementation_steps: z.array(z.string()).min(1), // Always required, at least 1 step
+      placement_instructions: z.string().nullable(), // Where to place the schema
+      rationale: z.string(), // Why this schema helps with rich results and LLM processing
+      rich_results_benefit: z.string().nullable(), // Specific rich result type (only if currently eligible)
+      llm_benefit: z.string().nullable(), // How this helps LLMs understand content structure
+      required_properties: z.array(z.string()), // Required properties for eligibility
+      recommended_properties: z.array(z.string()), // Recommended properties for completeness
+      testing_steps: z.array(z.string()), // Steps to test (Rich Results Test, Search Console)
+      eligibility_note: z.string().nullable(), // Explicit "not guaranteed" + feature availability constraints
     })
+    .refine(
+      (data) => {
+        // For add/fix/validate actions, code_example must be non-empty
+        if (["add", "fix", "validate"].includes(data.action)) {
+          return data.code_example !== null && data.code_example.trim().length > 0;
+        }
+        // For remove action, code_example can be null
+        return true;
+      },
+      {
+        message: "code_example is required for add, fix, and validate actions",
+        path: ["code_example"],
+      }
+    )
   ),
   internal_linking_suggestions: z.array(
     z.object({
@@ -215,6 +240,52 @@ const SEO_AUDIT_SYSTEM_PROMPT = `You are an expert SEO and AI extraction special
 - Image optimization: alt text coverage, dimension attributes for CLS
 - Boilerplate ratio: main content vs repeated template noise (rough heuristic)
 - Extraction hazards: broken numbering, duplicated headings, huge unchunked paragraphs, excessive CTA repetition
+
+**STRUCTURED DATA MARKUP (CRITICAL FOR RICH RESULTS & LLM PROCESSING):**
+Structured data (Schema.org JSON-LD) can make your content eligible for rich results in Google Search and may help LLMs understand your content structure and relationships more accurately.
+
+IMPORTANT CONTEXT - Rich Result Eligibility:
+- HowTo rich results are DEPRECATED (Google removed How-to rich results; the Search Central announcement calls it deprecated)
+- FAQ rich results are HEAVILY RESTRICTED (Google limited FAQ rich results to authoritative government and health sites)
+- Only claim rich_results_benefit if that schema type is currently eligible for rich results for this kind of site/page
+- Use only properties supported by Google's documentation for that feature; do not invent fields
+- Structured data does NOT guarantee a rich result and has general eligibility/policy requirements
+
+When generating schema_recommendations:
+1. For action="add": Provide complete, valid JSON-LD code_example with required properties. Include rationale explaining why this schema helps with rich results (if eligible) and LLM processing. List required_properties and recommended_properties. Include testing_steps (Rich Results Test, Search Console). Add eligibility_note explaining "not guaranteed" and any feature availability constraints.
+2. For action="fix": Provide corrected JSON-LD code_example. Explain what was wrong in rationale. Include implementation_steps to fix the issue. List missing required_properties or incorrect properties.
+3. For action="remove": code_example can be null. Focus implementation_steps on removal process and re-testing. Explain why removal is recommended in rationale.
+4. For action="validate": Provide the existing schema as code_example. Include testing_steps to verify it's working correctly.
+
+REQUIREMENTS:
+- code_example: REQUIRED for "add", "fix", "validate" actions. Must be complete, valid JSON-LD that can be copied and pasted. For "remove" action, code_example can be null.
+- implementation_steps: ALWAYS required (minimum 1 step). Must be actionable, numbered steps.
+- placement_instructions: Where to place the schema (e.g., "in the <head> section before </head>", "right after <body> tag", "before </body> tag"). Can be null if not applicable.
+- rationale: REQUIRED. Explain why this schema helps with rich results (if eligible) and LLM processing. For HowTo/FAQ, note that rich results are not generally available but may help understanding.
+- rich_results_benefit: Only include if the schema type is currently eligible for rich results for this site/page type. Can be null.
+- llm_benefit: Explain how this helps LLMs understand content structure. Can be null.
+- required_properties: Array of required properties for eligibility (e.g., ["name", "description"] for Product schema).
+- recommended_properties: Array of recommended properties for completeness (e.g., ["brand", "offers"] for Product schema).
+- testing_steps: Steps to test (e.g., ["Use Google Rich Results Test tool", "Check Search Console for errors"]).
+- eligibility_note: Explicit note about "not guaranteed" and feature availability constraints (e.g., "Rich results are not guaranteed. FAQ schema is restricted to authoritative government and health sites.").
+
+SCHEMA PLACEMENT:
+- JSON-LD can be placed in <head> or <body> sections
+- Google recommends JSON-LD format
+- Can be implemented in ways compatible with typical site templates
+- Avoid implying only-head placement as a universal rule
+
+LLM BENEFITS (Temper claims):
+- Structured data can help machines interpret entities and relationships
+- Do NOT imply a direct ranking boost
+- Do NOT guarantee "ChatGPT will use this"
+- Frame as "may improve interpretability for systems that consume structured signals"
+
+CODE GENERATION GUIDELINES:
+- Prefer minimal valid markup: required + high-value recommended fields only
+- If schema would be huge, generate a minimal baseline and optionally add "expandable fields" suggestions
+- Ensure JSON-LD is valid JSON (proper escaping, no trailing commas)
+- Use real data from the page when possible (title, description, etc.)
 
 **ANSWER BLOCK ANALYSIS (CRITICAL FOR AI EXTRACTABILITY):**
 The "Answer Block" is a concise answer to the primary query placed within the first 150-250 words of the main content. This is CRITICAL because:
