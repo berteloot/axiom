@@ -241,8 +241,8 @@ async function fetchListingPageWithJina(url: string, retries = 2): Promise<strin
       const response = await fetch(jinaUrl, {
         headers: {
           Authorization: `Bearer ${JINA_API_KEY}`,
-          Accept: "text/plain",
-          "X-Respond-With": "markdown",
+          Accept: "text/html", // Request HTML for better structure parsing
+          "X-Respond-With": "html", // Request HTML format for better link extraction
           "X-With-Generated-Alt": "true",
           "X-No-Cache": "true",
           // Remove page chrome but keep content links
@@ -344,12 +344,49 @@ function extractUrlsFromMarkdown(content: string, baseUrl: URL): Array<{ url: st
           if (seenUrls.has(absoluteUrl)) return;
           if (shouldExcludeUrl(absoluteUrl, baseUrl)) return;
 
-          let title = $link.text().trim();
-          if (!title || title.length < 10) {
-            title = $link.closest('article, .post, .blog-post, .card, h2, h3').find('h1, h2, h3, .title, .entry-title').first().text().trim() || title;
+          // Extract title - handle "Read More" links specially
+          const linkText = $link.text().trim().toLowerCase();
+          const genericTexts = ['read more', 'read more ›', 'read more >', 'learn more', 'view more', 'continue reading', '→', '›', '>', 'download', 'download ›'];
+          
+          let title = '';
+          
+          if (genericTexts.includes(linkText) || linkText.length < 5) {
+            // Link text is generic, find title in parent elements
+            const $parent = $link.closest('article, .post, .blog-post, .card, .entry, .item, [class*="blog"], [class*="post"]');
+            
+            // Look for heading elements first (most reliable)
+            title = $parent.find('h1, h2, h3, h4, .title, .entry-title, .post-title, .blog-title, [class*="title"]').first().text().trim();
+            
+            // If no heading, look for strong/bold text
+            if (!title || title.length < 10) {
+              title = $parent.find('strong, b, .heading').first().text().trim();
+            }
+            
+            // If still no title, try to get text from the parent container
+            if (!title || title.length < 10) {
+              const parentText = $parent.text().trim();
+              // Extract first meaningful sentence (skip "Read More" etc.)
+              const sentences = parentText.split(/[.!?]\s+/).filter(s => 
+                s.length > 20 && 
+                !genericTexts.some(gt => s.toLowerCase().includes(gt)) &&
+                !s.toLowerCase().includes('read more')
+              );
+              if (sentences.length > 0) {
+                title = sentences[0].substring(0, 150).trim();
+              }
+            }
+          } else {
+            // Link text is meaningful, use it as title
+            title = $link.text().trim();
+            if (title.length < 10) {
+              // Try to find title in parent
+              const $parent = $link.closest('article, .post, .blog-post, .card, .entry, .item');
+              title = $parent.find('h1, h2, h3, .title, .entry-title').first().text().trim() || title;
+            }
           }
 
-          if (title.length >= 10 && absoluteUrl.startsWith('http')) {
+          // Only add if we have a good title
+          if (title && title.length >= 10 && absoluteUrl.startsWith('http')) {
             blogPosts.push({ url: absoluteUrl, title });
             seenUrls.add(absoluteUrl);
           }
@@ -437,8 +474,18 @@ export async function extractBlogPostUrls(blogUrl: string): Promise<Array<{ url:
     try {
       console.log(`[Blog Extractor] Attempting to extract with Jina Reader from ${blogUrl}...`);
       const jinaContent = await fetchListingPageWithJina(blogUrl);
+      
+      // Log content preview for debugging
+      console.log(`[Blog Extractor] Jina content preview (first 500 chars): ${jinaContent.substring(0, 500)}`);
+      console.log(`[Blog Extractor] Jina content length: ${jinaContent.length} characters`);
+      
       blogPosts = extractUrlsFromMarkdown(jinaContent, baseUrl);
       console.log(`[Blog Extractor] Jina extraction found ${blogPosts.length} blog posts`);
+      
+      // If we found very few posts, log a sample of the content to debug
+      if (blogPosts.length < 20) {
+        console.warn(`[Blog Extractor] Only found ${blogPosts.length} posts, content sample:`, jinaContent.substring(0, 1000));
+      }
     } catch (jinaError) {
       console.warn(`[Blog Extractor] Jina extraction failed, falling back to HTML:`, jinaError);
     }
