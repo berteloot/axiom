@@ -97,12 +97,8 @@ function getObservationTypeColor(type: "observed" | "inferred" | "cannot_determi
   }
 }
 
-// Helper to extract score value from score object or number (backwards compatible)
-function getScoreValue(score: number | { score: number; confidence: string }): number {
-  return typeof score === "number" ? score : score.score;
-}
-
-function getScoreConfidence(score: number | { score: number; confidence: string }): string | null {
+function getScoreConfidence(score: number | { score: number; confidence: string } | undefined): string | null {
+  if (score === undefined || score === null) return null;
   return typeof score === "number" ? null : score.confidence;
 }
 
