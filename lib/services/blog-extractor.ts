@@ -918,23 +918,24 @@ async function fetchAllPagesWithPagination(
       
       console.log(`[Blog Extractor] Page ${pageCount}: Found ${posts.length} posts, ${paginationLinks.length} pagination links`);
       
+      // If we got 0 posts, this page doesn't exist or has no content - stop trying more pages
+      if (posts.length === 0) {
+        console.log(`[Blog Extractor] Page ${currentUrl} returned 0 posts, stopping pagination`);
+        break;
+      }
+      
       // If no pagination links found and we have posts, try constructing next page URL
+      // Only try ONE pattern at a time, not all patterns
       if (paginationLinks.length === 0 && posts.length > 0 && pageCount === 1) {
-        // Try common pagination patterns
+        // Try common pagination patterns, but only one pattern at a time
         const basePath = new URL(currentUrl).pathname;
-        for (let page = 2; page <= 10; page++) {
-          const nextPageUrls = [
-            `${baseUrl.origin}${basePath}?page=${page}`,
-            `${baseUrl.origin}${basePath}/page/${page}`,
-            `${baseUrl.origin}${basePath}page/${page}`,
-            `${baseUrl.origin}${basePath}?paged=${page}`,
-          ];
-          
-          for (const nextUrl of nextPageUrls) {
-            if (!visitedPages.has(nextUrl) && !pagesToVisit.includes(nextUrl)) {
-              pagesToVisit.push(nextUrl);
-            }
-          }
+        const nextPage = 2;
+        
+        // Try the most common pattern first: ?page=2
+        const nextPageUrl = `${baseUrl.origin}${basePath}?page=${nextPage}`;
+        if (!visitedPages.has(nextPageUrl) && !pagesToVisit.includes(nextPageUrl)) {
+          pagesToVisit.push(nextPageUrl);
+          console.log(`[Blog Extractor] No pagination links found, trying constructed URL: ${nextPageUrl}`);
         }
       }
     } catch (error) {
