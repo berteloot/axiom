@@ -495,12 +495,12 @@ export function SeoAuditResults({ result, url }: SeoAuditResultsProps) {
 
       {/* Main Content Tabs */}
       <Tabs defaultValue="recommendations" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-5">
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4">
           <TabsTrigger value="recommendations">Recommendations</TabsTrigger>
           <TabsTrigger value="issues">Top Issues</TabsTrigger>
           <TabsTrigger value="outline">Outline</TabsTrigger>
           <TabsTrigger value="schema">Schema</TabsTrigger>
-          <TabsTrigger value="brand">Brand</TabsTrigger>
+          {/* Brand tab temporarily removed - code kept below for future review */}
         </TabsList>
 
         {/* Recommendations Tab */}
