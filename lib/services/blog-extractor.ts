@@ -218,19 +218,60 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
 }
 
 /**
- * Extract blog post URLs from a blog homepage
- * Looks for common blog post link patterns
+ * Fetch listing page content using Jina Reader (handles JavaScript-rendered pages)
  */
-export async function extractBlogPostUrls(blogUrl: string): Promise<Array<{ url: string; title: string }>> {
-  try {
-    const html = await fetchHtml(blogUrl);
-    const $ = cheerio.load(html);
-    const baseUrl = new URL(normalizeUrl(blogUrl));
-    
-    const blogPosts: Array<{ url: string; title: string }> = [];
-    const seenUrls = new Set<string>();
+async function fetchListingPageWithJina(url: string): Promise<string> {
+  if (!JINA_API_KEY) {
+    throw new Error("JINA_API_KEY environment variable is not set");
+  }
 
-    // Common selectors for blog post links
+  try {
+    // Remove hash fragments before passing to Jina (e.g., #blog)
+    const urlWithoutHash = url.split('#')[0];
+    const normalizedUrl = normalizeUrl(urlWithoutHash);
+    const jinaUrl = `${JINA_READER_URL}/${normalizedUrl}`;
+    
+    console.log(`[Blog Extractor] Fetching listing page with Jina: ${jinaUrl}`);
+    
+    const response = await fetch(jinaUrl, {
+      headers: {
+        Authorization: `Bearer ${JINA_API_KEY}`,
+        Accept: "text/plain",
+        "X-Respond-With": "markdown",
+        "X-With-Generated-Alt": "true",
+        "X-No-Cache": "true",
+        // Remove page chrome but keep content links
+        "X-Remove-Selector": "nav,footer,header,.navigation,.sidebar,.menu,.breadcrumb,.cookie-banner,.popup,.modal",
+      },
+      signal: AbortSignal.timeout(120000), // 120 seconds for large listing pages
+    });
+
+    if (!response.ok) {
+      throw new Error(`Jina API error: ${response.status} - ${response.statusText}`);
+    }
+
+    const content = await response.text();
+    console.log(`[Blog Extractor] Jina returned ${content.length} characters from listing page`);
+    
+    return content;
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(`Failed to fetch listing page with Jina: ${error.message}`);
+    }
+    throw new Error("Failed to fetch listing page with Jina: Unknown error");
+  }
+}
+
+/**
+ * Extract blog post URLs from markdown/text content
+ */
+function extractUrlsFromMarkdown(content: string, baseUrl: URL): Array<{ url: string; title: string }> {
+  const blogPosts: Array<{ url: string; title: string }> = [];
+  const seenUrls = new Set<string>();
+
+  // Try parsing as HTML first (Jina might return HTML despite requesting markdown)
+  try {
+    const $ = cheerio.load(content);
     const selectors = [
       'article a[href]',
       '.blog-post a[href]',
@@ -244,39 +285,174 @@ export async function extractBlogPostUrls(blogUrl: string): Promise<Array<{ url:
       '.card a[href]',
       '[class*="blog"] a[href]',
       '[class*="post"] a[href]',
+      'a[href]', // Fallback: any link
     ];
 
-    // Try each selector
     for (const selector of selectors) {
       $(selector).each((_, element) => {
         const $link = $(element);
         const href = $link.attr('href');
         if (!href) return;
 
-        // Resolve relative URLs
-        const absoluteUrl = resolveUrl(baseUrl.href, href);
-        
-        // Skip if we've seen this URL
-        if (seenUrls.has(absoluteUrl)) return;
-        
-        // Use the exclusion function to filter out non-post pages
-        if (shouldExcludeUrl(absoluteUrl, baseUrl)) {
+        try {
+          const absoluteUrl = resolveUrl(baseUrl.href, href);
+          if (seenUrls.has(absoluteUrl)) return;
+          if (shouldExcludeUrl(absoluteUrl, baseUrl)) return;
+
+          let title = $link.text().trim();
+          if (!title || title.length < 10) {
+            title = $link.closest('article, .post, .blog-post, .card, h2, h3').find('h1, h2, h3, .title, .entry-title').first().text().trim() || title;
+          }
+
+          if (title.length >= 10 && absoluteUrl.startsWith('http')) {
+            blogPosts.push({ url: absoluteUrl, title });
+            seenUrls.add(absoluteUrl);
+          }
+        } catch {
           return;
         }
-
-        // Get title from link text or nearby elements
-        let title = $link.text().trim();
-        if (!title || title.length < 10) {
-          // Try to find title in parent or nearby elements
-          title = $link.closest('article, .post, .blog-post, .card').find('h1, h2, h3, .title, .entry-title').first().text().trim() || title;
-        }
-
-        // Only add if we have a reasonable title and URL
-        if (title && title.length >= 10 && absoluteUrl.startsWith('http')) {
-          blogPosts.push({ url: absoluteUrl, title });
-          seenUrls.add(absoluteUrl);
-        }
       });
+    }
+
+    // If we found posts from HTML parsing, return them
+    if (blogPosts.length > 0) {
+      console.log(`[Blog Extractor] Extracted ${blogPosts.length} URLs from HTML content`);
+      return blogPosts;
+    }
+  } catch {
+    // Not HTML, continue with markdown parsing
+  }
+
+  // Pattern 1: Markdown links [title](url)
+  const markdownLinkPattern = /\[([^\]]+)\]\(([^)]+)\)/g;
+  let match;
+  while ((match = markdownLinkPattern.exec(content)) !== null) {
+    const title = match[1].trim();
+    const href = match[2].trim();
+    if (!href || !title) continue;
+
+    try {
+      const absoluteUrl = resolveUrl(baseUrl.href, href);
+      if (seenUrls.has(absoluteUrl)) continue;
+      if (shouldExcludeUrl(absoluteUrl, baseUrl)) continue;
+
+      if (title.length >= 10 && absoluteUrl.startsWith('http')) {
+        blogPosts.push({ url: absoluteUrl, title });
+        seenUrls.add(absoluteUrl);
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  // Pattern 2: Plain URLs in text (http:// or https://)
+  const urlPattern = /https?:\/\/[^\s\)\]"']+/g;
+  while ((match = urlPattern.exec(content)) !== null) {
+    const url = match[0].trim();
+    if (seenUrls.has(url)) continue;
+    if (shouldExcludeUrl(url, baseUrl)) continue;
+
+    // Try to find title near the URL (look for heading or text before URL)
+    const urlIndex = match.index;
+    const contextBefore = content.substring(Math.max(0, urlIndex - 200), urlIndex);
+    
+    // Look for headings or bold text near the URL
+    const headingMatch = contextBefore.match(/#{1,3}\s+(.+?)(?:\n|$)/);
+    const boldMatch = contextBefore.match(/\*\*(.+?)\*\*/);
+    const titleMatch = headingMatch || boldMatch;
+    
+    let title = titleMatch ? titleMatch[1].trim() : '';
+    if (!title || title.length < 10) {
+      // Try to extract from surrounding text
+      const textMatch = contextBefore.match(/([A-Z][^.!?]{20,100})[.!?]?\s*$/);
+      if (textMatch) {
+        title = textMatch[1].trim().substring(0, 100);
+      }
+    }
+
+    if (title.length >= 10 && url.startsWith('http')) {
+      blogPosts.push({ url, title });
+      seenUrls.add(url);
+    }
+  }
+
+  return blogPosts;
+}
+
+/**
+ * Extract blog post URLs from a blog homepage
+ * Uses Jina Reader for JavaScript-rendered pages, falls back to HTML parsing
+ */
+export async function extractBlogPostUrls(blogUrl: string): Promise<Array<{ url: string; title: string }>> {
+  const baseUrl = new URL(normalizeUrl(blogUrl));
+  let blogPosts: Array<{ url: string; title: string }> = [];
+  
+  try {
+    // Try Jina Reader first (handles JavaScript-rendered SPAs)
+    try {
+      console.log(`[Blog Extractor] Attempting to extract with Jina Reader from ${blogUrl}...`);
+      const jinaContent = await fetchListingPageWithJina(blogUrl);
+      blogPosts = extractUrlsFromMarkdown(jinaContent, baseUrl);
+      console.log(`[Blog Extractor] Jina extraction found ${blogPosts.length} blog posts`);
+    } catch (jinaError) {
+      console.warn(`[Blog Extractor] Jina extraction failed, falling back to HTML:`, jinaError);
+    }
+
+    // Fallback to HTML parsing if Jina didn't find enough posts or failed
+    if (blogPosts.length < 5) {
+      console.log(`[Blog Extractor] Falling back to HTML parsing (found ${blogPosts.length} posts with Jina)...`);
+      const html = await fetchHtml(blogUrl);
+      const $ = cheerio.load(html);
+      const seenUrls = new Set(blogPosts.map(p => p.url));
+
+      // Common selectors for blog post links
+      const selectors = [
+        'article a[href]',
+        '.blog-post a[href]',
+        '.post a[href]',
+        'a[href*="/blog/"]',
+        'a[href*="/post/"]',
+        'a[href*="/article/"]',
+        '.entry-title a',
+        'h2 a[href]',
+        'h3 a[href]',
+        '.card a[href]',
+        '[class*="blog"] a[href]',
+        '[class*="post"] a[href]',
+      ];
+
+      // Try each selector
+      for (const selector of selectors) {
+        $(selector).each((_, element) => {
+          const $link = $(element);
+          const href = $link.attr('href');
+          if (!href) return;
+
+          // Resolve relative URLs
+          const absoluteUrl = resolveUrl(baseUrl.href, href);
+          
+          // Skip if we've seen this URL
+          if (seenUrls.has(absoluteUrl)) return;
+          
+          // Use the exclusion function to filter out non-post pages
+          if (shouldExcludeUrl(absoluteUrl, baseUrl)) {
+            return;
+          }
+
+          // Get title from link text or nearby elements
+          let title = $link.text().trim();
+          if (!title || title.length < 10) {
+            // Try to find title in parent or nearby elements
+            title = $link.closest('article, .post, .blog-post, .card').find('h1, h2, h3, .title, .entry-title').first().text().trim() || title;
+          }
+
+          // Only add if we have a reasonable title and URL
+          if (title && title.length >= 10 && absoluteUrl.startsWith('http')) {
+            blogPosts.push({ url: absoluteUrl, title });
+            seenUrls.add(absoluteUrl);
+          }
+        });
+      }
     }
 
     // Remove duplicates and sort
