@@ -148,7 +148,7 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
       }
     }
 
-    // Always exclude common non-content utility/admin paths
+    // Always exclude common non-content utility/admin/auth paths (applies to both blog and library)
     const alwaysExcludeStringPatterns = [
       "/category/",
       "/tag/",
@@ -178,18 +178,22 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
       "/wp-content",
       "/wp-includes",
       "/.well-known",
-      "/solutions/",
-      "/customers/",
-      "/event/",
-      "/book-a-demo/",
       "/thank-you",
       "/cookie-declaration",
       "/request-pricing",
       "/homepage-",
-      // Navigation/landing pages
+    ];
+    
+    // Library-mode exclusions: only exclude true non-content paths (admin/legal/auth)
+    // CRITICAL: Do NOT exclude /resources/, /library/, or content-type paths like /whitepaper/, /webinar/
+    // These are the actual content assets in library mode
+    const libraryModeExcludePatterns = [
+      // Navigation/landing pages (not individual assets)
       "/overview",
-      "/products",
-      "/resources",
+      "/solutions/",
+      "/customers/",
+      "/event/",
+      "/book-a-demo/",
       // Industry/audience landing pages (not library content)
       "/pharmacies/",
       "/wholesale-distributors/",
@@ -211,16 +215,12 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
       "/3pl/",
       "/aim/",
     ];
-    
-    // Regex patterns for always-excluded paths
-    const alwaysExcludeRegexPatterns = [
-      /^\/\d+(-2)?\/$/, // Draft/unpublished posts (numeric slugs like /3467-2/)
-    ];
 
-    // Blog-only exclusions (too aggressive for library listings)
-    // NOTE: /solutions/ is already in alwaysExcludeStringPatterns
+    // Blog-mode exclusions (more aggressive - excludes product/service pages)
     const blogOnlyExcludePatterns = [
+      "/solutions/",
       "/products/",
+      "/products", // Also exclude /products without trailing slash
       "/product/",
       "/services/",
       "/service/",
@@ -238,14 +238,22 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
       "/demos/",
       "/download/",
       "/downloads/",
+      "/page/",
+      "/pages/",
+      "/news/",
       // NOTE: We intentionally do NOT exclude /resources/, /whitepaper/, /webinar/, /brochure/, etc.
       // because those are core content types in library mode.
     ];
+    
+    // Regex patterns for always-excluded paths
+    const alwaysExcludeRegexPatterns = [
+      /^\/\d+(-2)?\/$/, // Draft/unpublished posts (numeric slugs like /3467-2/)
+    ];
 
-    // Check string patterns
+    // Check string patterns - different logic for library vs blog context
     const stringPatterns = isLibraryContext
-      ? alwaysExcludeStringPatterns
-      : [...alwaysExcludeStringPatterns, ...blogOnlyExcludePatterns, "/page/", "/pages/", "/news/"];
+      ? [...alwaysExcludeStringPatterns, ...libraryModeExcludePatterns]
+      : [...alwaysExcludeStringPatterns, ...blogOnlyExcludePatterns];
       
     for (const pattern of stringPatterns) {
       if (urlPath.includes(pattern)) {
@@ -1104,10 +1112,38 @@ export async function extractBlogPostUrls(blogUrl: string): Promise<Array<{ url:
       }
     }
 
-    // Last resort: JS-rendered listings (common for /library/ and some /resources/ pages)
-    if (blogPosts.length < 50) {
+    // Last resort: JS-rendered listings (ONLY for library context - too expensive for regular blogs)
+    // Only run Puppeteer if:
+    // 1. We're in library context (path includes /library, /resources, /all-media, /media)
+    // 2. We found fewer posts than expected (likely JS-driven infinite scroll)
+    const basePath = baseUrl.pathname.toLowerCase();
+    const isLibraryContext = basePath.includes("/library") || 
+                             basePath.includes("/resources") || 
+                             basePath.includes("/all-media") || 
+                             basePath.includes("/media");
+    
+    if (isLibraryContext && blogPosts.length < 50) {
       try {
-        console.log(`[Blog Extractor] Attempting Puppeteer extraction (found ${blogPosts.length} posts so far)...`);
+        console.log(`[Blog Extractor] Library context detected - attempting Puppeteer extraction (found ${blogPosts.length} posts so far)...`);
+        const renderedHtml = await fetchListingPageWithPuppeteer(blogUrl, 30);
+        const renderedPosts = extractUrlsFromMarkdown(renderedHtml, baseUrl);
+
+        const existingUrls = new Set(blogPosts.map((p) => p.url));
+        for (const post of renderedPosts) {
+          if (!existingUrls.has(post.url)) {
+            blogPosts.push(post);
+            existingUrls.add(post.url);
+          }
+        }
+
+        console.log(`[Blog Extractor] Puppeteer extraction added ${renderedPosts.length} items; total is now ${blogPosts.length}`);
+      } catch (error) {
+        console.warn(`[Blog Extractor] Puppeteer extraction failed:`, error);
+      }
+    } else if (!isLibraryContext && blogPosts.length < 5) {
+      // For non-library contexts, only use Puppeteer as absolute last resort with very low threshold
+      try {
+        console.log(`[Blog Extractor] Very few posts found (${blogPosts.length}) - attempting Puppeteer as last resort...`);
         const renderedHtml = await fetchListingPageWithPuppeteer(blogUrl, 30);
         const renderedPosts = extractUrlsFromMarkdown(renderedHtml, baseUrl);
 
