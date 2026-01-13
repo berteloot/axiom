@@ -1,4 +1,5 @@
 import * as cheerio from "cheerio";
+import puppeteer from "puppeteer";
 
 const JINA_READER_URL = "https://r.jina.ai";
 const JINA_API_KEY = process.env.JINA_API_KEY;
@@ -663,8 +664,167 @@ async function fetchAllPagesWithPagination(
 }
 
 /**
+ * Fetch all blog posts using Puppeteer to handle infinite scroll
+ */
+async function fetchAllPostsWithPuppeteer(
+  blogUrl: string,
+  baseUrl: URL
+): Promise<Array<{ url: string; title: string }>> {
+  console.log(`[Blog Extractor] Using Puppeteer to handle infinite scroll for ${blogUrl}`);
+  
+  let browser;
+  try {
+    browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
+    
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1920, height: 1080 });
+    await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    
+    // Navigate to the page
+    await page.goto(blogUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+    
+    let previousPostCount = 0;
+    let noNewPostsCount = 0;
+    const maxScrollAttempts = 50; // Limit to prevent infinite loops
+    let scrollAttempt = 0;
+    
+    // Scroll and wait for content to load
+    while (scrollAttempt < maxScrollAttempts) {
+      scrollAttempt++;
+      
+      // Get current post count
+      const currentPosts = await page.evaluate(() => {
+        const links: Array<{ url: string; title: string }> = [];
+        const seenUrls = new Set<string>();
+        
+        // Find all blog post links
+        document.querySelectorAll('a[href]').forEach((link) => {
+          const href = (link as HTMLAnchorElement).href;
+          if (!href || seenUrls.has(href)) return;
+          
+          // Check if it looks like a blog post URL
+          if (
+            href.includes('/blog/') ||
+            href.includes('/post/') ||
+            href.includes('/article/') ||
+            (href.includes('rfxcel.com/') && 
+             !href.includes('/library') &&
+             !href.includes('/solutions') &&
+             !href.includes('/products') &&
+             !href.includes('/careers') &&
+             !href.includes('/contact') &&
+             !href.includes('/about') &&
+             !href.match(/\.(jpg|jpeg|png|gif|pdf|zip)$/i))
+          ) {
+            const title = link.textContent?.trim() || '';
+            // Skip generic link texts
+            if (title && title.length > 10 && !title.match(/^(read more|learn more|view more|→|›|>)$/i)) {
+              links.push({ url: href, title });
+              seenUrls.add(href);
+            }
+          }
+        });
+        
+        return links;
+      });
+      
+      const currentPostCount = currentPosts.length;
+      console.log(`[Blog Extractor] Scroll attempt ${scrollAttempt}: Found ${currentPostCount} posts`);
+      
+      // Check if we got new posts
+      if (currentPostCount === previousPostCount) {
+        noNewPostsCount++;
+        // If no new posts for 3 consecutive scrolls, we're done
+        if (noNewPostsCount >= 3) {
+          console.log(`[Blog Extractor] No new posts found after ${noNewPostsCount} scrolls, stopping`);
+          break;
+        }
+      } else {
+        noNewPostsCount = 0; // Reset counter if we got new posts
+      }
+      
+      previousPostCount = currentPostCount;
+      
+      // Scroll down
+      await page.evaluate(() => {
+        window.scrollTo(0, document.body.scrollHeight);
+      });
+      
+      // Wait for new content to load (check for loading indicators or new content)
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds for content to load
+      
+      // Check if page height increased (new content loaded)
+      const newHeight = await page.evaluate(() => document.body.scrollHeight);
+      const scrollPosition = await page.evaluate(() => window.scrollY);
+      
+      // If we're at the bottom and no new content, we're done
+      if (scrollPosition + 1000 >= newHeight && noNewPostsCount >= 2) {
+        console.log(`[Blog Extractor] Reached bottom of page, stopping`);
+        break;
+      }
+    }
+    
+    // Extract all posts from the fully loaded page
+    // We need to pass baseUrl info to the evaluate function, but we can't pass URL objects
+    // So we'll do the filtering outside of evaluate
+    const allLinks = await page.evaluate(() => {
+      const links: Array<{ url: string; title: string }> = [];
+      const seenUrls = new Set<string>();
+      
+      document.querySelectorAll('a[href]').forEach((link) => {
+        const href = (link as HTMLAnchorElement).href;
+        if (!href || seenUrls.has(href)) return;
+        seenUrls.add(href);
+        
+        let title = link.textContent?.trim() || '';
+        
+        // If title is generic, try to find title in parent elements
+        if (!title || title.length < 10 || title.match(/^(read more|learn more|view more|→|›|>)$/i)) {
+          const parent = link.closest('article, .post, .blog-post, .card, .entry, .item, [class*="blog"], [class*="post"]');
+          if (parent) {
+            const heading = parent.querySelector('h1, h2, h3, h4, .title, .entry-title, .post-title, [class*="title"]');
+            if (heading) {
+              title = heading.textContent?.trim() || title;
+            }
+          }
+        }
+        
+        if (title && title.length >= 10) {
+          links.push({ url: href, title });
+        }
+      });
+      
+      return links;
+    });
+    
+    // Filter links using the same logic as other extraction methods
+    const allPosts = allLinks.filter(link => {
+      try {
+        return !shouldExcludeUrl(link.url, baseUrl);
+      } catch {
+        return false;
+      }
+    });
+    
+    console.log(`[Blog Extractor] Puppeteer extraction found ${allPosts.length} blog posts`);
+    return allPosts;
+    
+  } catch (error) {
+    console.error(`[Blog Extractor] Puppeteer extraction failed:`, error);
+    throw error;
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
+  }
+}
+
+/**
  * Extract blog post URLs from a blog homepage
- * Uses Jina Reader for JavaScript-rendered pages, falls back to HTML parsing
+ * Uses Puppeteer for infinite scroll, Jina Reader for JavaScript-rendered pages, falls back to HTML parsing
  */
 export async function extractBlogPostUrls(blogUrl: string): Promise<Array<{ url: string; title: string }>> {
   const baseUrl = new URL(normalizeUrl(blogUrl));
@@ -682,52 +842,71 @@ export async function extractBlogPostUrls(blogUrl: string): Promise<Array<{ url:
       console.log(`[Blog Extractor] Sitemap/RSS fetch failed, continuing with page extraction`);
     }
     
-    // If sitemap didn't work or found few posts, try Jina Reader with pagination
+    // If sitemap didn't work or found few posts, try Puppeteer for infinite scroll
     if (blogPosts.length < 50) {
       try {
-        console.log(`[Blog Extractor] Attempting to extract with Jina Reader from ${blogUrl}...`);
-        
-        // Try fetching all pages with pagination
-        const paginatedPosts = await fetchAllPagesWithPagination(blogUrl, baseUrl, 50);
+        console.log(`[Blog Extractor] Attempting to extract with Puppeteer (infinite scroll) from ${blogUrl}...`);
+        const puppeteerPosts = await fetchAllPostsWithPuppeteer(blogUrl, baseUrl);
         
         // Merge with sitemap posts (avoid duplicates)
         const existingUrls = new Set(blogPosts.map(p => p.url));
-        for (const post of paginatedPosts) {
+        for (const post of puppeteerPosts) {
           if (!existingUrls.has(post.url)) {
             blogPosts.push(post);
             existingUrls.add(post.url);
           }
         }
         
-        console.log(`[Blog Extractor] Total posts found after pagination: ${blogPosts.length}`);
+        console.log(`[Blog Extractor] Total posts found after Puppeteer: ${blogPosts.length}`);
+      } catch (puppeteerError) {
+        console.warn(`[Blog Extractor] Puppeteer extraction failed, trying Jina Reader:`, puppeteerError);
         
-        // If we still found very few posts, try single page extraction as fallback
-        if (blogPosts.length < 20) {
-          console.log(`[Blog Extractor] Trying single page extraction as fallback...`);
-          const jinaContent = await fetchListingPageWithJina(blogUrl);
+        // Fallback to Jina Reader with pagination
+        try {
+          console.log(`[Blog Extractor] Attempting to extract with Jina Reader from ${blogUrl}...`);
           
-          // Log content preview for debugging
-          console.log(`[Blog Extractor] Jina content preview (first 500 chars): ${jinaContent.substring(0, 500)}`);
-          console.log(`[Blog Extractor] Jina content length: ${jinaContent.length} characters`);
-          
-          const jinaPosts = extractUrlsFromMarkdown(jinaContent, baseUrl);
-          console.log(`[Blog Extractor] Single page extraction found ${jinaPosts.length} blog posts`);
+          // Try fetching all pages with pagination
+          const paginatedPosts = await fetchAllPagesWithPagination(blogUrl, baseUrl, 50);
           
           // Merge with existing posts
-          for (const post of jinaPosts) {
+          const existingUrls = new Set(blogPosts.map(p => p.url));
+          for (const post of paginatedPosts) {
             if (!existingUrls.has(post.url)) {
               blogPosts.push(post);
               existingUrls.add(post.url);
             }
           }
           
-          // If we found very few posts, log a sample of the content to debug
+          console.log(`[Blog Extractor] Total posts found after pagination: ${blogPosts.length}`);
+          
+          // If we still found very few posts, try single page extraction as fallback
           if (blogPosts.length < 20) {
-            console.warn(`[Blog Extractor] Only found ${blogPosts.length} posts total, content sample:`, jinaContent.substring(0, 1000));
+            console.log(`[Blog Extractor] Trying single page extraction as fallback...`);
+            const jinaContent = await fetchListingPageWithJina(blogUrl);
+            
+            // Log content preview for debugging
+            console.log(`[Blog Extractor] Jina content preview (first 500 chars): ${jinaContent.substring(0, 500)}`);
+            console.log(`[Blog Extractor] Jina content length: ${jinaContent.length} characters`);
+            
+            const jinaPosts = extractUrlsFromMarkdown(jinaContent, baseUrl);
+            console.log(`[Blog Extractor] Single page extraction found ${jinaPosts.length} blog posts`);
+            
+            // Merge with existing posts
+            for (const post of jinaPosts) {
+              if (!existingUrls.has(post.url)) {
+                blogPosts.push(post);
+                existingUrls.add(post.url);
+              }
+            }
+            
+            // If we found very few posts, log a sample of the content to debug
+            if (blogPosts.length < 20) {
+              console.warn(`[Blog Extractor] Only found ${blogPosts.length} posts total, content sample:`, jinaContent.substring(0, 1000));
+            }
           }
+        } catch (jinaError) {
+          console.warn(`[Blog Extractor] Jina extraction failed, falling back to HTML:`, jinaError);
         }
-      } catch (jinaError) {
-        console.warn(`[Blog Extractor] Jina extraction failed, falling back to HTML:`, jinaError);
       }
     }
 
