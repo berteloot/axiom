@@ -44,6 +44,13 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 // Helper to get file type icon
 // All icons use consistent size (w-5 h-5 = 20px) for better visibility
@@ -143,8 +150,6 @@ const getPrimaryDate = (asset: Asset): string | null => {
   return asset.customCreatedAt || asset.lastReviewedAt || asset.createdAt || null;
 };
 
-const ITEMS_PER_PAGE = 25;
-
 export function AssetTable({ 
   assets, 
   onReview, 
@@ -157,6 +162,7 @@ export function AssetTable({
   const [showProcessingGuide, setShowProcessingGuide] = useState(false);
   const [processingAssetSize, setProcessingAssetSize] = useState<number>(465);
   const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState<number>(25);
 
   if (assets.length === 0) {
     return (
@@ -242,12 +248,17 @@ export function AssetTable({
     selectableAssetIds.some((id) => selectedAssetIds.includes(id)) && !allSelectableSelected;
 
   // Pagination logic
-  const totalPages = Math.ceil(assets.length / ITEMS_PER_PAGE);
-  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-  const endIndex = startIndex + ITEMS_PER_PAGE;
+  const totalPages = Math.ceil(assets.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
   const paginatedAssets = useMemo(() => {
     return assets.slice(startIndex, endIndex);
   }, [assets, startIndex, endIndex]);
+
+  // Reset to page 1 when items per page changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [itemsPerPage]);
 
   // Reset to page 1 when assets change (e.g., after filtering)
   useEffect(() => {
@@ -638,11 +649,31 @@ export function AssetTable({
         </div>
 
         {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-4 border-t">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 px-4 py-4 border-t">
+          <div className="flex items-center gap-3 flex-wrap">
             <div className="text-sm text-muted-foreground">
               Showing {startIndex + 1} to {Math.min(endIndex, assets.length)} of {assets.length} assets
             </div>
+            <div className="flex items-center gap-2">
+              <label htmlFor="items-per-page" className="text-sm text-muted-foreground whitespace-nowrap">
+                Per page:
+              </label>
+              <Select
+                value={itemsPerPage.toString()}
+                onValueChange={(value) => setItemsPerPage(Number(value))}
+              >
+                <SelectTrigger id="items-per-page" className="w-[80px] h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="25">25</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          {totalPages > 1 && (
             <Pagination>
               <PaginationContent>
                 <PaginationItem>
@@ -697,8 +728,8 @@ export function AssetTable({
                 </PaginationItem>
               </PaginationContent>
             </Pagination>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {selectedAssetForPost && (
