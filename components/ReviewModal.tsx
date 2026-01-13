@@ -52,9 +52,29 @@ export function ReviewModal({
     uploadedById: asset.uploadedBy?.id || null,
     uploadedByNameOverride: (asset as any).uploadedByNameOverride || null,
   });
-  const [customCreatedAt, setCustomCreatedAt] = useState<Date | null>(
-    asset.customCreatedAt ? new Date(asset.customCreatedAt) : null
-  );
+  // Extract published date from atomicSnippets if customCreatedAt is not set
+  const getInitialCreatedAt = (): Date | null => {
+    if (asset.customCreatedAt) {
+      return new Date(asset.customCreatedAt);
+    }
+    // Check atomicSnippets for publishedDate (from blog imports)
+    if (asset.atomicSnippets && typeof asset.atomicSnippets === 'object') {
+      const snippets = asset.atomicSnippets as any;
+      if (snippets.publishedDate) {
+        try {
+          const date = new Date(snippets.publishedDate);
+          if (!isNaN(date.getTime())) {
+            return date;
+          }
+        } catch {
+          // Invalid date, continue
+        }
+      }
+    }
+    return null;
+  };
+
+  const [customCreatedAt, setCustomCreatedAt] = useState<Date | null>(getInitialCreatedAt());
   const [lastReviewedAt, setLastReviewedAt] = useState<Date | null>(
     asset.lastReviewedAt ? new Date(asset.lastReviewedAt) : null
   );
@@ -82,7 +102,7 @@ export function ReviewModal({
         uploadedById: asset.uploadedBy?.id || null,
         uploadedByNameOverride: (asset as any).uploadedByNameOverride || null,
       });
-      setCustomCreatedAt(asset.customCreatedAt ? new Date(asset.customCreatedAt) : null);
+      setCustomCreatedAt(getInitialCreatedAt());
       setLastReviewedAt(asset.lastReviewedAt ? new Date(asset.lastReviewedAt) : null);
       setExpiryDate(asset.expiryDate ? new Date(asset.expiryDate) : null);
       setPainClusterError("");

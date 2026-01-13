@@ -5,7 +5,7 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { z } from "zod";
 import { FunnelStage } from "@/lib/types";
 import { standardizeICPTargets } from "@/lib/icp-targets";
-import { extractBlogPostUrls, fetchBlogPostContent } from "@/lib/services/blog-extractor";
+import { extractBlogPostUrls, fetchBlogPostContentWithDate } from "@/lib/services/blog-extractor";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -94,8 +94,8 @@ export async function POST(request: NextRequest) {
     const BATCH_SIZE = 5;
     const processPost = async (post: { url: string; title: string }) => {
       try {
-        // Fetch content
-        const content = await fetchBlogPostContent(post.url);
+        // Fetch content and extract published date
+        const { content, publishedDate } = await fetchBlogPostContentWithDate(post.url);
         
         // Generate filename
         const timestamp = Date.now();
@@ -117,6 +117,7 @@ export async function POST(request: NextRequest) {
             "original-title": post.title,
             "source-url": post.url,
             "imported-at": new Date().toISOString(),
+            ...(publishedDate ? { "published-date": publishedDate } : {}),
           },
         });
 
@@ -124,6 +125,9 @@ export async function POST(request: NextRequest) {
 
         // Build S3 URL
         const s3Url = `https://${BUCKET_NAME}.s3.${AWS_REGION}.amazonaws.com/${encodeURIComponent(s3Key).replace(/%2F/g, "/")}`;
+
+        // Convert published date string to Date object if available
+        const customCreatedAt = publishedDate ? new Date(publishedDate) : null;
 
         // Create asset
         const asset = await prisma.asset.create({
@@ -145,10 +149,12 @@ export async function POST(request: NextRequest) {
             promptVersion: "v1",
             analyzedAt: new Date(),
             contentQualityScore: 70,
+            customCreatedAt, // Set creation date from extracted published date
             atomicSnippets: {
               type: "blog_import",
               sourceUrl: post.url,
               importedAt: new Date().toISOString(),
+              ...(publishedDate ? { publishedDate } : {}),
             },
           },
         });

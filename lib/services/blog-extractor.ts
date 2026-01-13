@@ -53,6 +53,166 @@ async function fetchHtml(url: string): Promise<string> {
 }
 
 /**
+ * Extract published date from various sources (meta tags, structured data, content, URL)
+ * Returns ISO date string (YYYY-MM-DD) or null if not found
+ * Works flexibly for all kinds of websites
+ */
+function extractPublishedDate(url: string, html?: string, content?: string): string | null {
+  const normalizedUrl = normalizeUrl(url);
+  
+  // 1. Try to extract from URL first (common patterns: /2024/01/, /2024-01-15/, etc.)
+  const urlDateMatch = normalizedUrl.match(/\/(\d{4})[\/\-](\d{1,2})[\/\-]?(\d{1,2})?/);
+  if (urlDateMatch) {
+    const year = parseInt(urlDateMatch[1], 10);
+    const month = parseInt(urlDateMatch[2], 10) || 1;
+    const day = parseInt(urlDateMatch[3], 10) || 1;
+    const date = new Date(year, month - 1, day);
+    if (!isNaN(date.getTime()) && date <= new Date()) {
+      return date.toISOString().split('T')[0];
+    }
+  }
+
+  // 2. Try to extract from HTML meta tags and structured data
+  if (html) {
+    try {
+      const $ = cheerio.load(html);
+      
+      // Check meta tags (Open Graph, Article, etc.)
+      const metaSelectors = [
+        'meta[property="article:published_time"]',
+        'meta[property="og:article:published_time"]',
+        'meta[name="article:published_time"]',
+        'meta[property="og:published_time"]',
+        'meta[name="publishdate"]',
+        'meta[name="pubdate"]',
+        'meta[name="publication-date"]',
+        'meta[name="date"]',
+        'meta[name="DC.date"]',
+        'meta[name="DC.Date"]',
+        'time[datetime]',
+        'time[pubdate]',
+        '[itemprop="datePublished"]',
+        '[itemprop="datepublished"]',
+      ];
+      
+      for (const selector of metaSelectors) {
+        const element = $(selector).first();
+        const dateValue = element.attr('content') || element.attr('datetime') || element.text().trim();
+        if (dateValue) {
+          try {
+            const date = new Date(dateValue);
+            if (!isNaN(date.getTime()) && date <= new Date()) {
+              return date.toISOString().split('T')[0];
+            }
+          } catch {
+            // Continue to next selector
+          }
+        }
+      }
+      
+      // Check JSON-LD structured data
+      const jsonLdScripts = $('script[type="application/ld+json"]');
+      for (let i = 0; i < jsonLdScripts.length; i++) {
+        try {
+          const jsonText = $(jsonLdScripts[i]).html();
+          if (!jsonText) continue;
+          
+          const data = JSON.parse(jsonText);
+          const checkDate = (obj: any): string | null => {
+            if (!obj || typeof obj !== 'object') return null;
+            
+            // Check common datePublished fields
+            const dateFields = ['datePublished', 'datepublished', 'publishedTime', 'published', 'pubDate', 'pubdate'];
+            for (const field of dateFields) {
+              if (obj[field]) {
+                try {
+                  const date = new Date(obj[field]);
+                  if (!isNaN(date.getTime()) && date <= new Date()) {
+                    return date.toISOString().split('T')[0];
+                  }
+                } catch {
+                  // Continue
+                }
+              }
+            }
+            
+            // Recursively check nested objects
+            for (const key in obj) {
+              if (typeof obj[key] === 'object' && obj[key] !== null) {
+                const result = checkDate(obj[key]);
+                if (result) return result;
+              }
+            }
+            
+            return null;
+          };
+          
+          const date = checkDate(data);
+          if (date) return date;
+        } catch {
+          // Invalid JSON, continue to next script
+        }
+      }
+    } catch {
+      // HTML parsing failed, continue with other methods
+    }
+  }
+
+  // 3. Try to extract from content text (markdown or plain text)
+  if (content) {
+    // Look for ISO date format (YYYY-MM-DD)
+    const isoDateMatch = content.match(/(\d{4}-\d{2}-\d{2})/);
+    if (isoDateMatch) {
+      try {
+        const date = new Date(isoDateMatch[1]);
+        if (!isNaN(date.getTime()) && date <= new Date()) {
+          return date.toISOString().split('T')[0];
+        }
+      } catch {
+        // Continue
+      }
+    }
+    
+    // Look for "Published Time" field (from Jina or other extractors)
+    const publishedTimeMatch = content.match(/Published\s+Time[:\s]+([\d\-T:+\s]+)/i);
+    if (publishedTimeMatch) {
+      try {
+        const date = new Date(publishedTimeMatch[1].trim());
+        if (!isNaN(date.getTime()) && date <= new Date()) {
+          return date.toISOString().split('T')[0];
+        }
+      } catch {
+        // Continue
+      }
+    }
+    
+    // Look for common date patterns in text
+    const datePatterns = [
+      /(?:published|date|updated)[:\s]+([A-Za-z]+\s+\d{1,2},?\s+\d{4})/i,
+      /([A-Za-z]+\s+\d{1,2},?\s+\d{4})/,
+      /(\d{1,2}\/\d{1,2}\/\d{4})/,
+      /(\d{1,2}-\d{1,2}-\d{4})/,
+    ];
+    
+    for (const pattern of datePatterns) {
+      const match = content.match(pattern);
+      if (match) {
+        try {
+          const date = new Date(match[1]);
+          if (!isNaN(date.getTime()) && date <= new Date()) {
+            return date.toISOString().split('T')[0];
+          }
+        } catch {
+          // Continue to next pattern
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
  * Check if a URL should be excluded from extraction.
  *
  * NOTE: The extractor is used for both pure blog listings and broader "library/resources" listings.
@@ -1181,6 +1341,15 @@ export async function extractBlogPostUrls(blogUrl: string): Promise<Array<{ url:
  * Fetch blog post content using Jina Reader
  */
 export async function fetchBlogPostContent(url: string): Promise<string> {
+  const result = await fetchBlogPostContentWithDate(url);
+  return result.content;
+}
+
+/**
+ * Fetch blog post content and extract published date
+ * Returns both content and published date (if found)
+ */
+export async function fetchBlogPostContentWithDate(url: string): Promise<{ content: string; publishedDate: string | null }> {
   if (!JINA_API_KEY) {
     throw new Error("JINA_API_KEY environment variable is not set");
   }
@@ -1189,6 +1358,7 @@ export async function fetchBlogPostContent(url: string): Promise<string> {
     const normalizedUrl = normalizeUrl(url);
     const jinaUrl = `${JINA_READER_URL}/${normalizedUrl}`;
     
+    // Fetch content from Jina
     const response = await fetch(jinaUrl, {
       headers: {
         Authorization: `Bearer ${JINA_API_KEY}`,
@@ -1214,11 +1384,36 @@ export async function fetchBlogPostContent(url: string): Promise<string> {
       throw new Error("Could not extract meaningful content from the blog post");
     }
 
+    // Try to fetch HTML for date extraction (in parallel or as fallback)
+    let html: string | undefined;
+    let publishedDate: string | null = null;
+    
+    try {
+      // First try to extract from content (Jina might include "Published Time" field)
+      publishedDate = extractPublishedDate(normalizedUrl, undefined, content);
+      
+      // If not found in content, try fetching HTML for meta tags/structured data
+      if (!publishedDate) {
+        html = await fetchHtml(normalizedUrl).catch(() => undefined);
+        if (html) {
+          publishedDate = extractPublishedDate(normalizedUrl, html, content);
+        }
+      }
+      
+      if (publishedDate) {
+        console.log(`[Blog Extractor] Extracted published date: ${publishedDate} from ${url}`);
+      } else {
+        console.log(`[Blog Extractor] No published date found for ${url}`);
+      }
+    } catch (dateError) {
+      // Date extraction failed, but content is still valid
+      console.warn(`[Blog Extractor] Failed to extract published date from ${url}:`, dateError);
+    }
+
     // Log content length for debugging
     console.log(`[Blog Extractor] Fetched ${content.length} characters from ${url}`);
     
-    // Return full content (no truncation for blog posts)
-    return content;
+    return { content, publishedDate };
   } catch (error) {
     if (error instanceof Error) {
       throw new Error(`Failed to fetch blog post content: ${error.message}`);
