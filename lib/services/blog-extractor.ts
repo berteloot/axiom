@@ -232,6 +232,10 @@ export async function fetchBlogPostContent(url: string): Promise<string> {
         "X-Respond-With": "markdown", // Request full markdown content
         "X-With-Generated-Alt": "true",
         "X-No-Cache": "true", // Get fresh content
+        // Remove navigation, footer, header, sidebar, and other page chrome
+        "X-Remove-Selector": "nav,footer,header,.navigation,.sidebar,.menu,.breadcrumb,.social-share,.related-posts,.comments,.newsletter,.subscribe,.cookie-banner,.popup,.modal",
+        // Target main article content areas
+        "X-Target-Selector": "article,main,.post-content,.entry-content,.article-content,.blog-post,.post-body,.content-main",
       },
       signal: AbortSignal.timeout(60000), // 60 seconds for full content
     });
