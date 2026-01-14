@@ -4,6 +4,141 @@ const JINA_READER_URL = "https://r.jina.ai";
 const JINA_API_KEY = process.env.JINA_API_KEY;
 
 /**
+ * Configuration for blog extractor
+ * Centralizes all magic numbers and hard-coded values
+ */
+interface ExtractorConfig {
+  validation: {
+    minWordCount: number;
+    minTitleLength: number;
+    libraryMinTitleLength: number;
+  };
+  pagination: {
+    maxPages: number;
+    defaultConcurrency: number;
+    validationConcurrency: number;
+  };
+  retry: {
+    maxAttempts: number;
+    baseDelayMs: number;
+    maxDelayMs: number;
+  };
+  timeouts: {
+    fetchHtml: number;
+    jinaReader: number;
+    jinaListingPage: number;
+    puppeteer: number;
+  };
+  puppeteer: {
+    maxIterations: number;
+    scrollDelayMs: number;
+    stableCountThreshold: number;
+  };
+}
+
+const DEFAULT_CONFIG: ExtractorConfig = {
+  validation: {
+    minWordCount: 250,
+    minTitleLength: 10,
+    libraryMinTitleLength: 5,
+  },
+  pagination: {
+    maxPages: 50,
+    defaultConcurrency: 5,
+    validationConcurrency: 5,
+  },
+  retry: {
+    maxAttempts: 3,
+    baseDelayMs: 2000,
+    maxDelayMs: 30000,
+  },
+  timeouts: {
+    fetchHtml: 30000,
+    jinaReader: 60000,
+    jinaListingPage: 120000,
+    puppeteer: 60000,
+  },
+  puppeteer: {
+    maxIterations: 30,
+    scrollDelayMs: 1000,
+    stableCountThreshold: 3,
+  },
+};
+
+/**
+ * Structured logger for blog extractor
+ * Provides consistent logging format with levels
+ */
+class BlogExtractorLogger {
+  private context: string;
+
+  constructor(context: string = 'Blog Extractor') {
+    this.context = context;
+  }
+
+  private log(level: 'debug' | 'info' | 'warn' | 'error', message: string, data?: any) {
+    const logEntry = {
+      level,
+      context: this.context,
+      message,
+      timestamp: new Date().toISOString(),
+      ...(data && { data }),
+    };
+
+    if (level === 'error') {
+      console.error(JSON.stringify(logEntry));
+    } else if (level === 'warn') {
+      console.warn(JSON.stringify(logEntry));
+    } else if (level === 'info') {
+      console.log(JSON.stringify(logEntry));
+    } else {
+      // debug level - only log in development
+      if (process.env.NODE_ENV === 'development') {
+        console.log(JSON.stringify(logEntry));
+      }
+    }
+  }
+
+  debug(message: string, data?: any) {
+    this.log('debug', message, data);
+  }
+
+  info(message: string, data?: any) {
+    this.log('info', message, data);
+  }
+
+  warn(message: string, data?: any) {
+    this.log('warn', message, data);
+  }
+
+  error(message: string, error?: Error | any, data?: any) {
+    const errorData = error instanceof Error
+      ? {
+          name: error.name,
+          message: error.message,
+          stack: error.stack,
+          ...data,
+        }
+      : { error, ...data };
+    this.log('error', message, errorData);
+  }
+}
+
+// Create default logger instance
+const logger = new BlogExtractorLogger();
+
+/**
+ * Named regex patterns for URL and date extraction
+ * Makes patterns reusable and easier to maintain
+ */
+const URL_PATTERNS = {
+  DATE_IN_URL: /\/(\d{4})[\/\-](\d{1,2})[\/\-]?(\d{1,2})?/,
+  ISO_DATE: /(\d{4}-\d{2}-\d{2})/,
+  PUBLISHED_TIME: /Published\s+Time[:\s]+([\d\-T:+\s]+)/i,
+  NUMERIC_SLUG: /^\/\d+(-2)?\/$/, // Draft/unpublished posts (numeric slugs like /3467-2/)
+} as const;
+
+/**
  * Normalize URL (add protocol if missing)
  */
 function normalizeUrl(url: string): string {
@@ -128,7 +263,10 @@ async function callJinaReaderAPI(
       if (!response.ok) {
         if (response.status === 429 && attempt < retries) {
           // Rate limited - wait and retry
-          const waitTime = 2000 * (attempt + 1);
+          const waitTime = Math.min(
+            DEFAULT_CONFIG.retry.baseDelayMs * (attempt + 1),
+            DEFAULT_CONFIG.retry.maxDelayMs
+          );
           console.log(`[Jina Reader] Rate limited, waiting ${waitTime}ms before retry...`);
           await new Promise((resolve) => setTimeout(resolve, waitTime));
           continue;
@@ -541,7 +679,7 @@ function validateAndExtractFromHtml(url: string, html: string): PageValidation {
   let isArticle = false;
   if (hasArticleType) {
     isArticle = true;
-  } else if (!hasNonArticleType && wordCount >= 250 && (publishedDate !== null || hasTimeTag)) {
+  } else if (!hasNonArticleType && wordCount >= DEFAULT_CONFIG.validation.minWordCount && (publishedDate !== null || hasTimeTag)) {
     isArticle = true;
   } else {
     isArticle = false;
@@ -591,7 +729,7 @@ async function filterAndEnrichCandidates(
     } catch (e) {
       // If we cannot fetch/parse, keep the candidate (we can't be certain it's not an article)
       // Mark validation as failed so we know to keep it
-      console.log(`[Blog Extractor] Validation failed for ${c.url}, keeping candidate:`, e instanceof Error ? e.message : String(e));
+      logger.warn('Validation failed, keeping candidate', { url: c.url, error: e instanceof Error ? e.message : String(e) });
       return { 
         candidate: c, 
         validation: { isArticle: true, schemaTypes: [], publishedDate: c.publishedDate, title: null } as PageValidation,
@@ -610,9 +748,7 @@ async function filterAndEnrichCandidates(
     // 2) Validation failed (network error, etc.) - we can't be certain it's not an article
     if (validationSucceeded && !validation.isArticle) {
       // Only drop if validation succeeded AND confirmed it's NOT an article
-      console.log(
-        `[Blog Extractor] Dropping non-article: ${candidate.url} (schema types: ${validation.schemaTypes.join(', ') || 'none'})`
-      );
+      logger.debug('Dropping non-article', { url: candidate.url, schemaTypes: validation.schemaTypes });
       continue;
     }
 
@@ -822,7 +958,7 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
     
     // Regex patterns for always-excluded paths
     const alwaysExcludeRegexPatterns = [
-      /^\/\d+(-2)?\/$/, // Draft/unpublished posts (numeric slugs like /3467-2/)
+      URL_PATTERNS.NUMERIC_SLUG, // Draft/unpublished posts (numeric slugs like /3467-2/)
     ];
 
     // Check string patterns - different logic for library vs blog context
@@ -1064,7 +1200,7 @@ async function fetchListingPageWithJina(url: string, retries = 2): Promise<strin
       withGeneratedAlt: true,
       noCache: true,
       removeSelectors: "nav,footer,header,.navigation,.sidebar,.menu,.breadcrumb,.cookie-banner,.popup,.modal",
-      timeout: 120000, // 120 seconds for large listing pages
+      timeout: DEFAULT_CONFIG.timeouts.jinaListingPage,
     }, retries);
 
     const html = result.data.content;
@@ -1198,7 +1334,7 @@ function extractUrlsFromMarkdown(content: string, baseUrl: URL): Array<{ url: st
           }
           
           // Only add if we have a title (relaxed length check in library context)
-          const minTitleLength = isLibraryContext ? 3 : 10;
+          const minTitleLength = isLibraryContext ? DEFAULT_CONFIG.validation.libraryMinTitleLength : DEFAULT_CONFIG.validation.minTitleLength;
           if (title && title.length >= minTitleLength && absoluteUrl.startsWith('http')) {
             blogPosts.push({ url: absoluteUrl, title });
             seenUrls.add(absoluteUrl);
@@ -1467,7 +1603,7 @@ function extractPaginationLinks(content: string, baseUrl: URL): string[] {
 async function fetchAllPagesWithPagination(
   initialUrl: string,
   baseUrl: URL,
-  maxPages: number = 50,
+  maxPages: number = DEFAULT_CONFIG.pagination.maxPages,
   maxPosts?: number
 ): Promise<Array<{ url: string; title: string }>> {
   const allPosts: Array<{ url: string; title: string }> = [];
@@ -1636,7 +1772,7 @@ export async function extractBlogPostUrls(
   dateRangeStart?: string | null,
   dateRangeEnd?: string | null
 ): Promise<Array<{ url: string; title: string; publishedDate: string | null }>> {
-  console.log(`[Blog Extractor] Starting extraction from: ${blogUrl} (maxPosts: ${maxPosts || 'unlimited'}, dateRange: ${dateRangeStart || 'none'} to ${dateRangeEnd || 'none'})`);
+  logger.info('Starting extraction', { blogUrl, maxPosts, dateRangeStart, dateRangeEnd });
   const baseUrl = new URL(normalizeUrl(blogUrl));
   let blogPosts: Array<{ url: string; title: string; publishedDate: string | null }> = [];
   
@@ -1877,7 +2013,7 @@ export async function extractBlogPostUrls(
           }
 
           // Only add if we have a reasonable title and URL (relaxed length check in library context)
-          const minTitleLength = isLibraryContext ? 3 : 10;
+          const minTitleLength = isLibraryContext ? DEFAULT_CONFIG.validation.libraryMinTitleLength : DEFAULT_CONFIG.validation.minTitleLength;
           if (title && title.length >= minTitleLength && absoluteUrl.startsWith('http')) {
             // Extract date from URL
             const publishedDate = extractPublishedDate(absoluteUrl);
@@ -1979,14 +2115,18 @@ export async function extractBlogPostUrls(
     
     const uniquePosts = Array.from(uniquePostsMap.values());
 
-    console.log(`[Blog Extractor] Found ${uniquePosts.length} unique candidate posts before validation from ${blogUrl}`);
+    logger.info('Found candidates before validation', { count: uniquePosts.length, blogUrl });
     
     if (uniquePosts.length === 0) {
-      console.warn(`[Blog Extractor] No posts found. This could mean:
-        - The page structure doesn't match expected selectors
-        - All links were excluded by shouldExcludeUrl
-        - The page requires JavaScript rendering (try Jina/Puppeteer)
-        - The URL is not a blog listing page`);
+      logger.warn('No posts found', {
+        blogUrl,
+        possibleReasons: [
+          'The page structure doesn\'t match expected selectors',
+          'All links were excluded by shouldExcludeUrl',
+          'The page requires JavaScript rendering (try Jina/Puppeteer)',
+          'The URL is not a blog listing page'
+        ]
+      });
     }
 
     // Validate/enrich candidates by fetching each page and confirming it is an article-like page.
@@ -1997,9 +2137,12 @@ export async function extractBlogPostUrls(
     // Respect maxPosts after validation (validation may drop many non-articles)
     const finalPosts = maxPosts !== undefined ? validated.slice(0, maxPosts) : validated;
 
-    console.log(
-      `[Blog Extractor] Candidates: ${beforeCount}. Validated articles: ${validated.length}. Returning: ${finalPosts.length} from ${blogUrl}`
-    );
+    logger.info('Extraction complete', {
+      candidates: beforeCount,
+      validated: validated.length,
+      returning: finalPosts.length,
+      blogUrl
+    });
 
     return finalPosts;
   } catch (error) {
