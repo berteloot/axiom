@@ -2030,6 +2030,27 @@ export async function extractBlogPostUrls(
   const baseUrl = new URL(normalizeUrl(blogUrl));
   let blogPosts: Array<{ url: string; title: string; publishedDate: string | null }> = [];
   const isBlogListingPage = baseUrl.pathname.toLowerCase().includes('/blog');
+  const basePath = baseUrl.pathname.replace(/\/+$/, '').toLowerCase();
+  const isPathScoped = basePath.length > 1;
+
+  const filterPostsByPath = (
+    posts: Array<{ url: string; title: string; publishedDate: string | null }>
+  ): Array<{ url: string; title: string; publishedDate: string | null }> => {
+    if (!isPathScoped) return posts;
+    const scoped = posts.filter((post) => {
+      try {
+        const postPath = new URL(post.url).pathname.replace(/\/+$/, '').toLowerCase();
+        return postPath === basePath || postPath.startsWith(`${basePath}/`);
+      } catch {
+        return false;
+      }
+    });
+    if (scoped.length > 0) {
+      logger.info('Scoped extraction to base path', { basePath, before: posts.length, after: scoped.length });
+      return scoped;
+    }
+    return posts;
+  };
   
   // Parse date range if provided
   const startDate = dateRangeStart ? new Date(dateRangeStart) : null;
@@ -2061,10 +2082,11 @@ export async function extractBlogPostUrls(
     // First, try sitemap/RSS feeds (most reliable for getting all posts)
     try {
       const sitemapPosts = await tryFetchFromSitemapOrRSS(baseUrl);
-      if (sitemapPosts.length > 0) {
-        logger.info('Found posts from sitemap/RSS', { count: sitemapPosts.length, blogUrl });
+      const scopedSitemapPosts = filterPostsByPath(sitemapPosts);
+      if (scopedSitemapPosts.length > 0) {
+        logger.info('Found posts from sitemap/RSS', { count: scopedSitemapPosts.length, blogUrl });
         let filteredByDateRange = 0;
-        for (const post of sitemapPosts) {
+        for (const post of scopedSitemapPosts) {
           const publishedDate = post.publishedDate || extractPublishedDate(post.url);
           // Filter by date range if provided
           if (matchesDateRange(publishedDate)) {
@@ -2406,7 +2428,7 @@ export async function extractBlogPostUrls(
       }
     }
     
-    const uniquePosts = Array.from(uniquePostsMap.values());
+    const uniquePosts = filterPostsByPath(Array.from(uniquePostsMap.values()));
 
     logger.info('Found candidates before validation', { count: uniquePosts.length, blogUrl });
     
