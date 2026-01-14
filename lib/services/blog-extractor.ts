@@ -1620,8 +1620,8 @@ function extractUrlsFromMarkdown(content: string, baseUrl: URL): Array<{ url: st
 /**
  * Try to fetch blog posts from sitemap or RSS feed
  */
-async function tryFetchFromSitemapOrRSS(baseUrl: URL): Promise<Array<{ url: string; title: string }>> {
-  const blogPosts: Array<{ url: string; title: string }> = [];
+async function tryFetchFromSitemapOrRSS(baseUrl: URL): Promise<Array<{ url: string; title: string; publishedDate: string | null }>> {
+  const blogPosts: Array<{ url: string; title: string; publishedDate: string | null }> = [];
   const baseUrlString = `${baseUrl.protocol}//${baseUrl.host}`;
 
   // Try common sitemap/RSS locations (expanded for WordPress and variants)
@@ -1652,10 +1652,19 @@ async function tryFetchFromSitemapOrRSS(baseUrl: URL): Promise<Array<{ url: stri
 
         const addFromUrlset = (xml: string) => {
           const $xml = cheerio.load(xml, { xmlMode: true });
-          $xml('url loc').each((_, el) => {
-            const u = $xml(el).text().trim();
+          $xml('url').each((_, el) => {
+            const u = $xml(el).find('loc').text().trim();
             if (!u) return;
             if (shouldExcludeUrl(u, baseUrl)) return;
+
+            const lastmodText = $xml(el).find('lastmod').text().trim();
+            let publishedDate: string | null = null;
+            if (lastmodText) {
+              const lastmodDate = new Date(lastmodText);
+              if (!isNaN(lastmodDate.getTime()) && lastmodDate <= new Date()) {
+                publishedDate = lastmodDate.toISOString().split('T')[0];
+              }
+            }
 
             // Use slug-derived title as primary fallback
             const derivedTitle = deriveTitleFromSlug(u);
@@ -1663,7 +1672,7 @@ async function tryFetchFromSitemapOrRSS(baseUrl: URL): Promise<Array<{ url: stri
               ? derivedTitle 
               : u;
 
-            blogPosts.push({ url: u, title });
+            blogPosts.push({ url: u, title, publishedDate });
           });
         };
 
@@ -1711,7 +1720,16 @@ async function tryFetchFromSitemapOrRSS(baseUrl: URL): Promise<Array<{ url: stri
             const $item = $(element).closest('item, entry');
             const title = $item.find('title').first().text().trim() || '';
             if (title) {
-              blogPosts.push({ url, title });
+              const pubDateText = $item.find('pubDate, published, updated, dc\\:date').first().text().trim();
+              let publishedDate: string | null = null;
+              if (pubDateText) {
+                const pubDate = new Date(pubDateText);
+                if (!isNaN(pubDate.getTime()) && pubDate <= new Date()) {
+                  publishedDate = pubDate.toISOString().split('T')[0];
+                }
+              }
+
+              blogPosts.push({ url, title, publishedDate });
             }
           }
         });
@@ -2002,8 +2020,7 @@ export async function extractBlogPostUrls(
         logger.info('Found posts from sitemap/RSS', { count: sitemapPosts.length, blogUrl });
         let filteredByDateRange = 0;
         for (const post of sitemapPosts) {
-          // Extract date from URL first
-          const publishedDate = extractPublishedDate(post.url);
+          const publishedDate = post.publishedDate || extractPublishedDate(post.url);
           // Filter by date range if provided
           if (matchesDateRange(publishedDate)) {
             blogPosts.push({
