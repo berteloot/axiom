@@ -56,6 +56,14 @@ interface PreviewPost {
   language?: string | null;
 }
 
+interface DateStats {
+  total: number;
+  withDates: number;
+  missingDates: number;
+  minDate: string | null;
+  maxDate: string | null;
+}
+
 // Language code to name mapping
 const LANGUAGE_NAMES: Record<string, string> = {
   de: "German",
@@ -101,6 +109,7 @@ export function BulkBlogImportModal({
   const [previewPosts, setPreviewPosts] = useState<PreviewPost[]>([]);
   const [selectedPostUrls, setSelectedPostUrls] = useState<Set<string>>(new Set());
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [dateStats, setDateStats] = useState<DateStats | null>(null);
   
   // Import state
   const [isImporting, setIsImporting] = useState(false);
@@ -172,6 +181,7 @@ export function BulkBlogImportModal({
     setPreviewError(null);
     setPreviewPosts([]);
     setSelectedPostUrls(new Set());
+    setDateStats(null);
 
     try {
       const response = await fetch("/api/assets/bulk-import-blog/preview", {
@@ -194,6 +204,9 @@ export function BulkBlogImportModal({
 
       const posts = Array.isArray(data.posts) ? data.posts : [];
       setPreviewPosts(posts);
+      if (data.dateStats) {
+        setDateStats(data.dateStats);
+      }
       // Store detected languages for filter UI
       if (Array.isArray(data.detectedLanguages)) {
         setDetectedLanguages(data.detectedLanguages);
@@ -649,6 +662,16 @@ export function BulkBlogImportModal({
                 </Button>
               </div>
             </div>
+
+            {(dateRangeStart || dateRangeEnd) && previewPosts.length === 0 && dateStats && dateStats.withDates > 0 && (
+              <Alert>
+                <Info className="h-4 w-4" />
+                <AlertTitle>No posts in that range</AlertTitle>
+                <AlertDescription className="mt-1">
+                  Available published dates: {dateStats.minDate} to {dateStats.maxDate}.
+                </AlertDescription>
+              </Alert>
+            )}
 
             <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
               <div className="space-y-1">

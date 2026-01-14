@@ -301,6 +301,18 @@ export async function POST(request: NextRequest) {
       5 // Process 5 posts at a time
     );
 
+    const dateValues = enrichedPosts
+      .map((post) => post.publishedDate)
+      .filter((date): date is string => !!date);
+    const sortedDates = [...dateValues].sort();
+    const dateStats = {
+      total: enrichedPosts.length,
+      withDates: dateValues.length,
+      missingDates: enrichedPosts.length - dateValues.length,
+      minDate: sortedDates[0] || null,
+      maxDate: sortedDates[sortedDates.length - 1] || null,
+    };
+
     // Filter by date range after HTML enrichment for more accurate dates
     let finalPosts = enrichedPosts;
     if (dateRangeStart || dateRangeEnd) {
@@ -338,6 +350,7 @@ export async function POST(request: NextRequest) {
       duplicates: duplicateCount,
       new: newCount,
       detectedLanguages, // Available languages for filtering
+      dateStats,
     });
   } catch (error) {
     console.error("[Bulk Import Preview] Error previewing blog posts:", error);
