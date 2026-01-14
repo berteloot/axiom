@@ -88,18 +88,58 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { blogUrl, maxPosts, dateRangeStart, dateRangeEnd, languageFilter } = body;
 
+    // Hard validation with actionable error messages
     if (!blogUrl || typeof blogUrl !== "string") {
+      console.error(`[Bulk Import Preview] Missing or invalid blogUrl parameter. Received:`, { blogUrl, type: typeof blogUrl });
       return NextResponse.json(
-        { error: "blogUrl is required" },
+        { error: "blogUrl is required and must be a string" },
         { status: 400 }
       );
     }
 
+    const trimmedUrl = blogUrl.trim();
+    if (!trimmedUrl) {
+      console.error(`[Bulk Import Preview] blogUrl is empty or whitespace only`);
+      return NextResponse.json(
+        { error: "blogUrl cannot be empty" },
+        { status: 400 }
+      );
+    }
+
+    // Validate URL format
+    let normalizedUrl: string;
+    try {
+      // Try to construct URL - if it fails, it's invalid
+      const urlObj = new URL(trimmedUrl);
+      normalizedUrl = urlObj.href;
+    } catch (urlError) {
+      console.error(`[Bulk Import Preview] Invalid URL format: "${trimmedUrl}"`, urlError);
+      // If no protocol, try adding https://
+      if (!trimmedUrl.match(/^https?:\/\//i)) {
+        try {
+          const urlWithProtocol = `https://${trimmedUrl}`;
+          const urlObj = new URL(urlWithProtocol);
+          normalizedUrl = urlObj.href;
+          console.log(`[Bulk Import Preview] Added https:// protocol, normalized to: ${normalizedUrl}`);
+        } catch (retryError) {
+          return NextResponse.json(
+            { error: `Invalid blogUrl format: "${trimmedUrl}". Please provide a valid URL (e.g., https://example.com/blog)` },
+            { status: 400 }
+          );
+        }
+      } else {
+        return NextResponse.json(
+          { error: `Invalid blogUrl format: "${trimmedUrl}". Please provide a valid URL (e.g., https://example.com/blog)` },
+          { status: 400 }
+        );
+      }
+    }
+
     // Extract blog post URLs with maxPosts and date range limits
     // This will stop early when enough matching posts are found
-    console.log(`[Bulk Import Preview] Extracting blog posts from ${blogUrl}... (maxPosts: ${maxPosts || 'unlimited'}, dateRange: ${dateRangeStart || 'none'} to ${dateRangeEnd || 'none'})`);
+    console.log(`[Bulk Import Preview] Extracting blog posts from ${normalizedUrl}... (maxPosts: ${maxPosts || 'unlimited'}, dateRange: ${dateRangeStart || 'none'} to ${dateRangeEnd || 'none'})`);
     const blogPosts = await extractBlogPostUrls(
-      blogUrl,
+      normalizedUrl,
       maxPosts ? Number(maxPosts) : undefined,
       dateRangeStart || null,
       dateRangeEnd || null
@@ -212,6 +252,9 @@ export async function POST(request: NextRequest) {
       }
     };
     
+    // Use normalizedUrl for same-domain checks
+    const baseUrlForChecks = normalizedUrl;
+    
     const enrichedPosts = await processBatchWithConcurrency(
       filteredPosts,
       async (post) => {
@@ -241,7 +284,7 @@ export async function POST(request: NextRequest) {
         
         // Fallback: For items extracted from blog URLs, default to "Blog Post"
         // Never use "Web Page" as all items are web pages - use specific content types
-        if (!detectedType && isSameDomainHtml(post.url, blogUrl)) {
+        if (!detectedType && isSameDomainHtml(post.url, baseUrlForChecks)) {
           // If we couldn't detect a specific type but it's from the blog domain,
           // default to "Blog Post" (unless it's a PDF)
           if (!post.url.toLowerCase().endsWith('.pdf')) {
@@ -275,10 +318,30 @@ export async function POST(request: NextRequest) {
       detectedLanguages, // Available languages for filtering
     });
   } catch (error) {
-    console.error("Error previewing blog posts:", error);
+    console.error("[Bulk Import Preview] Error previewing blog posts:", error);
+    
+    // Provide more specific error messages
+    if (error instanceof Error) {
+      // If it's a URL parsing error, return 400
+      if (error.message.includes("Invalid URL") || error.message.includes("URL")) {
+        return NextResponse.json(
+          { error: `Invalid blogUrl: ${error.message}` },
+          { status: 400 }
+        );
+      }
+      
+      // If it's a network/fetch error, return 500 with details
+      if (error.message.includes("fetch") || error.message.includes("network") || error.message.includes("ECONNREFUSED")) {
+        return NextResponse.json(
+          { error: `Failed to fetch blog URL: ${error.message}. Please check that the URL is accessible.` },
+          { status: 500 }
+        );
+      }
+    }
+    
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : "Failed to preview blog posts",
+        error: error instanceof Error ? error.message : "Failed to preview blog posts. Please check the URL and try again.",
       },
       { status: 500 }
     );
