@@ -895,6 +895,24 @@ async function filterAndEnrichCandidates(
   return kept;
 }
 
+async function enrichDatesOnly(
+  posts: Array<{ url: string; title: string; publishedDate: string | null }>,
+  concurrency = 5
+): Promise<Array<{ url: string; title: string; publishedDate: string | null }>> {
+  return mapWithConcurrency(posts, concurrency, async (post) => {
+    if (post.publishedDate) return post;
+
+    try {
+      const html = await fetchHtml(post.url);
+      const extractedDate = extractPublishedDate(post.url, html, undefined, true);
+      return { ...post, publishedDate: extractedDate };
+    } catch (e) {
+      logger.warn('Date enrichment failed', { url: post.url, error: e instanceof Error ? e.message : String(e) });
+      return post;
+    }
+  });
+}
+
 /**
  * Check if a URL should be excluded from extraction.
  *
@@ -2322,13 +2340,20 @@ export async function extractBlogPostUrls(
 
     let validated: Array<{ url: string; title: string; publishedDate: string | null }>;
 
+    const concurrency = DEFAULT_CONFIG.pagination.validationConcurrency;
+
     if (isBlogListingPage && uniquePosts.length > 0) {
-      // For blog listing pages, trust the extraction - validation is too aggressive
-      logger.info('Skipping validation for blog listing page', { blogUrl, candidateCount: beforeCount });
-      validated = uniquePosts;
+      // For blog listing pages, trust the extraction but still enrich dates when missing
+      const missingDates = uniquePosts.filter((post) => !post.publishedDate).length;
+      logger.info('Skipping validation for blog listing page', { blogUrl, candidateCount: beforeCount, missingDates });
+      if (missingDates > 0) {
+        validated = await enrichDatesOnly(uniquePosts, concurrency);
+      } else {
+        validated = await enrichDatesOnly(uniquePosts, concurrency);
+      }
     } else {
       // For other pages, validate candidates
-      validated = await filterAndEnrichCandidates(uniquePosts, DEFAULT_CONFIG.pagination.validationConcurrency);
+      validated = await filterAndEnrichCandidates(uniquePosts, concurrency);
     }
 
     // Respect maxPosts after validation (validation may drop many non-articles)
