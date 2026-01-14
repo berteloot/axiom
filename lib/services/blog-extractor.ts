@@ -376,11 +376,12 @@ async function callJinaReaderAPI(
  * Fetch raw HTML from URL
  * Uses Jina Reader API if available (better for JS-heavy sites), otherwise direct fetch
  */
-export async function fetchHtml(url: string): Promise<string> {
+export async function fetchHtml(url: string, options?: { useJina?: boolean }): Promise<string> {
   const normalizedUrl = normalizeUrl(url);
+  const useJina = options?.useJina ?? true;
 
   // If Jina API key is available, use Jina Reader for better results (handles JS-rendered pages)
-  if (JINA_API_KEY) {
+  if (useJina && JINA_API_KEY) {
     try {
       const result = await callJinaReaderAPI(url, {
         format: 'html',
@@ -2437,26 +2438,51 @@ export async function fetchBlogPostContentWithDate(url: string): Promise<{ conte
 
   try {
     const normalizedUrl = normalizeUrl(url);
-    
-    // Use improved Jina Reader API with POST method and structured responses
-    const result = await callJinaReaderAPI(url, {
-      format: 'markdown',
-      engine: 'browser',
-      withGeneratedAlt: true,
-      noCache: true,
-      removeSelectors: "nav,footer,header,.navigation,.sidebar,.menu,.breadcrumb,.social-share,.related-posts,.comments,.newsletter,.subscribe,.cookie-banner,.popup,.modal",
-      targetSelector: "article,main,.post-content,.entry-content,.article-content,.blog-post,.post-body,.content-main",
-      timeout: 60000, // 60 seconds for full content
-    });
 
-    const content = result.data.content;
+    const extractTextFromHtml = (html: string): string => {
+      const $ = cheerio.load(html);
+      $('script, style, noscript').remove();
+      const contentNode = $('article, main, .post-content, .entry-content, .article-content, .blog-post, .post-body, .content-main').first();
+      const text = (contentNode.length ? contentNode.text() : $('body').text())
+        .replace(/\s+/g, ' ')
+        .trim();
+      return text;
+    };
+
+    let content = '';
+    let htmlForDate: string | undefined;
+    let skipJinaHtml = false;
+
+    // Use improved Jina Reader API with POST method and structured responses
+    try {
+      const result = await callJinaReaderAPI(url, {
+        format: 'markdown',
+        engine: 'browser',
+        withGeneratedAlt: true,
+        noCache: true,
+        removeSelectors: "nav,footer,header,.navigation,.sidebar,.menu,.breadcrumb,.social-share,.related-posts,.comments,.newsletter,.subscribe,.cookie-banner,.popup,.modal",
+        targetSelector: "article,main,.post-content,.entry-content,.article-content,.blog-post,.post-body,.content-main",
+        timeout: DEFAULT_CONFIG.timeouts.jinaReader,
+      });
+
+      content = result.data.content || '';
+    } catch (jinaError) {
+      const errorMessage = jinaError instanceof Error ? jinaError.message : String(jinaError);
+      console.warn(`[Blog Extractor] Jina content fetch failed for ${url}, falling back to HTML:`, errorMessage);
+      skipJinaHtml = true;
+    }
+
+    if (!content || content.trim().length < 100) {
+      const html = await fetchHtml(normalizedUrl, { useJina: !skipJinaHtml });
+      htmlForDate = html;
+      content = extractTextFromHtml(html);
+    }
 
     if (!content || content.trim().length < 100) {
       throw new Error("Could not extract meaningful content from the blog post");
     }
 
     // Try to fetch HTML for date extraction (in parallel or as fallback)
-    let html: string | undefined;
     let publishedDate: string | null = null;
     
     try {
@@ -2465,7 +2491,7 @@ export async function fetchBlogPostContentWithDate(url: string): Promise<{ conte
       
       // If not found in content, try fetching HTML for meta tags/structured data
       if (!publishedDate) {
-        html = await fetchHtml(normalizedUrl).catch(() => undefined);
+        const html = htmlForDate || await fetchHtml(normalizedUrl, { useJina: !skipJinaHtml }).catch(() => undefined);
         if (html) {
           publishedDate = extractPublishedDate(normalizedUrl, html, content);
         }
