@@ -26,11 +26,192 @@ function resolveUrl(baseUrl: string, relativeUrl: string): string {
 }
 
 /**
+ * Helper function for Jina Reader API calls using POST method with JSON body
+ * Based on Jina Reader API documentation: https://docs.jina.ai/
+ * Get your Jina AI API key for free: https://jina.ai/?sui=apikey
+ */
+interface JinaReaderOptions {
+  format?: 'html' | 'markdown' | 'text';
+  engine?: 'browser' | 'direct' | 'cf-browser-rendering';
+  withLinksSummary?: boolean;
+  withImagesSummary?: boolean;
+  withGeneratedAlt?: boolean;
+  removeSelectors?: string;
+  targetSelector?: string;
+  waitForSelector?: string;
+  timeout?: number;
+  noCache?: boolean;
+}
+
+interface JinaReaderResponse {
+  code?: number;
+  status?: number;
+  data: {
+    content: string;
+    links?: Record<string, string>;
+    images?: Record<string, string>;
+    title?: string;
+    url?: string;
+    description?: string;
+  };
+  usage?: {
+    tokens?: number;
+  };
+}
+
+async function callJinaReaderAPI(
+  url: string,
+  options: JinaReaderOptions = {},
+  retries = 2
+): Promise<JinaReaderResponse> {
+  if (!JINA_API_KEY) {
+    throw new Error("JINA_API_KEY environment variable is not set. Get your Jina AI API key for free: https://jina.ai/?sui=apikey");
+  }
+
+  const normalizedUrl = normalizeUrl(url);
+  const {
+    format = 'html',
+    engine = 'browser',
+    withLinksSummary = false,
+    withImagesSummary = false,
+    withGeneratedAlt = false,
+    removeSelectors,
+    targetSelector,
+    waitForSelector,
+    timeout = 60000,
+    noCache = false,
+  } = options;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${JINA_API_KEY}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'X-Return-Format': format,
+        'X-Engine': engine,
+      };
+
+      if (withLinksSummary) {
+        headers['X-With-Links-Summary'] = 'true';
+      }
+      if (withImagesSummary) {
+        headers['X-With-Images-Summary'] = 'true';
+      }
+      if (withGeneratedAlt) {
+        headers['X-With-Generated-Alt'] = 'true';
+      }
+      if (removeSelectors) {
+        headers['X-Remove-Selector'] = removeSelectors;
+      }
+      if (targetSelector) {
+        headers['X-Target-Selector'] = targetSelector;
+      }
+      if (waitForSelector) {
+        headers['X-Wait-For-Selector'] = waitForSelector;
+      }
+      if (noCache) {
+        headers['X-No-Cache'] = 'true';
+      }
+      if (format === 'markdown') {
+        // Use specialized HTML-to-Markdown model for better quality
+        headers['X-Respond-With'] = 'readerlm-v2';
+      }
+
+      const response = await fetch(`${JINA_READER_URL}/`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ url: normalizedUrl }),
+        signal: AbortSignal.timeout(timeout),
+      });
+
+      if (!response.ok) {
+        if (response.status === 429 && attempt < retries) {
+          // Rate limited - wait and retry
+          const waitTime = 2000 * (attempt + 1);
+          console.log(`[Jina Reader] Rate limited, waiting ${waitTime}ms before retry...`);
+          await new Promise((resolve) => setTimeout(resolve, waitTime));
+          continue;
+        }
+
+        const errorText = await response.text().catch(() => '');
+        console.error(`[Jina Reader] API error: ${response.status} ${response.statusText}`);
+        if (errorText) {
+          console.error(`[Jina Reader] Error details: ${errorText.substring(0, 200)}`);
+        }
+
+        throw new Error(`Jina API error: ${response.status} - ${response.statusText}`);
+      }
+
+      const data: JinaReaderResponse = await response.json();
+
+      // Validate response structure
+      if (!data || !data.data || !data.data.content) {
+        // Fallback: try to parse as plain text if JSON structure is unexpected
+        const text = await response.text().catch(() => '');
+        if (text) {
+          return {
+            data: {
+              content: text,
+            },
+          };
+        }
+        throw new Error('Invalid response structure from Jina Reader API');
+      }
+
+      return data;
+    } catch (error) {
+      const isLastAttempt = attempt === retries;
+      const isConnectionError = error instanceof Error && (
+        error.message.includes('fetch failed') ||
+        error.message.includes('ECONNREFUSED') ||
+        error.message.includes('ETIMEDOUT') ||
+        error.message.includes('network') ||
+        error.name === 'AbortError'
+      );
+
+      if (isConnectionError && !isLastAttempt) {
+        const waitTime = 3000 * (attempt + 1);
+        console.warn(`[Jina Reader] Connection error (attempt ${attempt + 1}/${retries + 1}), retrying in ${waitTime}ms...`);
+        console.warn(`[Jina Reader] Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        await new Promise((resolve) => setTimeout(resolve, waitTime));
+        continue;
+      }
+
+      if (isLastAttempt) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error(`[Jina Reader] Failed after ${retries + 1} attempts: ${errorMessage}`);
+        throw error;
+      }
+    }
+  }
+
+  throw new Error('Failed to call Jina Reader API after retries');
+}
+
+/**
  * Fetch raw HTML from URL
+ * Uses Jina Reader API if available (better for JS-heavy sites), otherwise direct fetch
  */
 export async function fetchHtml(url: string): Promise<string> {
   const normalizedUrl = normalizeUrl(url);
 
+  // If Jina API key is available, use Jina Reader for better results (handles JS-rendered pages)
+  if (JINA_API_KEY) {
+    try {
+      const result = await callJinaReaderAPI(url, {
+        format: 'html',
+        engine: 'browser',
+        noCache: true,
+      }, 1); // Use 1 retry for speed
+      return result.data.content;
+    } catch (error) {
+      console.warn(`[Blog Extractor] Jina fetch failed for ${url}, falling back to direct fetch:`, error);
+      // Fall through to direct fetch
+    }
+  }
+
+  // Fallback to direct fetch if Jina is not available or fails
   try {
     const response = await fetch(normalizedUrl, {
       headers: {
@@ -235,7 +416,17 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
     const urlObj = new URL(url);
     const urlPath = urlObj.pathname.toLowerCase();
 
-    const basePath = (baseUrl.pathname || "").toLowerCase();
+    // Normalize locale prefixes so pattern matching works on multi-language sites
+    // Examples: /de/..., /fr/..., /en-us/... -> /...
+    const stripLocalePrefix = (p: string): string => {
+      // /de/... or /de-DE/... or /en-us/...
+      return p.replace(/^\/(?:[a-z]{2})(?:-[a-z]{2})?\//i, "/");
+    };
+
+    const urlPathForMatch = stripLocalePrefix(urlPath);
+
+    const basePathRaw = (baseUrl.pathname || "").toLowerCase();
+    const basePath = stripLocalePrefix(basePathRaw);
     const isLibraryContext =
       basePath.includes("/library") ||
       basePath.includes("/resources") ||
@@ -417,9 +608,9 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
     const stringPatterns = isLibraryContext
       ? [...alwaysExcludeStringPatterns, ...libraryModeExcludePatterns]
       : [...alwaysExcludeStringPatterns, ...blogOnlyExcludePatterns];
-      
+
     for (const pattern of stringPatterns) {
-      if (urlPath.includes(pattern)) {
+      if (urlPath.includes(pattern) || urlPathForMatch.includes(pattern)) {
         return true;
       }
     }
@@ -449,8 +640,8 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
       /^\/rfxcel-code-check-[a-z-]+$/i,          // e.g., /rfxcel-code-check-dispensers-eu/
       /^\/diamind-sentry$/i,                     // e.g., /diamind-sentry/
     ];
-    
-    if (productPagePatterns.some(pattern => pattern.test(urlPath))) {
+
+    if (productPagePatterns.some(pattern => pattern.test(urlPathForMatch))) {
       return true;
     }
     
@@ -463,8 +654,8 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
       /^\/smart-digital-innovation$/i,
       /^\/consumer-engagement$/i,
     ];
-    
-    if (solutionPagePatterns.some(pattern => pattern.test(urlPath))) {
+
+    if (solutionPagePatterns.some(pattern => pattern.test(urlPathForMatch))) {
       return true;
     }
     
@@ -479,7 +670,7 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
     }
     
     // Exclude very short paths that are likely navigation pages
-    const pathSegments = urlPath.split('/').filter(seg => seg.length > 0);
+    const pathSegments = urlPathForMatch.split('/').filter(seg => seg.length > 0);
     if (pathSegments.length === 1 && pathSegments[0].length < 10) {
       // Single segment, very short - likely a navigation/landing page
       return true;
@@ -487,7 +678,7 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
 
     // Skip date-based archive URLs (e.g., /2024/, /2024/01/)
     const dateArchivePattern = /^\/(\d{4})\/(\d{2})?\/?$/;
-    if (dateArchivePattern.test(urlPath)) {
+    if (dateArchivePattern.test(urlPathForMatch)) {
       return true;
     }
 
@@ -520,7 +711,7 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
         /^\/download/,
       ];
 
-      if (nonBlogPatterns.some((pattern) => pattern.test(urlPath))) {
+      if (nonBlogPatterns.some((pattern) => pattern.test(urlPathForMatch))) {
         return true;
       }
 
@@ -632,6 +823,7 @@ async function fetchListingPageWithPuppeteer(url: string, maxIterations = 30): P
 
 /**
  * Fetch listing page content using Jina Reader (handles JavaScript-rendered pages)
+ * Now uses POST method with structured responses and X-With-Links-Summary for better link extraction
  * Includes retry logic for connection failures
  */
 async function fetchListingPageWithJina(url: string, retries = 2): Promise<string> {
@@ -642,82 +834,37 @@ async function fetchListingPageWithJina(url: string, retries = 2): Promise<strin
   // Remove hash fragments before passing to Jina (e.g., #blog)
   const urlWithoutHash = url.split('#')[0];
   const normalizedUrl = normalizeUrl(urlWithoutHash);
-  
-  // Jina Reader expects the URL to be properly encoded
-  // The URL should be appended directly, not encoded in the path
-  const jinaUrl = `${JINA_READER_URL}/${normalizedUrl}`;
 
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      console.log(`[Blog Extractor] Fetching listing page with Jina (attempt ${attempt + 1}/${retries + 1}): ${jinaUrl}`);
-      
-      const response = await fetch(jinaUrl, {
-        headers: {
-          Authorization: `Bearer ${JINA_API_KEY}`,
-          Accept: "text/html", // Request HTML for better structure parsing
-          "X-Respond-With": "html", // Request HTML format for better link extraction
-          "X-With-Generated-Alt": "true",
-          "X-No-Cache": "true",
-          // Remove page chrome but keep content links
-          "X-Remove-Selector": "nav,footer,header,.navigation,.sidebar,.menu,.breadcrumb,.cookie-banner,.popup,.modal",
-        },
-        signal: AbortSignal.timeout(120000), // 120 seconds for large listing pages
-      });
+  try {
+    const result = await callJinaReaderAPI(urlWithoutHash, {
+      format: 'html',
+      engine: 'browser',
+      withLinksSummary: true, // Get structured links for better extraction
+      withGeneratedAlt: true,
+      noCache: true,
+      removeSelectors: "nav,footer,header,.navigation,.sidebar,.menu,.breadcrumb,.cookie-banner,.popup,.modal",
+      timeout: 120000, // 120 seconds for large listing pages
+    }, retries);
 
-      if (!response.ok) {
-        if (response.status === 429 && attempt < retries) {
-          // Rate limited - wait and retry
-          const waitTime = 2000 * (attempt + 1);
-          console.log(`[Blog Extractor] Rate limited, waiting ${waitTime}ms before retry...`);
-          await new Promise((resolve) => setTimeout(resolve, waitTime));
-          continue;
-        }
-        
-        const errorText = await response.text().catch(() => '');
-        console.error(`[Blog Extractor] Jina API error: ${response.status} ${response.statusText}`);
-        if (errorText) {
-          console.error(`[Blog Extractor] Error details: ${errorText.substring(0, 200)}`);
-        }
-        
-        throw new Error(`Jina API error: ${response.status} - ${response.statusText}`);
-      }
-
-      const content = await response.text();
-      
-      if (!content || content.trim().length < 100) {
-        throw new Error("Jina returned empty or insufficient content");
-      }
-      
-      console.log(`[Blog Extractor] Jina returned ${content.length} characters from listing page`);
-      
-      return content;
-    } catch (error) {
-      const isLastAttempt = attempt === retries;
-      const isConnectionError = error instanceof Error && (
-        error.message.includes('fetch failed') ||
-        error.message.includes('ECONNREFUSED') ||
-        error.message.includes('ETIMEDOUT') ||
-        error.message.includes('network') ||
-        error.name === 'AbortError'
-      );
-
-      if (isConnectionError && !isLastAttempt) {
-        const waitTime = 3000 * (attempt + 1);
-        console.warn(`[Blog Extractor] Connection error (attempt ${attempt + 1}/${retries + 1}), retrying in ${waitTime}ms...`);
-        console.warn(`[Blog Extractor] Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        await new Promise((resolve) => setTimeout(resolve, waitTime));
-        continue;
-      }
-
-      if (isLastAttempt) {
-        const errorMessage = error instanceof Error ? error.message : "Unknown error";
-        console.error(`[Blog Extractor] Failed after ${retries + 1} attempts: ${errorMessage}`);
-        throw new Error(`Failed to fetch listing page with Jina after ${retries + 1} attempts: ${errorMessage}`);
-      }
+    const html = result.data.content;
+    
+    if (!html || html.trim().length < 100) {
+      throw new Error("Jina returned empty or insufficient content");
     }
+    
+    // Log if we got structured links (for future enhancement)
+    if (result.data.links) {
+      console.log(`[Blog Extractor] Jina returned ${html.length} characters and ${Object.keys(result.data.links).length} structured links`);
+    } else {
+      console.log(`[Blog Extractor] Jina returned ${html.length} characters from listing page`);
+    }
+    
+    return html;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    console.error(`[Blog Extractor] Failed to fetch listing page with Jina: ${errorMessage}`);
+    throw new Error(`Failed to fetch listing page with Jina: ${errorMessage}`);
   }
-
-  throw new Error("Failed to fetch listing page with Jina after retries");
 }
 
 /**
@@ -1616,6 +1763,7 @@ export async function fetchBlogPostContent(url: string): Promise<string> {
 /**
  * Fetch blog post content and extract published date
  * Returns both content and published date (if found)
+ * Now uses POST method with structured responses and X-Respond-With: readerlm-v2 for better markdown conversion
  */
 export async function fetchBlogPostContentWithDate(url: string): Promise<{ content: string; publishedDate: string | null }> {
   if (!JINA_API_KEY) {
@@ -1624,29 +1772,19 @@ export async function fetchBlogPostContentWithDate(url: string): Promise<{ conte
 
   try {
     const normalizedUrl = normalizeUrl(url);
-    const jinaUrl = `${JINA_READER_URL}/${normalizedUrl}`;
     
-    // Fetch content from Jina
-    const response = await fetch(jinaUrl, {
-      headers: {
-        Authorization: `Bearer ${JINA_API_KEY}`,
-        Accept: "text/plain",
-        "X-Respond-With": "markdown", // Request full markdown content
-        "X-With-Generated-Alt": "true",
-        "X-No-Cache": "true", // Get fresh content
-        // Remove navigation, footer, header, sidebar, and other page chrome
-        "X-Remove-Selector": "nav,footer,header,.navigation,.sidebar,.menu,.breadcrumb,.social-share,.related-posts,.comments,.newsletter,.subscribe,.cookie-banner,.popup,.modal",
-        // Target main article content areas
-        "X-Target-Selector": "article,main,.post-content,.entry-content,.article-content,.blog-post,.post-body,.content-main",
-      },
-      signal: AbortSignal.timeout(60000), // 60 seconds for full content
+    // Use improved Jina Reader API with POST method and structured responses
+    const result = await callJinaReaderAPI(url, {
+      format: 'markdown',
+      engine: 'browser',
+      withGeneratedAlt: true,
+      noCache: true,
+      removeSelectors: "nav,footer,header,.navigation,.sidebar,.menu,.breadcrumb,.social-share,.related-posts,.comments,.newsletter,.subscribe,.cookie-banner,.popup,.modal",
+      targetSelector: "article,main,.post-content,.entry-content,.article-content,.blog-post,.post-body,.content-main",
+      timeout: 60000, // 60 seconds for full content
     });
 
-    if (!response.ok) {
-      throw new Error(`Jina API error: ${response.status} - ${response.statusText}`);
-    }
-
-    const content = await response.text();
+    const content = result.data.content;
 
     if (!content || content.trim().length < 100) {
       throw new Error("Could not extract meaningful content from the blog post");
