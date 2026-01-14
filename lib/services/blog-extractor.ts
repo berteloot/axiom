@@ -529,6 +529,85 @@ function extractPublishedDate(url: string, html?: string, content?: string, skip
           // Invalid JSON, continue to next script
         }
       }
+      
+      // Check visible text content for dates (common in blog posts)
+      // Look in common date container elements first
+      const dateContainerSelectors = [
+        '.published-date',
+        '.post-date',
+        '.entry-date',
+        '.article-date',
+        '.date',
+        '[class*="date"]',
+        '[class*="published"]',
+        'time',
+        '.byline',
+        '.meta',
+        '[class*="meta"]',
+      ];
+      
+      for (const selector of dateContainerSelectors) {
+        const elements = $(selector);
+        for (let i = 0; i < Math.min(elements.length, 5); i++) {
+          const text = $(elements[i]).text().trim();
+          if (!text) continue;
+          
+          // Try to parse common date formats in text
+          const datePatterns = [
+            // "September 11 2025" or "September 11, 2025"
+            /([A-Za-z]+\s+\d{1,2},?\s+\d{4})/,
+            // "11 September 2025"
+            /(\d{1,2}\s+[A-Za-z]+\s+\d{4})/,
+            // "2025-09-11" or "2025/09/11"
+            /(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})/,
+            // "09/11/2025" or "09-11-2025"
+            /(\d{1,2}[-\/]\d{1,2}[-\/]\d{4})/,
+            // "Sep 11, 2025"
+            /([A-Za-z]{3}\s+\d{1,2},?\s+\d{4})/,
+          ];
+          
+          for (const pattern of datePatterns) {
+            const match = text.match(pattern);
+            if (match) {
+              try {
+                const date = new Date(match[1]);
+                if (!isNaN(date.getTime()) && date <= new Date()) {
+                  return date.toISOString().split('T')[0];
+                }
+              } catch {
+                // Continue to next pattern
+              }
+            }
+          }
+        }
+      }
+      
+      // As a last resort, check the main content area for date patterns
+      const mainContent = $('article, .post, .blog-post, .entry, main, [role="main"]').first();
+      if (mainContent.length > 0) {
+        const contentText = mainContent.text();
+        // Look for date patterns near the beginning of content (where dates usually appear)
+        const first500Chars = contentText.substring(0, 500);
+        const datePatterns = [
+          /([A-Za-z]+\s+\d{1,2},?\s+\d{4})/,
+          /(\d{1,2}\s+[A-Za-z]+\s+\d{4})/,
+          /(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})/,
+        ];
+        
+        for (const pattern of datePatterns) {
+          const match = first500Chars.match(pattern);
+          if (match) {
+            try {
+              const date = new Date(match[1]);
+              if (!isNaN(date.getTime()) && date <= new Date()) {
+                return date.toISOString().split('T')[0];
+              }
+            } catch {
+              // Continue
+            }
+          }
+        }
+      }
     } catch {
       // HTML parsing failed, continue with other methods
     }

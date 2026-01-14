@@ -293,7 +293,13 @@ export async function POST(request: NextRequest) {
             }
             // Extract date from HTML if not found in URL
             if (!publishedDate) {
-              publishedDate = extractPublishedDateFromHtml(post.url, fetchedHtml);
+              const extractedDate = extractPublishedDateFromHtml(post.url, fetchedHtml);
+              if (extractedDate) {
+                publishedDate = extractedDate;
+                console.log(`[Bulk Import Preview] Extracted date ${publishedDate} from HTML for ${post.url}`);
+              } else {
+                console.log(`[Bulk Import Preview] No date found in HTML for ${post.url}`);
+              }
             }
           }
         } catch (error) {
