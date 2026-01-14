@@ -239,20 +239,13 @@ export async function POST(request: NextRequest) {
           console.log(`[Bulk Import Preview] Failed to fetch HTML for ${post.url}:`, error);
         }
         
-        // Fallback: Only if we truly couldn't detect anything AND we've tried HTML detection
-        // This prevents "Unknown Type" for ordinary web pages when classification is uncertain
-        // But prioritize actual detection results over this fallback
-        if (!detectedType && fetchedHtml && isSameDomainHtml(post.url, blogUrl)) {
-          // Only use "Web Page" fallback if:
-          // 1. We fetched HTML (so we tried detection)
-          // 2. Detection returned nothing
-          // 3. It's same-domain HTML (not PDF, not external)
-          detectedType = "Web Page";
-        } else if (!detectedType && !fetchedHtml && isSameDomainHtml(post.url, blogUrl)) {
-          // If we couldn't fetch HTML but it's same-domain, still label as Web Page
-          // (but this is less ideal since we didn't get to check HTML signals)
+        // Fallback: For items extracted from blog URLs, default to "Blog Post"
+        // Never use "Web Page" as all items are web pages - use specific content types
+        if (!detectedType && isSameDomainHtml(post.url, blogUrl)) {
+          // If we couldn't detect a specific type but it's from the blog domain,
+          // default to "Blog Post" (unless it's a PDF)
           if (!post.url.toLowerCase().endsWith('.pdf')) {
-            detectedType = "Web Page";
+            detectedType = "Blog Post";
           }
         }
         

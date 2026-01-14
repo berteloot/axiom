@@ -143,23 +143,37 @@ async function callJinaReaderAPI(
         throw new Error(`Jina API error: ${response.status} - ${response.statusText}`);
       }
 
-      const data: JinaReaderResponse = await response.json();
-
-      // Validate response structure
-      if (!data || !data.data || !data.data.content) {
-        // Fallback: try to parse as plain text if JSON structure is unexpected
-        const text = await response.text().catch(() => '');
-        if (text) {
-          return {
-            data: {
-              content: text,
-            },
-          };
-        }
-        throw new Error('Invalid response structure from Jina Reader API');
+      // Read response as text first, then parse JSON
+      // This allows us to handle both JSON and plain text responses
+      const responseText = await response.text();
+      
+      if (!responseText) {
+        throw new Error('Empty response from Jina Reader API');
       }
 
-      return data;
+      // Try to parse as JSON first
+      try {
+        const data: JinaReaderResponse = JSON.parse(responseText);
+        
+        // Validate JSON structure
+        if (data && data.data && data.data.content) {
+          return data;
+        }
+        
+        // If JSON structure is invalid but we have text, use it as plain text content
+        return {
+          data: {
+            content: responseText,
+          },
+        };
+      } catch (parseError) {
+        // If JSON parsing fails, treat the response as plain text content
+        return {
+          data: {
+            content: responseText,
+          },
+        };
+      }
     } catch (error) {
       const isLastAttempt = attempt === retries;
       const isConnectionError = error instanceof Error && (
