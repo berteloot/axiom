@@ -12,6 +12,7 @@ interface ExtractorConfig {
     minWordCount: number;
     minTitleLength: number;
     libraryMinTitleLength: number;
+    slugDerivedMinTitleLength: number;
   };
   pagination: {
     maxPages: number;
@@ -41,6 +42,7 @@ const DEFAULT_CONFIG: ExtractorConfig = {
     minWordCount: 250,
     minTitleLength: 10,
     libraryMinTitleLength: 5,
+    slugDerivedMinTitleLength: 3, // Allow shorter titles when derived from slug
   },
   pagination: {
     maxPages: 50,
@@ -157,6 +159,35 @@ function resolveUrl(baseUrl: string, relativeUrl: string): string {
     return new URL(relativeUrl, baseUrl).href;
   } catch {
     return relativeUrl;
+  }
+}
+
+/**
+ * Derive a readable title from a URL slug
+ * Converts "steel-crates-rfid-and-real-savings" -> "Steel Crates Rfid And Real Savings"
+ * Critical for sites with image-only links (like ACSIS)
+ * 
+ * @param url - The URL to extract the slug from
+ * @returns A readable title derived from the URL slug, or empty string if slug is invalid
+ */
+function deriveTitleFromSlug(url: string): string {
+  try {
+    const urlObj = new URL(url);
+    const pathParts = urlObj.pathname.split('/').filter(p => p);
+    const slug = pathParts[pathParts.length - 1] || '';
+    
+    // Skip if slug looks like a date or numeric ID
+    if (/^\d+$/.test(slug) || /^\d{4}-\d{2}-\d{2}$/.test(slug)) {
+      return '';
+    }
+    
+    // Convert slug to readable title
+    return slug
+      .replace(/[-_]+/g, ' ')
+      .replace(/\b\w/g, (char) => char.toUpperCase())
+      .trim();
+  } catch {
+    return '';
   }
 }
 
@@ -1239,20 +1270,6 @@ function extractUrlsFromMarkdown(content: string, baseUrl: URL): Array<{ url: st
     basePath.includes("/all-media") ||
     basePath.includes("/media");
   
-  // Helper to derive title from URL slug if title is too short
-  const deriveTitleFromSlug = (url: string): string => {
-    try {
-      const urlObj = new URL(url);
-      const pathParts = urlObj.pathname.split('/').filter(p => p);
-      const slug = pathParts[pathParts.length - 1] || '';
-      // Convert slug to readable title (replace hyphens with spaces, capitalize)
-      return slug
-        .replace(/-/g, ' ')
-        .replace(/\b\w/g, (char) => char.toUpperCase());
-    } catch {
-      return '';
-    }
-  };
 
   // Try parsing as HTML first (Jina might return HTML despite requesting markdown)
   try {
@@ -1339,9 +1356,10 @@ function extractUrlsFromMarkdown(content: string, baseUrl: URL): Array<{ url: st
           let isSlugDerived = false;
           if (!title || title.length < 5) {
             const slugTitle = deriveTitleFromSlug(absoluteUrl);
-            if (slugTitle && slugTitle.length >= 3) {
+            if (slugTitle && slugTitle.length >= DEFAULT_CONFIG.validation.slugDerivedMinTitleLength) {
               title = slugTitle;
               isSlugDerived = true;
+              logger.debug('Derived title from URL slug', { url: absoluteUrl, title });
             }
           }
           
@@ -1386,7 +1404,7 @@ function extractUrlsFromMarkdown(content: string, baseUrl: URL): Array<{ url: st
       let isSlugDerived = false;
       if (!title || title.length < 5) {
         const slugTitle = deriveTitleFromSlug(absoluteUrl);
-        if (slugTitle && slugTitle.length >= 3) {
+        if (slugTitle && slugTitle.length >= DEFAULT_CONFIG.validation.slugDerivedMinTitleLength) {
           title = slugTitle;
           isSlugDerived = true;
         }
@@ -1394,7 +1412,7 @@ function extractUrlsFromMarkdown(content: string, baseUrl: URL): Array<{ url: st
       
       // Use lower minimum length for slug-derived titles
       const minTitleLength = isSlugDerived 
-        ? 3  // Slug-derived titles just need to be non-empty
+        ? DEFAULT_CONFIG.validation.slugDerivedMinTitleLength
         : (isLibraryContext ? DEFAULT_CONFIG.validation.libraryMinTitleLength : DEFAULT_CONFIG.validation.minTitleLength);
       
       if (title && title.length >= minTitleLength && absoluteUrl.startsWith('http')) {
@@ -1495,9 +1513,11 @@ async function tryFetchFromSitemapOrRSS(baseUrl: URL): Promise<Array<{ url: stri
             if (!u) return;
             if (shouldExcludeUrl(u, baseUrl)) return;
 
-            const slug = u.split('/').filter(Boolean).pop() || '';
-            const derivedTitle = slug.replace(/[-_]+/g, ' ').trim();
-            const title = derivedTitle.length >= 10 ? derivedTitle : u;
+            // Use slug-derived title as primary fallback
+            const derivedTitle = deriveTitleFromSlug(u);
+            const title = derivedTitle && derivedTitle.length >= DEFAULT_CONFIG.validation.slugDerivedMinTitleLength 
+              ? derivedTitle 
+              : u;
 
             blogPosts.push({ url: u, title });
           });
@@ -2046,16 +2066,17 @@ export async function extractBlogPostUrls(
           let isSlugDerived = false;
           if (!title || title.length < 5) {
             const slugTitle = deriveTitleFromSlug(absoluteUrl);
-            if (slugTitle && slugTitle.length >= 3) {
+            if (slugTitle && slugTitle.length >= DEFAULT_CONFIG.validation.slugDerivedMinTitleLength) {
               title = slugTitle;
               isSlugDerived = true;
+              logger.debug('Derived title from URL slug', { url: absoluteUrl, title });
             }
           }
 
           // Use lower minimum length for slug-derived titles (they're always valid if derived from URL)
           // For extracted titles, use the standard minimum
           const minTitleLength = isSlugDerived 
-            ? 3  // Slug-derived titles just need to be non-empty
+            ? DEFAULT_CONFIG.validation.slugDerivedMinTitleLength
             : (isLibraryContext ? DEFAULT_CONFIG.validation.libraryMinTitleLength : DEFAULT_CONFIG.validation.minTitleLength);
           
           if (title && title.length >= minTitleLength && absoluteUrl.startsWith('http')) {
