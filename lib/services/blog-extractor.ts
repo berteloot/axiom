@@ -555,16 +555,25 @@ function validateAndExtractFromHtml(url: string, html: string): PageValidation {
   };
 }
 
-async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = [];
-  const queue = [...items];
-  const workers = Array.from({ length: Math.max(1, limit) }).map(async () => {
-    while (queue.length) {
-      const item = queue.shift() as T;
-      const r = await fn(item);
-      results.push(r);
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const concurrency = Math.max(1, limit);
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+
+  const workers = Array.from({ length: concurrency }).map(async () => {
+    while (true) {
+      const current = nextIndex;
+      nextIndex += 1;
+      if (current >= items.length) return;
+
+      results[current] = await fn(items[current], current);
     }
   });
+
   await Promise.all(workers);
   return results;
 }
@@ -593,13 +602,17 @@ async function filterAndEnrichCandidates(
 
   const kept: Array<{ url: string; title: string; publishedDate: string | null }> = [];
 
-  for (const { candidate, validation, validationSucceeded } of validations) {
+  for (const row of validations) {
+    const { candidate, validation, validationSucceeded } = row;
+
     // Keep candidates if:
-    // 1. Validation succeeded and confirmed it's an article, OR
-    // 2. Validation failed (network error, etc.) - we can't be certain it's not an article
+    // 1) Validation succeeded and confirmed it's an article, OR
+    // 2) Validation failed (network error, etc.) - we can't be certain it's not an article
     if (validationSucceeded && !validation.isArticle) {
       // Only drop if validation succeeded AND confirmed it's NOT an article
-      console.log(`[Blog Extractor] Dropping non-article: ${candidate.url} (schema types: ${validation.schemaTypes.join(', ') || 'none'})`);
+      console.log(
+        `[Blog Extractor] Dropping non-article: ${candidate.url} (schema types: ${validation.schemaTypes.join(', ') || 'none'})`
+      );
       continue;
     }
 
@@ -1623,6 +1636,7 @@ export async function extractBlogPostUrls(
   dateRangeStart?: string | null,
   dateRangeEnd?: string | null
 ): Promise<Array<{ url: string; title: string; publishedDate: string | null }>> {
+  console.log(`[Blog Extractor] Starting extraction from: ${blogUrl} (maxPosts: ${maxPosts || 'unlimited'}, dateRange: ${dateRangeStart || 'none'} to ${dateRangeEnd || 'none'})`);
   const baseUrl = new URL(normalizeUrl(blogUrl));
   let blogPosts: Array<{ url: string; title: string; publishedDate: string | null }> = [];
   
@@ -1810,13 +1824,22 @@ export async function extractBlogPostUrls(
       ];
 
       // Try each selector
+      let totalLinksFound = 0;
+      let totalLinksExcluded = 0;
+      
       for (const selector of selectors) {
         // Stop early if we've reached maxPosts
         if (maxPosts !== undefined && blogPosts.length >= maxPosts) {
           break;
         }
         
+        const linksForSelector = $(selector).length;
+        if (linksForSelector > 0) {
+          console.log(`[Blog Extractor] Selector "${selector}" found ${linksForSelector} links`);
+        }
+        
         $(selector).each((_, element) => {
+          totalLinksFound++;
           // Stop early if we've reached maxPosts
           if (maxPosts !== undefined && blogPosts.length >= maxPosts) {
             return false; // Break out of each loop
@@ -1834,6 +1857,7 @@ export async function extractBlogPostUrls(
           
           // Use the exclusion function to filter out non-post pages
           if (shouldExcludeUrl(absoluteUrl, baseUrl)) {
+            totalLinksExcluded++;
             return;
           }
 
@@ -1872,6 +1896,12 @@ export async function extractBlogPostUrls(
             }
           }
         });
+      }
+      
+      if (totalLinksFound > 0) {
+        console.log(`[Blog Extractor] Single-page extraction: Found ${totalLinksFound} total links, excluded ${totalLinksExcluded}, kept ${blogPosts.length} posts`);
+      } else {
+        console.warn(`[Blog Extractor] Single-page extraction: No links found with any selector. Page might require JavaScript rendering.`);
       }
     }
 
@@ -1948,6 +1978,16 @@ export async function extractBlogPostUrls(
     }
     
     const uniquePosts = Array.from(uniquePostsMap.values());
+
+    console.log(`[Blog Extractor] Found ${uniquePosts.length} unique candidate posts before validation from ${blogUrl}`);
+    
+    if (uniquePosts.length === 0) {
+      console.warn(`[Blog Extractor] No posts found. This could mean:
+        - The page structure doesn't match expected selectors
+        - All links were excluded by shouldExcludeUrl
+        - The page requires JavaScript rendering (try Jina/Puppeteer)
+        - The URL is not a blog listing page`);
+    }
 
     // Validate/enrich candidates by fetching each page and confirming it is an article-like page.
     // This prevents solution/landing pages from being misclassified as blog posts and improves date extraction.
