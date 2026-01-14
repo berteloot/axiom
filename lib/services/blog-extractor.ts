@@ -462,7 +462,7 @@ function collectJsonLdTypes(json: any, acc: Set<string>) {
   }
 }
 
-function extractTitleFromHtml($: cheerio.CheerioAPI): string | null {
+function extractTitleFromHtml($: cheerio.Root): string | null {
   const og = $('meta[property="og:title"], meta[name="og:title"]').attr('content')?.trim();
   if (og) return og;
   const tw = $('meta[name="twitter:title"]').attr('content')?.trim();
@@ -474,7 +474,7 @@ function extractTitleFromHtml($: cheerio.CheerioAPI): string | null {
   return null;
 }
 
-function getMainTextWordCount($: cheerio.CheerioAPI): number {
+function getMainTextWordCount($: cheerio.Root): number {
   // Prefer <article> then <main>, else body.
   const node = $('article').first();
   const text = (node.length ? node.text() : ($('main').first().text() || $('body').text() || '')).replace(/\s+/g, ' ').trim();
@@ -578,17 +578,30 @@ async function filterAndEnrichCandidates(
     try {
       const html = await fetchHtml(c.url);
       const v = validateAndExtractFromHtml(c.url, html);
-      return { candidate: c, validation: v };
+      return { candidate: c, validation: v, validationSucceeded: true };
     } catch (e) {
-      // If we cannot fetch/parse, keep the candidate but do not claim it is a blog post with certainty.
-      return { candidate: c, validation: { isArticle: false, schemaTypes: [], publishedDate: c.publishedDate, title: null } as PageValidation };
+      // If we cannot fetch/parse, keep the candidate (we can't be certain it's not an article)
+      // Mark validation as failed so we know to keep it
+      console.log(`[Blog Extractor] Validation failed for ${c.url}, keeping candidate:`, e instanceof Error ? e.message : String(e));
+      return { 
+        candidate: c, 
+        validation: { isArticle: true, schemaTypes: [], publishedDate: c.publishedDate, title: null } as PageValidation,
+        validationSucceeded: false 
+      };
     }
   });
 
   const kept: Array<{ url: string; title: string; publishedDate: string | null }> = [];
 
-  for (const { candidate, validation } of validations) {
-    if (!validation.isArticle) continue;
+  for (const { candidate, validation, validationSucceeded } of validations) {
+    // Keep candidates if:
+    // 1. Validation succeeded and confirmed it's an article, OR
+    // 2. Validation failed (network error, etc.) - we can't be certain it's not an article
+    if (validationSucceeded && !validation.isArticle) {
+      // Only drop if validation succeeded AND confirmed it's NOT an article
+      console.log(`[Blog Extractor] Dropping non-article: ${candidate.url} (schema types: ${validation.schemaTypes.join(', ') || 'none'})`);
+      continue;
+    }
 
     // Prefer extracted title/date when available
     const title = (validation.title && validation.title.length >= 5) ? validation.title : candidate.title;
