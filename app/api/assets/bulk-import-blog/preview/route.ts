@@ -138,16 +138,35 @@ export async function POST(request: NextRequest) {
     // Extract blog post URLs with maxPosts and date range limits
     // This will stop early when enough matching posts are found
     console.log(`[Bulk Import Preview] Extracting blog posts from ${normalizedUrl}... (maxPosts: ${maxPosts || 'unlimited'}, dateRange: ${dateRangeStart || 'none'} to ${dateRangeEnd || 'none'})`);
-    const blogPosts = await extractBlogPostUrls(
-      normalizedUrl,
-      maxPosts ? Number(maxPosts) : undefined,
-      dateRangeStart || null,
-      dateRangeEnd || null
-    );
+    
+    let blogPosts: Array<{ url: string; title: string; publishedDate: string | null }> = [];
+    try {
+      blogPosts = await extractBlogPostUrls(
+        normalizedUrl,
+        maxPosts ? Number(maxPosts) : undefined,
+        dateRangeStart || null,
+        dateRangeEnd || null
+      );
+      
+      console.log(`[Bulk Import Preview] Extraction completed. Found ${blogPosts.length} posts.`);
+    } catch (extractionError) {
+      console.error(`[Bulk Import Preview] Extraction failed:`, extractionError);
+      const errorMessage = extractionError instanceof Error ? extractionError.message : 'Unknown extraction error';
+      return NextResponse.json(
+        { error: `Failed to extract blog posts: ${errorMessage}` },
+        { status: 500 }
+      );
+    }
     
     if (blogPosts.length === 0) {
+      console.warn(`[Bulk Import Preview] No posts found for ${normalizedUrl}. This could mean:
+        - The URL is not a blog listing page
+        - The page structure doesn't match expected patterns
+        - All posts were filtered out by exclusion rules
+        - The sitemap doesn't contain blog posts
+        - The page requires JavaScript rendering that failed`);
       return NextResponse.json(
-        { error: "No blog posts found on this page. Please check the URL." },
+        { error: "No blog posts found on this page. Please check the URL and ensure it's a blog listing page." },
         { status: 400 }
       );
     }

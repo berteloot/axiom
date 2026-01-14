@@ -1862,7 +1862,8 @@ export async function extractBlogPostUrls(
     try {
       const sitemapPosts = await tryFetchFromSitemapOrRSS(baseUrl);
       if (sitemapPosts.length > 0) {
-        console.log(`[Blog Extractor] Found ${sitemapPosts.length} posts from sitemap/RSS`);
+        logger.info('Found posts from sitemap/RSS', { count: sitemapPosts.length, blogUrl });
+        let filteredByDateRange = 0;
         for (const post of sitemapPosts) {
           // Extract date from URL first
           const publishedDate = extractPublishedDate(post.url);
@@ -1875,14 +1876,26 @@ export async function extractBlogPostUrls(
             });
             // Stop early if we've reached maxPosts
             if (maxPosts !== undefined && blogPosts.length >= maxPosts) {
-              console.log(`[Blog Extractor] Reached maxPosts limit (${maxPosts}) from sitemap, stopping`);
+              logger.info('Reached maxPosts limit from sitemap', { maxPosts, blogUrl });
               break;
             }
+          } else {
+            filteredByDateRange++;
           }
+        }
+        if (filteredByDateRange > 0) {
+          logger.info('Posts filtered by date range', { 
+            filtered: filteredByDateRange, 
+            kept: blogPosts.length,
+            dateRange: { start: dateRangeStart, end: dateRangeEnd }
+          });
         }
       }
     } catch (error) {
-      console.log(`[Blog Extractor] Sitemap/RSS fetch failed, continuing with page extraction`);
+      logger.warn('Sitemap/RSS fetch failed, continuing with page extraction', { 
+        error: error instanceof Error ? error.message : String(error),
+        blogUrl 
+      });
     }
     
     // If sitemap didn't work or found few posts, try Jina Reader with pagination
@@ -2230,10 +2243,9 @@ export async function extractBlogPostUrls(
 
     return finalPosts;
   } catch (error) {
-    console.error("[Blog Extractor] Error extracting blog posts:", error);
-    throw error instanceof Error 
-      ? new Error(`Failed to extract blog posts: ${error.message}`)
-      : new Error("Failed to extract blog posts: Unknown error");
+    logger.error('Error extracting blog posts', error instanceof Error ? error : new Error(String(error)), { blogUrl });
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to extract blog posts: ${errorMessage}`);
   }
 }
 
