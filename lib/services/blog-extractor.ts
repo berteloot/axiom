@@ -705,15 +705,23 @@ function validateAndExtractFromHtml(url: string, html: string): PageValidation {
 
   // Conservative decision rule:
   // - Accept if explicit Article schema exists
-  // - Else accept if it looks like an article (long-form) AND we found a plausible date
-  // - Reject if it clearly looks like a non-article schema and lacks article signals
+  // - Reject only if explicit non-article schema exists
+  // - Otherwise use lenient heuristics (many blogs don't have schema)
   let isArticle = false;
   if (hasArticleType) {
     isArticle = true;
-  } else if (!hasNonArticleType && wordCount >= DEFAULT_CONFIG.validation.minWordCount && (publishedDate !== null || hasTimeTag)) {
-    isArticle = true;
-  } else {
+  } else if (hasNonArticleType && wordCount < 100) {
+    // Only reject if BOTH non-article schema AND very short content
     isArticle = false;
+  } else {
+    // No clear schema - be lenient
+    // Accept if there's any signal this might be a blog post
+    const hasMinimalContent = wordCount >= 100;
+    const hasDateSignal = publishedDate !== null || hasTimeTag;
+    const urlHasSlug = url.split('/').filter(Boolean).pop()?.includes('-') || false;
+    
+    // Accept if: has date, OR has decent content, OR URL looks like a blog post slug
+    isArticle = hasDateSignal || hasMinimalContent || urlHasSlug;
   }
 
   return {
@@ -2195,9 +2203,20 @@ export async function extractBlogPostUrls(
     }
 
     // Validate/enrich candidates by fetching each page and confirming it is an article-like page.
-    // This prevents solution/landing pages from being misclassified as blog posts and improves date extraction.
+    // Skip validation for explicit blog listing pages to avoid false negatives
+    const isBlogListingPage = baseUrl.pathname.toLowerCase().includes('/blog');
     const beforeCount = uniquePosts.length;
-    const validated = await filterAndEnrichCandidates(uniquePosts, 5);
+
+    let validated: Array<{ url: string; title: string; publishedDate: string | null }>;
+
+    if (isBlogListingPage && uniquePosts.length > 0) {
+      // For blog listing pages, trust the extraction - validation is too aggressive
+      logger.info('Skipping validation for blog listing page', { blogUrl, candidateCount: beforeCount });
+      validated = uniquePosts;
+    } else {
+      // For other pages, validate candidates
+      validated = await filterAndEnrichCandidates(uniquePosts, DEFAULT_CONFIG.pagination.validationConcurrency);
+    }
 
     // Respect maxPosts after validation (validation may drop many non-articles)
     const finalPosts = maxPosts !== undefined ? validated.slice(0, maxPosts) : validated;
