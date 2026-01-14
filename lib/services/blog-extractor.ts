@@ -1,6 +1,6 @@
 import * as cheerio from "cheerio";
 
-const JINA_READER_URL = "https://r.jina.ai";
+const JINA_READER_URL = "https://r.jina.ai/";
 const JINA_API_KEY = process.env.JINA_API_KEY;
 
 /**
@@ -197,16 +197,23 @@ function deriveTitleFromSlug(url: string): string {
  * Get your Jina AI API key for free: https://jina.ai/?sui=apikey
  */
 interface JinaReaderOptions {
-  format?: 'html' | 'markdown' | 'text';
+  format?: 'html' | 'markdown' | 'text' | 'screenshot' | 'pageshot';
   engine?: 'browser' | 'direct' | 'cf-browser-rendering';
-  withLinksSummary?: boolean;
-  withImagesSummary?: boolean;
+  withLinksSummary?: boolean | 'all';
+  withImagesSummary?: boolean | 'all';
   withGeneratedAlt?: boolean;
   removeSelectors?: string;
   targetSelector?: string;
   waitForSelector?: string;
   timeout?: number;
   noCache?: boolean;
+  cacheTolerance?: number;
+  useReaderLM?: boolean;
+  withIframe?: boolean;
+  withShadowDom?: boolean;
+  proxy?: string | 'auto';
+  locale?: string;
+  viewport?: { width: number; height: number };
 }
 
 interface JinaReaderResponse {
@@ -246,6 +253,13 @@ async function callJinaReaderAPI(
     waitForSelector,
     timeout = 60000,
     noCache = false,
+    cacheTolerance,
+    useReaderLM = false,
+    withIframe = false,
+    withShadowDom = false,
+    proxy,
+    locale,
+    viewport,
   } = options;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -259,10 +273,10 @@ async function callJinaReaderAPI(
       };
 
       if (withLinksSummary) {
-        headers['X-With-Links-Summary'] = 'true';
+        headers['X-With-Links-Summary'] = withLinksSummary === 'all' ? 'all' : 'true';
       }
       if (withImagesSummary) {
-        headers['X-With-Images-Summary'] = 'true';
+        headers['X-With-Images-Summary'] = withImagesSummary === 'all' ? 'all' : 'true';
       }
       if (withGeneratedAlt) {
         headers['X-With-Generated-Alt'] = 'true';
@@ -279,15 +293,34 @@ async function callJinaReaderAPI(
       if (noCache) {
         headers['X-No-Cache'] = 'true';
       }
-      if (format === 'markdown') {
-        // Use specialized HTML-to-Markdown model for better quality
+      if (cacheTolerance !== undefined) {
+        headers['X-Cache-Tolerance'] = String(cacheTolerance);
+      }
+      if (useReaderLM) {
         headers['X-Respond-With'] = 'readerlm-v2';
       }
+      if (withIframe) {
+        headers['X-With-Iframe'] = 'true';
+      }
+      if (withShadowDom) {
+        headers['X-With-Shadow-Dom'] = 'true';
+      }
+      if (proxy) {
+        headers['X-Proxy'] = proxy;
+      }
+      if (locale) {
+        headers['X-Locale'] = locale;
+      }
 
-      const response = await fetch(`${JINA_READER_URL}/`, {
+      const body: Record<string, unknown> = { url: normalizedUrl };
+      if (viewport) {
+        body.viewport = viewport;
+      }
+
+      const response = await fetch(JINA_READER_URL, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ url: normalizedUrl }),
+        body: JSON.stringify(body),
         signal: AbortSignal.timeout(timeout),
       });
 
@@ -312,6 +345,11 @@ async function callJinaReaderAPI(
         throw new Error(`Jina API error: ${response.status} - ${response.statusText}`);
       }
 
+      const rateLimitRemaining = response.headers.get('X-RateLimit-Remaining');
+      if (rateLimitRemaining && parseInt(rateLimitRemaining, 10) < 10) {
+        logger.warn('Jina Reader rate limit low', { remaining: rateLimitRemaining, url: normalizedUrl });
+      }
+
       // Read response as text first, then parse JSON
       // This allows us to handle both JSON and plain text responses
       const responseText = await response.text();
@@ -323,13 +361,19 @@ async function callJinaReaderAPI(
       // Try to parse as JSON first
       try {
         const data: JinaReaderResponse = JSON.parse(responseText);
-        
-        // Validate JSON structure
-        if (data && data.data && data.data.content) {
+
+        if (data?.code && data.code !== 200) {
+          throw new Error(`Jina API returned error code: ${data.code}`);
+        }
+
+        if (data?.usage?.tokens) {
+          logger.debug('Jina Reader token usage', { url: normalizedUrl, tokens: data.usage.tokens });
+        }
+
+        if (data?.data) {
           return data;
         }
-        
-        // If JSON structure is invalid but we have text, use it as plain text content
+
         return {
           data: {
             content: responseText,
