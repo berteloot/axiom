@@ -135,8 +135,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Extract blog post URLs with maxPosts and date range limits
-    // This will stop early when enough matching posts are found
+    // Extract blog post URLs with maxPosts
+    // Date filtering happens after HTML enrichment for accuracy
     console.log(`[Bulk Import Preview] Extracting blog posts from ${normalizedUrl}... (maxPosts: ${maxPosts || 'unlimited'}, dateRange: ${dateRangeStart || 'none'} to ${dateRangeEnd || 'none'})`);
     
     let blogPosts: Array<{ url: string; title: string; publishedDate: string | null }> = [];
@@ -144,8 +144,8 @@ export async function POST(request: NextRequest) {
       blogPosts = await extractBlogPostUrls(
         normalizedUrl,
         maxPosts ? Number(maxPosts) : undefined,
-        dateRangeStart || null,
-        dateRangeEnd || null
+        null,
+        null
       );
       
       console.log(`[Bulk Import Preview] Extraction completed. Found ${blogPosts.length} posts.`);
@@ -210,36 +210,6 @@ export async function POST(request: NextRequest) {
     let filteredPosts = postsWithLanguage;
     if (languageFilter && languageFilter !== "all") {
       filteredPosts = postsWithLanguage.filter(post => post.language === languageFilter);
-    }
-
-    // Filter by date range if provided
-    if (dateRangeStart || dateRangeEnd) {
-      filteredPosts = filteredPosts.filter(post => {
-        const publishedDate = post.publishedDate;
-        if (!publishedDate) {
-          // Include posts without dates if date range is specified
-          // (user can see them but they won't be filtered out)
-          return true;
-        }
-        
-        const postDate = new Date(publishedDate);
-        const startDate = dateRangeStart ? new Date(dateRangeStart) : null;
-        const endDate = dateRangeEnd ? new Date(dateRangeEnd) : null;
-        
-        // Set time to end of day for end date to include the full day
-        if (endDate) {
-          endDate.setHours(23, 59, 59, 999);
-        }
-        
-        if (startDate && postDate < startDate) {
-          return false;
-        }
-        if (endDate && postDate > endDate) {
-          return false;
-        }
-        
-        return true;
-      });
     }
 
     // Enrich blog posts with duplicate information, detected asset type, and dates
@@ -331,13 +301,40 @@ export async function POST(request: NextRequest) {
       5 // Process 5 posts at a time
     );
 
-    const duplicateCount = enrichedPosts.filter(p => p.isDuplicate).length;
-    const newCount = enrichedPosts.length - duplicateCount;
+    // Filter by date range after HTML enrichment for more accurate dates
+    let finalPosts = enrichedPosts;
+    if (dateRangeStart || dateRangeEnd) {
+      finalPosts = enrichedPosts.filter(post => {
+        if (!post.publishedDate) {
+          return false;
+        }
+
+        const postDate = new Date(post.publishedDate);
+        const startDate = dateRangeStart ? new Date(dateRangeStart) : null;
+        const endDate = dateRangeEnd ? new Date(dateRangeEnd) : null;
+
+        if (endDate) {
+          endDate.setHours(23, 59, 59, 999);
+        }
+
+        if (startDate && postDate < startDate) {
+          return false;
+        }
+        if (endDate && postDate > endDate) {
+          return false;
+        }
+
+        return true;
+      });
+    }
+
+    const duplicateCount = finalPosts.filter(p => p.isDuplicate).length;
+    const newCount = finalPosts.length - duplicateCount;
 
     return NextResponse.json({
       success: true,
-      posts: enrichedPosts,
-      total: enrichedPosts.length,
+      posts: finalPosts,
+      total: finalPosts.length,
       duplicates: duplicateCount,
       new: newCount,
       detectedLanguages, // Available languages for filtering
