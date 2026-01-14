@@ -1318,23 +1318,38 @@ function extractUrlsFromMarkdown(content: string, baseUrl: URL): Array<{ url: st
           } else {
             // Link text is meaningful, use it as title
             title = $link.text().trim();
-            if (title.length < 10) {
-              // Try to find title in parent
-              const $parent = $link.closest('article, .post, .blog-post, .card, .entry, .item');
-              title = $parent.find('h1, h2, h3, .title, .entry-title').first().text().trim() || title;
+            
+            // If link text is empty or too short, try image alt text (for image-only links)
+            if (!title || title.length < 5) {
+              const imgAlt = $link.find('img').attr('alt')?.trim();
+              if (imgAlt && imgAlt.length >= 5) {
+                title = imgAlt;
+              }
+            }
+            
+            // If still no title, try parent container
+            if (!title || title.length < 5) {
+              const $parent = $link.closest('article, .post, .blog-post, .card, .entry, .item, [class*="blog"], [class*="post"]');
+              title = $parent.find('h1, h2, h3, h4, .title, .entry-title, .post-title').first().text().trim() || title;
             }
           }
 
-          // In library context, allow shorter titles and use slug fallback
-          if (isLibraryContext && (!title || title.length < 10)) {
+          // CRITICAL: If still no title, derive from URL slug (for ALL contexts, not just library)
+          // This handles image-only links like ACSIS blog where links contain only <img> tags
+          let isSlugDerived = false;
+          if (!title || title.length < 5) {
             const slugTitle = deriveTitleFromSlug(absoluteUrl);
-            if (slugTitle) {
+            if (slugTitle && slugTitle.length >= 3) {
               title = slugTitle;
+              isSlugDerived = true;
             }
           }
           
-          // Only add if we have a title (relaxed length check in library context)
-          const minTitleLength = isLibraryContext ? DEFAULT_CONFIG.validation.libraryMinTitleLength : DEFAULT_CONFIG.validation.minTitleLength;
+          // Use lower minimum length for slug-derived titles
+          const minTitleLength = isSlugDerived 
+            ? 3  // Slug-derived titles just need to be non-empty
+            : (isLibraryContext ? DEFAULT_CONFIG.validation.libraryMinTitleLength : DEFAULT_CONFIG.validation.minTitleLength);
+          
           if (title && title.length >= minTitleLength && absoluteUrl.startsWith('http')) {
             blogPosts.push({ url: absoluteUrl, title });
             seenUrls.add(absoluteUrl);
@@ -1367,15 +1382,21 @@ function extractUrlsFromMarkdown(content: string, baseUrl: URL): Array<{ url: st
       if (seenUrls.has(absoluteUrl)) continue;
       if (shouldExcludeUrl(absoluteUrl, baseUrl)) continue;
 
-      // In library context, allow shorter titles and use slug fallback
-      if (isLibraryContext && (!title || title.length < 10)) {
+      // If title is too short or empty, derive from URL slug (for ALL contexts)
+      let isSlugDerived = false;
+      if (!title || title.length < 5) {
         const slugTitle = deriveTitleFromSlug(absoluteUrl);
-        if (slugTitle) {
+        if (slugTitle && slugTitle.length >= 3) {
           title = slugTitle;
+          isSlugDerived = true;
         }
       }
       
-      const minTitleLength = isLibraryContext ? 3 : 10;
+      // Use lower minimum length for slug-derived titles
+      const minTitleLength = isSlugDerived 
+        ? 3  // Slug-derived titles just need to be non-empty
+        : (isLibraryContext ? DEFAULT_CONFIG.validation.libraryMinTitleLength : DEFAULT_CONFIG.validation.minTitleLength);
+      
       if (title && title.length >= minTitleLength && absoluteUrl.startsWith('http')) {
         blogPosts.push({ url: absoluteUrl, title });
         seenUrls.add(absoluteUrl);
@@ -1410,15 +1431,21 @@ function extractUrlsFromMarkdown(content: string, baseUrl: URL): Array<{ url: st
       }
     }
 
-    // In library context, allow shorter titles and use slug fallback
-    if (isLibraryContext && (!title || title.length < 10)) {
+    // If still no title, derive from URL slug (for ALL contexts)
+    let isSlugDerived = false;
+    if (!title || title.length < 5) {
       const slugTitle = deriveTitleFromSlug(url);
-      if (slugTitle) {
+      if (slugTitle && slugTitle.length >= 3) {
         title = slugTitle;
+        isSlugDerived = true;
       }
     }
     
-    const minTitleLength = isLibraryContext ? 3 : 10;
+    // Use lower minimum length for slug-derived titles
+    const minTitleLength = isSlugDerived 
+      ? 3  // Slug-derived titles just need to be non-empty
+      : (isLibraryContext ? DEFAULT_CONFIG.validation.libraryMinTitleLength : DEFAULT_CONFIG.validation.minTitleLength);
+    
     if (title && title.length >= minTitleLength && url.startsWith('http')) {
       blogPosts.push({ url, title });
       seenUrls.add(url);
@@ -1999,21 +2026,38 @@ export async function extractBlogPostUrls(
 
           // Get title from link text or nearby elements
           let title = $link.text().trim();
-          if (!title || title.length < 10) {
-            // Try to find title in parent or nearby elements
-            title = $link.closest('article, .post, .blog-post, .card').find('h1, h2, h3, .title, .entry-title').first().text().trim() || title;
+          
+          // If link text is empty or too short, try image alt text (for image-only links like ACSIS)
+          if (!title || title.length < 5) {
+            const imgAlt = $link.find('img').attr('alt')?.trim();
+            if (imgAlt && imgAlt.length >= 5) {
+              title = imgAlt;
+            }
           }
           
-          // In library context, allow shorter titles and use slug fallback
-          if (isLibraryContext && (!title || title.length < 10)) {
+          // If still no title, try parent container elements
+          if (!title || title.length < 5) {
+            const $parent = $link.closest('article, .post, .blog-post, .card, .entry, .item, [class*="blog"], [class*="post"]');
+            title = $parent.find('h1, h2, h3, h4, .title, .entry-title, .post-title').first().text().trim() || title;
+          }
+          
+          // CRITICAL: If still no title, derive from URL slug (for ALL contexts, not just library)
+          // This handles image-only links like ACSIS blog where links contain only <img> tags
+          let isSlugDerived = false;
+          if (!title || title.length < 5) {
             const slugTitle = deriveTitleFromSlug(absoluteUrl);
-            if (slugTitle) {
+            if (slugTitle && slugTitle.length >= 3) {
               title = slugTitle;
+              isSlugDerived = true;
             }
           }
 
-          // Only add if we have a reasonable title and URL (relaxed length check in library context)
-          const minTitleLength = isLibraryContext ? DEFAULT_CONFIG.validation.libraryMinTitleLength : DEFAULT_CONFIG.validation.minTitleLength;
+          // Use lower minimum length for slug-derived titles (they're always valid if derived from URL)
+          // For extracted titles, use the standard minimum
+          const minTitleLength = isSlugDerived 
+            ? 3  // Slug-derived titles just need to be non-empty
+            : (isLibraryContext ? DEFAULT_CONFIG.validation.libraryMinTitleLength : DEFAULT_CONFIG.validation.minTitleLength);
+          
           if (title && title.length >= minTitleLength && absoluteUrl.startsWith('http')) {
             // Extract date from URL
             const publishedDate = extractPublishedDate(absoluteUrl);
