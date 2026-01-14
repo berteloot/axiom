@@ -419,6 +419,187 @@ function extractPublishedDate(url: string, html?: string, content?: string, skip
   return null;
 }
 
+// --- Per-URL validation/enrichment (prevents solution/landing pages being treated as blog posts) ---
+
+type PageValidation = {
+  isArticle: boolean;
+  schemaTypes: string[];
+  publishedDate: string | null;
+  title: string | null;
+};
+
+function normalizeSchemaType(t: unknown): string[] {
+  if (!t) return [];
+  if (Array.isArray(t)) return t.map(String).map((s) => s.toLowerCase());
+  return [String(t).toLowerCase()];
+}
+
+function collectJsonLdTypes(json: any, acc: Set<string>) {
+  if (!json) return;
+
+  // Arrays of objects
+  if (Array.isArray(json)) {
+    for (const item of json) collectJsonLdTypes(item, acc);
+    return;
+  }
+
+  // Graph
+  if (json['@graph'] && Array.isArray(json['@graph'])) {
+    for (const item of json['@graph']) collectJsonLdTypes(item, acc);
+  }
+
+  // Direct type
+  const types = normalizeSchemaType(json['@type']);
+  for (const t of types) acc.add(t);
+
+  // Recurse shallowly
+  for (const k of Object.keys(json)) {
+    const v = json[k];
+    if (v && typeof v === 'object') {
+      // Avoid deep recursion into huge blobs; ld+json typically small
+      collectJsonLdTypes(v, acc);
+    }
+  }
+}
+
+function extractTitleFromHtml($: cheerio.CheerioAPI): string | null {
+  const og = $('meta[property="og:title"], meta[name="og:title"]').attr('content')?.trim();
+  if (og) return og;
+  const tw = $('meta[name="twitter:title"]').attr('content')?.trim();
+  if (tw) return tw;
+  const h1 = $('h1').first().text().trim();
+  if (h1 && h1.length >= 5) return h1;
+  const t = $('title').first().text().trim();
+  if (t) return t;
+  return null;
+}
+
+function getMainTextWordCount($: cheerio.CheerioAPI): number {
+  // Prefer <article> then <main>, else body.
+  const node = $('article').first();
+  const text = (node.length ? node.text() : ($('main').first().text() || $('body').text() || '')).replace(/\s+/g, ' ').trim();
+  if (!text) return 0;
+  return text.split(' ').filter(Boolean).length;
+}
+
+function validateAndExtractFromHtml(url: string, html: string): PageValidation {
+  const $ = cheerio.load(html);
+
+  // 1) Schema types (best signal)
+  const types = new Set<string>();
+  $('script[type="application/ld+json"]').each((_, el) => {
+    const jsonText = $(el).html();
+    if (!jsonText) return;
+    try {
+      const parsed = JSON.parse(jsonText);
+      collectJsonLdTypes(parsed, types);
+    } catch {
+      // ignore invalid JSON-LD
+    }
+  });
+
+  const schemaTypes = Array.from(types);
+
+  const articleTypes = new Set([
+    'blogposting',
+    'newsarticle',
+    'article',
+    'report',
+    'techarticle',
+  ]);
+
+  const nonArticleTypes = new Set([
+    // Common for solution/landing pages
+    'product',
+    'service',
+    'organization',
+    'corporation',
+    'localbusiness',
+    'softwareapplication',
+    'webpage',
+    'collectionpage',
+    'faqpage',
+    'contactpage',
+    'aboutpage',
+    'itemlist',
+  ]);
+
+  const hasArticleType = schemaTypes.some((t) => articleTypes.has(t));
+  const hasNonArticleType = schemaTypes.some((t) => nonArticleTypes.has(t));
+
+  // 2) Date (use existing robust extractor but skip URL-based inference)
+  const publishedDate = extractPublishedDate(url, html, undefined, true);
+
+  // 3) Heuristic fallback: long-form content + a date signal
+  const wordCount = getMainTextWordCount($);
+  const hasTimeTag = $('time[datetime], time[pubdate], [itemprop="datePublished"], meta[property="article:published_time"], meta[name="publishdate"], meta[name="pubdate"]').length > 0;
+
+  // Conservative decision rule:
+  // - Accept if explicit Article schema exists
+  // - Else accept if it looks like an article (long-form) AND we found a plausible date
+  // - Reject if it clearly looks like a non-article schema and lacks article signals
+  let isArticle = false;
+  if (hasArticleType) {
+    isArticle = true;
+  } else if (!hasNonArticleType && wordCount >= 250 && (publishedDate !== null || hasTimeTag)) {
+    isArticle = true;
+  } else {
+    isArticle = false;
+  }
+
+  return {
+    isArticle,
+    schemaTypes,
+    publishedDate,
+    title: extractTitleFromHtml($),
+  };
+}
+
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = [];
+  const queue = [...items];
+  const workers = Array.from({ length: Math.max(1, limit) }).map(async () => {
+    while (queue.length) {
+      const item = queue.shift() as T;
+      const r = await fn(item);
+      results.push(r);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+async function filterAndEnrichCandidates(
+  candidates: Array<{ url: string; title: string; publishedDate: string | null }>,
+  concurrency = 5
+): Promise<Array<{ url: string; title: string; publishedDate: string | null }>> {
+  // Validate each URL by fetching its HTML and confirming it is an article-like page.
+  const validations = await mapWithConcurrency(candidates, concurrency, async (c) => {
+    try {
+      const html = await fetchHtml(c.url);
+      const v = validateAndExtractFromHtml(c.url, html);
+      return { candidate: c, validation: v };
+    } catch (e) {
+      // If we cannot fetch/parse, keep the candidate but do not claim it is a blog post with certainty.
+      return { candidate: c, validation: { isArticle: false, schemaTypes: [], publishedDate: c.publishedDate, title: null } as PageValidation };
+    }
+  });
+
+  const kept: Array<{ url: string; title: string; publishedDate: string | null }> = [];
+
+  for (const { candidate, validation } of validations) {
+    if (!validation.isArticle) continue;
+
+    // Prefer extracted title/date when available
+    const title = (validation.title && validation.title.length >= 5) ? validation.title : candidate.title;
+    const publishedDate = validation.publishedDate || candidate.publishedDate;
+
+    kept.push({ url: candidate.url, title, publishedDate });
+  }
+
+  return kept;
+}
+
 /**
  * Check if a URL should be excluded from extraction.
  *
@@ -1755,9 +1936,19 @@ export async function extractBlogPostUrls(
     
     const uniquePosts = Array.from(uniquePostsMap.values());
 
-    console.log(`[Blog Extractor] Found ${uniquePosts.length} blog posts from ${blogUrl}`);
-    
-    return uniquePosts;
+    // Validate/enrich candidates by fetching each page and confirming it is an article-like page.
+    // This prevents solution/landing pages from being misclassified as blog posts and improves date extraction.
+    const beforeCount = uniquePosts.length;
+    const validated = await filterAndEnrichCandidates(uniquePosts, 5);
+
+    // Respect maxPosts after validation (validation may drop many non-articles)
+    const finalPosts = maxPosts !== undefined ? validated.slice(0, maxPosts) : validated;
+
+    console.log(
+      `[Blog Extractor] Candidates: ${beforeCount}. Validated articles: ${validated.length}. Returning: ${finalPosts.length} from ${blogUrl}`
+    );
+
+    return finalPosts;
   } catch (error) {
     console.error("[Blog Extractor] Error extracting blog posts:", error);
     throw error instanceof Error 
