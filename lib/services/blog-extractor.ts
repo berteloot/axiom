@@ -426,6 +426,49 @@ export function extractPublishedDateFromHtml(url: string, html: string): string 
   return extractPublishedDate(url, html, undefined, true);
 }
 
+const MONTH_NAME_PATTERN =
+  '(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)';
+
+function extractDateFromText(text: string): string | null {
+  if (!text) return null;
+
+  const patterns = [
+    // "11 Aug 2025" or "11 August 2025"
+    new RegExp(`(\\d{1,2})\\s+${MONTH_NAME_PATTERN}\\s+(\\d{4})`, 'i'),
+    // "Aug 11, 2025" or "August 11, 2025"
+    new RegExp(`${MONTH_NAME_PATTERN}\\s+(\\d{1,2}),?\\s+(\\d{4})`, 'i'),
+    // "2025-09-11" or "2025/09/11"
+    /(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})/,
+    // "09/11/2025" or "09-11-2025"
+    /(\d{1,2}[-\/]\d{1,2}[-\/]\d{4})/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (!match) continue;
+
+    let dateStr = match[1];
+    if (match.length >= 4) {
+      if (/^\d{1,2}$/.test(match[1])) {
+        dateStr = `${match[1]} ${match[2]} ${match[3]}`;
+      } else {
+        dateStr = `${match[1]} ${match[2]}, ${match[3]}`;
+      }
+    }
+
+    try {
+      const date = new Date(dateStr);
+      if (!isNaN(date.getTime()) && date <= new Date()) {
+        return date.toISOString().split('T')[0];
+      }
+    } catch {
+      // Continue to next pattern
+    }
+  }
+
+  return null;
+}
+
 /**
  * Extract published date from various sources (meta tags, structured data, content, URL)
  * Returns ISO date string (YYYY-MM-DD) or null if not found
@@ -531,7 +574,12 @@ function extractPublishedDate(url: string, html?: string, content?: string, skip
       }
       
       // Check visible text content for dates (common in blog posts)
-      // Look in common date container elements first
+      // Check header/hero area first (dates are often near the top)
+      const headerText = $('header, .hero, .post-header, .entry-header, .article-header, article > *:lt(5), main > *:lt(5)').text().trim();
+      const headerDate = extractDateFromText(headerText);
+      if (headerDate) return headerDate;
+
+      // Look in common date container elements
       const dateContainerSelectors = [
         '.published-date',
         '.post-date',
@@ -544,6 +592,9 @@ function extractPublishedDate(url: string, html?: string, content?: string, skip
         '.byline',
         '.meta',
         '[class*="meta"]',
+        '.post-meta',
+        '.breadcrumb + *',
+        'h1 + *',
       ];
       
       for (const selector of dateContainerSelectors) {
@@ -551,34 +602,9 @@ function extractPublishedDate(url: string, html?: string, content?: string, skip
         for (let i = 0; i < Math.min(elements.length, 5); i++) {
           const text = $(elements[i]).text().trim();
           if (!text) continue;
-          
-          // Try to parse common date formats in text
-          const datePatterns = [
-            // "September 11 2025" or "September 11, 2025"
-            /([A-Za-z]+\s+\d{1,2},?\s+\d{4})/,
-            // "11 September 2025"
-            /(\d{1,2}\s+[A-Za-z]+\s+\d{4})/,
-            // "2025-09-11" or "2025/09/11"
-            /(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})/,
-            // "09/11/2025" or "09-11-2025"
-            /(\d{1,2}[-\/]\d{1,2}[-\/]\d{4})/,
-            // "Sep 11, 2025"
-            /([A-Za-z]{3}\s+\d{1,2},?\s+\d{4})/,
-          ];
-          
-          for (const pattern of datePatterns) {
-            const match = text.match(pattern);
-            if (match) {
-              try {
-                const date = new Date(match[1]);
-                if (!isNaN(date.getTime()) && date <= new Date()) {
-                  return date.toISOString().split('T')[0];
-                }
-              } catch {
-                // Continue to next pattern
-              }
-            }
-          }
+
+          const extractedDate = extractDateFromText(text);
+          if (extractedDate) return extractedDate;
         }
       }
       
@@ -588,25 +614,8 @@ function extractPublishedDate(url: string, html?: string, content?: string, skip
         const contentText = mainContent.text();
         // Look for date patterns near the beginning of content (where dates usually appear)
         const first500Chars = contentText.substring(0, 500);
-        const datePatterns = [
-          /([A-Za-z]+\s+\d{1,2},?\s+\d{4})/,
-          /(\d{1,2}\s+[A-Za-z]+\s+\d{4})/,
-          /(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})/,
-        ];
-        
-        for (const pattern of datePatterns) {
-          const match = first500Chars.match(pattern);
-          if (match) {
-            try {
-              const date = new Date(match[1]);
-              if (!isNaN(date.getTime()) && date <= new Date()) {
-                return date.toISOString().split('T')[0];
-              }
-            } catch {
-              // Continue
-            }
-          }
-        }
+        const extractedDate = extractDateFromText(first500Chars);
+        if (extractedDate) return extractedDate;
       }
     } catch {
       // HTML parsing failed, continue with other methods
@@ -774,6 +783,12 @@ function validateAndExtractFromHtml(url: string, html: string): PageValidation {
 
   const hasArticleType = schemaTypes.some((t) => articleTypes.has(t));
   const hasNonArticleType = schemaTypes.some((t) => nonArticleTypes.has(t));
+  const isHubSpotBlog =
+    $('script.hsq-set-content-id[data-content-id="blog-post"], script[data-content-id="blog-post"]').length > 0 ||
+    $('script').toArray().some((el) => {
+      const scriptText = $(el).html() || '';
+      return /setContentType["\s]*\(["']\s*blog-post["']\s*\)/i.test(scriptText);
+    });
 
   // 2) Date (use existing robust extractor but skip URL-based inference)
   const publishedDate = extractPublishedDate(url, html, undefined, true);
@@ -787,7 +802,7 @@ function validateAndExtractFromHtml(url: string, html: string): PageValidation {
   // - Reject only if explicit non-article schema exists
   // - Otherwise use lenient heuristics (many blogs don't have schema)
   let isArticle = false;
-  if (hasArticleType) {
+  if (hasArticleType || isHubSpotBlog) {
     isArticle = true;
   } else if (hasNonArticleType && wordCount < 100) {
     // Only reject if BOTH non-article schema AND very short content
@@ -1345,8 +1360,8 @@ async function fetchListingPageWithJina(url: string, retries = 2): Promise<strin
 /**
  * Extract blog post URLs from markdown/text content
  */
-function extractUrlsFromMarkdown(content: string, baseUrl: URL): Array<{ url: string; title: string }> {
-  const blogPosts: Array<{ url: string; title: string }> = [];
+function extractUrlsFromMarkdown(content: string, baseUrl: URL): Array<{ url: string; title: string; publishedDate: string | null }> {
+  const blogPosts: Array<{ url: string; title: string; publishedDate: string | null }> = [];
   const seenUrls = new Set<string>();
   
   // Check if we're in library context
@@ -1455,8 +1470,12 @@ function extractUrlsFromMarkdown(content: string, baseUrl: URL): Array<{ url: st
             ? 3  // Slug-derived titles just need to be non-empty
             : (isLibraryContext ? DEFAULT_CONFIG.validation.libraryMinTitleLength : DEFAULT_CONFIG.validation.minTitleLength);
           
+          const $parentForDate = $link.closest('article, .post, .blog-post, .card, .entry, .item, [class*="blog"], [class*="post"]');
+          const parentText = ($parentForDate.length ? $parentForDate : $link.parent()).text().trim();
+          const publishedDate = extractDateFromText(parentText);
+
           if (title && title.length >= minTitleLength && absoluteUrl.startsWith('http')) {
-            blogPosts.push({ url: absoluteUrl, title });
+            blogPosts.push({ url: absoluteUrl, title, publishedDate });
             seenUrls.add(absoluteUrl);
           }
         } catch {
@@ -1503,7 +1522,7 @@ function extractUrlsFromMarkdown(content: string, baseUrl: URL): Array<{ url: st
         : (isLibraryContext ? DEFAULT_CONFIG.validation.libraryMinTitleLength : DEFAULT_CONFIG.validation.minTitleLength);
       
       if (title && title.length >= minTitleLength && absoluteUrl.startsWith('http')) {
-        blogPosts.push({ url: absoluteUrl, title });
+        blogPosts.push({ url: absoluteUrl, title, publishedDate: null });
         seenUrls.add(absoluteUrl);
       }
     } catch {
@@ -1552,7 +1571,7 @@ function extractUrlsFromMarkdown(content: string, baseUrl: URL): Array<{ url: st
       : (isLibraryContext ? DEFAULT_CONFIG.validation.libraryMinTitleLength : DEFAULT_CONFIG.validation.minTitleLength);
     
     if (title && title.length >= minTitleLength && url.startsWith('http')) {
-      blogPosts.push({ url, title });
+      blogPosts.push({ url, title, publishedDate: null });
       seenUrls.add(url);
     }
   }
@@ -1739,8 +1758,8 @@ async function fetchAllPagesWithPagination(
   baseUrl: URL,
   maxPages: number = DEFAULT_CONFIG.pagination.maxPages,
   maxPosts?: number
-): Promise<Array<{ url: string; title: string }>> {
-  const allPosts: Array<{ url: string; title: string }> = [];
+): Promise<Array<{ url: string; title: string; publishedDate: string | null }>> {
+  const allPosts: Array<{ url: string; title: string; publishedDate: string | null }> = [];
   const seenPostUrls = new Set<string>();
   const visitedPages = new Set<string>();
   const pagesToVisit = [initialUrl];
@@ -1993,8 +2012,8 @@ export async function extractBlogPostUrls(
         const existingUrls = new Set(blogPosts.map(p => p.url));
         for (const post of paginatedPosts) {
           if (!existingUrls.has(post.url)) {
-            // Extract date from URL
-            const publishedDate = extractPublishedDate(post.url);
+            // Prefer listing-page date if present, otherwise fall back to URL patterns
+            const publishedDate = post.publishedDate || extractPublishedDate(post.url);
             // Filter by date range if provided
             if (matchesDateRange(publishedDate)) {
               blogPosts.push({
@@ -2030,8 +2049,8 @@ export async function extractBlogPostUrls(
           // Merge with existing posts and apply date filtering
           for (const post of jinaPosts) {
             if (!existingUrls.has(post.url)) {
-              // Extract date from URL
-              const publishedDate = extractPublishedDate(post.url);
+              // Prefer listing-page date if present, otherwise fall back to URL patterns
+              const publishedDate = post.publishedDate || extractPublishedDate(post.url);
               // Filter by date range if provided
               if (matchesDateRange(publishedDate)) {
                 blogPosts.push({
@@ -2180,8 +2199,10 @@ export async function extractBlogPostUrls(
             : (isLibraryContext ? DEFAULT_CONFIG.validation.libraryMinTitleLength : DEFAULT_CONFIG.validation.minTitleLength);
           
           if (title && title.length >= minTitleLength && absoluteUrl.startsWith('http')) {
-            // Extract date from URL
-            const publishedDate = extractPublishedDate(absoluteUrl);
+            const $parentForDate = $link.closest('article, .post, .blog-post, .card, .entry, .item, [class*="blog"], [class*="post"]');
+            const parentText = ($parentForDate.length ? $parentForDate : $link.parent()).text().trim();
+            const listingDate = extractDateFromText(parentText);
+            const publishedDate = listingDate || extractPublishedDate(absoluteUrl);
             // Filter by date range if provided
             if (matchesDateRange(publishedDate)) {
               blogPosts.push({ 
@@ -2228,7 +2249,7 @@ export async function extractBlogPostUrls(
             blogPosts.push({
               url: post.url,
               title: post.title,
-              publishedDate: null, // Will be extracted later from URL
+              publishedDate: post.publishedDate || null,
             });
             existingUrls.add(post.url);
           }
@@ -2251,7 +2272,7 @@ export async function extractBlogPostUrls(
             blogPosts.push({
               url: post.url,
               title: post.title,
-              publishedDate: null, // Will be extracted later from URL
+              publishedDate: post.publishedDate || null,
             });
             existingUrls.add(post.url);
           }
@@ -2268,8 +2289,8 @@ export async function extractBlogPostUrls(
     
     for (const post of blogPosts) {
       if (!uniquePostsMap.has(post.url)) {
-        // Extract published date from URL (fast extraction from URL patterns)
-        const publishedDate = extractPublishedDate(post.url);
+        // Prefer listing-page dates, fall back to URL patterns
+        const publishedDate = post.publishedDate || extractPublishedDate(post.url);
         uniquePostsMap.set(post.url, {
           url: post.url,
           title: post.title,
