@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
 
     // Process posts in parallel batches (5 at a time to avoid overwhelming the system)
     const BATCH_SIZE = 5;
-    const processPost = async (post: { url: string; title: string; detectedAssetType?: string | null }) => {
+    const processPost = async (post: { url: string; title: string; detectedAssetType?: string | null; publishedDate?: string | null }) => {
       try {
         if (processedUrls.has(post.url)) {
           return { success: false, skipped: true, url: post.url, reason: "Duplicate selected in this import" };
@@ -131,6 +131,7 @@ export async function POST(request: NextRequest) {
 
         // Fetch content and extract published date
         const { content, publishedDate } = await fetchBlogPostContentWithDate(post.url);
+        const resolvedPublishedDate = post.publishedDate || publishedDate || null;
         
         // Validate content - if content is too short or invalid, mark as ERROR
         const isValidContent = content && content.trim().length >= 100;
@@ -156,7 +157,7 @@ export async function POST(request: NextRequest) {
             "original-title": post.title,
             "source-url": post.url,
             "imported-at": new Date().toISOString(),
-            ...(publishedDate ? { "published-date": publishedDate } : {}),
+            ...(resolvedPublishedDate ? { "published-date": resolvedPublishedDate } : {}),
           },
         });
 
@@ -166,7 +167,7 @@ export async function POST(request: NextRequest) {
         const s3Url = `https://${BUCKET_NAME}.s3.${AWS_REGION}.amazonaws.com/${encodeURIComponent(s3Key).replace(/%2F/g, "/")}`;
 
         // Convert published date string to Date object if available
-        const customCreatedAt = publishedDate ? new Date(publishedDate) : null;
+        const customCreatedAt = resolvedPublishedDate ? new Date(resolvedPublishedDate) : null;
 
         // Create asset with appropriate status based on processing success
         const asset = await prisma.asset.create({
@@ -194,7 +195,7 @@ export async function POST(request: NextRequest) {
               type: "blog_import",
               sourceUrl: post.url,
               importedAt: new Date().toISOString(),
-              ...(publishedDate ? { publishedDate } : {}),
+              ...(resolvedPublishedDate ? { publishedDate: resolvedPublishedDate } : {}),
               ...(!isValidContent ? { error: "Content extraction failed or content too short" } : {}),
             },
           },

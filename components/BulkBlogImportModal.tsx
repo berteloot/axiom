@@ -289,6 +289,7 @@ export function BulkBlogImportModal({
             url: p.url, 
             title: p.title,
             detectedAssetType: p.detectedAssetType || null,
+            publishedDate: p.publishedDate || null,
           })),
           funnelStage,
           icpTargets: selectedIcpTargets,
