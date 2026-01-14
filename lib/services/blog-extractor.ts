@@ -434,9 +434,9 @@ function extractDateFromText(text: string): string | null {
 
   const patterns = [
     // "11 Aug 2025" or "11 August 2025"
-    new RegExp(`(\\d{1,2})\\s+${MONTH_NAME_PATTERN}\\s+(\\d{4})`, 'i'),
+    new RegExp(`(\\d{1,2})\\.?\\s+${MONTH_NAME_PATTERN}\\s*,?\\s+(\\d{4})`, 'i'),
     // "Aug 11, 2025" or "August 11, 2025"
-    new RegExp(`${MONTH_NAME_PATTERN}\\s+(\\d{1,2}),?\\s+(\\d{4})`, 'i'),
+    new RegExp(`${MONTH_NAME_PATTERN}\\s+(\\d{1,2})[\\.,]?\\s+(\\d{4})`, 'i'),
     // "2025-09-11" or "2025/09/11"
     /(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})/,
     // "09/11/2025" or "09-11-2025"
@@ -941,6 +941,14 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
       basePath.includes("/all-media") ||
       basePath.includes("/media");
 
+    // If base URL is not localized, exclude localized paths (e.g., /de/, /fr/)
+    const baseLocaleMatch = basePathRaw.match(/^\/([a-z]{2})(?:-[a-z]{2})?\//i);
+    const urlLocaleMatch = urlPath.match(/^\/([a-z]{2})(?:-[a-z]{2})?\//i);
+    if (!baseLocaleMatch && urlLocaleMatch) return true;
+    if (baseLocaleMatch && urlLocaleMatch && baseLocaleMatch[0].toLowerCase() !== urlLocaleMatch[0].toLowerCase()) {
+      return true;
+    }
+
     // Skip if it's the same as the listing URL or homepage
     if (url === baseUrl.href || url === `${baseUrl.protocol}//${baseUrl.host}/`) return true;
 
@@ -1081,6 +1089,7 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
     // Blog-mode exclusions (more aggressive - excludes product/service pages)
     const blogOnlyExcludePatterns = [
       "/solutions/",
+      "/diamind-solutions",
       "/products/",
       "/products", // Also exclude /products without trailing slash
       "/product/",
@@ -1088,6 +1097,17 @@ function shouldExcludeUrl(url: string, baseUrl: URL): boolean {
       "/service/",
       "/industries/",
       "/industry/",
+      "/partners/",
+      "/publications/",
+      "/podcast",
+      "/webinar",
+      "/webinars",
+      "/event",
+      "/events",
+      "/case-study",
+      "/case-studies",
+      "/customer-success",
+      "/success-stories",
       "/company/",
       "/team/",
       "/careers/",
@@ -1946,6 +1966,7 @@ export async function extractBlogPostUrls(
   logger.info('Starting extraction', { blogUrl, maxPosts, dateRangeStart, dateRangeEnd });
   const baseUrl = new URL(normalizeUrl(blogUrl));
   let blogPosts: Array<{ url: string; title: string; publishedDate: string | null }> = [];
+  const isBlogListingPage = baseUrl.pathname.toLowerCase().includes('/blog');
   
   // Parse date range if provided
   const startDate = dateRangeStart ? new Date(dateRangeStart) : null;
@@ -2014,9 +2035,10 @@ export async function extractBlogPostUrls(
       });
     }
     
-    // If sitemap didn't work or found few posts, try Jina Reader with pagination
-    // Only continue if we haven't reached maxPosts yet
-    if ((maxPosts === undefined || blogPosts.length < maxPosts) && blogPosts.length < 50) {
+    // If sitemap didn't work or found few posts, try Jina Reader with pagination.
+    // For explicit blog listing pages, always attempt listing pagination to avoid sitemap noise.
+    const shouldTryPagination = isBlogListingPage || blogPosts.length < 50;
+    if ((maxPosts === undefined || blogPosts.length < maxPosts) && shouldTryPagination) {
       try {
         console.log(`[Blog Extractor] Attempting to extract with Jina Reader from ${blogUrl}...`);
         
@@ -2025,7 +2047,12 @@ export async function extractBlogPostUrls(
         
         // Try fetching pages with pagination (respecting maxPosts)
         const paginatedPosts = await fetchAllPagesWithPagination(blogUrl, baseUrl, 50, remainingPosts);
-        
+
+        // If this is a blog listing page and pagination found posts, prefer listing-derived results
+        if (isBlogListingPage && paginatedPosts.length > 0) {
+          blogPosts = [];
+        }
+
         // Merge with sitemap posts (avoid duplicates) and apply date filtering
         const existingUrls = new Set(blogPosts.map(p => p.url));
         for (const post of paginatedPosts) {
@@ -2335,7 +2362,6 @@ export async function extractBlogPostUrls(
 
     // Validate/enrich candidates by fetching each page and confirming it is an article-like page.
     // Skip validation for explicit blog listing pages to avoid false negatives
-    const isBlogListingPage = baseUrl.pathname.toLowerCase().includes('/blog');
     const beforeCount = uniquePosts.length;
 
     let validated: Array<{ url: string; title: string; publishedDate: string | null }>;
