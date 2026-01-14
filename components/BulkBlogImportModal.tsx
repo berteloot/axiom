@@ -119,7 +119,9 @@ export function BulkBlogImportModal({
     total: number;
     success: number;
     failed: number;
+    skipped?: number;
     errors: Array<{ url: string; error: string }>;
+    skippedItems?: Array<{ url: string; reason: string }>;
     assets: Array<{ id: string; title: string }>;
   } | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
@@ -881,6 +883,14 @@ export function BulkBlogImportModal({
                       Successfully imported <strong className="text-green-900 dark:text-green-100">{results.success}</strong> of{" "}
                       <strong className="text-green-900 dark:text-green-100">{results.total}</strong> blog posts
                     </p>
+                    {results.skipped && results.skipped > 0 && (
+                      <p className="text-sm">
+                        <span className="font-medium text-blue-700 dark:text-blue-400">
+                          {results.skipped} post{results.skipped !== 1 ? "s" : ""} skipped
+                        </span>{" "}
+                        (already imported)
+                      </p>
+                    )}
                     {results.failed > 0 && (
                       <p className="text-sm">
                         <span className="font-medium text-amber-700 dark:text-amber-400">
@@ -889,6 +899,33 @@ export function BulkBlogImportModal({
                       </p>
                     )}
                   </div>
+                  {Array.isArray(results.skippedItems) && results.skippedItems.length > 0 && (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-sm font-medium hover:underline">
+                        View skipped duplicates ({results.skippedItems.length})
+                      </summary>
+                      <ul className="mt-2 space-y-1.5 text-xs max-h-40 overflow-y-auto pl-4 list-disc">
+                        {results.skippedItems.slice(0, 10).map((item, idx) => (
+                          <li key={idx} className="break-all">
+                            <a
+                              href={item?.url || '#'}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="hover:underline"
+                            >
+                              {item?.url || 'Unknown URL'}
+                            </a>{" "}
+                            - {item?.reason || "Duplicate"}
+                          </li>
+                        ))}
+                        {results.skippedItems.length > 10 && (
+                          <li className="text-muted-foreground italic">
+                            ... and {results.skippedItems.length - 10} more duplicates
+                          </li>
+                        )}
+                      </ul>
+                    </details>
+                  )}
                   {Array.isArray(results.errors) && results.errors.length > 0 && (
                     <details className="mt-2">
                       <summary className="cursor-pointer text-sm font-medium hover:underline">

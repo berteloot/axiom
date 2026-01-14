@@ -82,7 +82,9 @@ export async function POST(request: NextRequest) {
       total: postsToImport.length,
       success: 0,
       failed: 0,
+      skipped: 0,
       errors: [] as Array<{ url: string; error: string }>,
+      skippedItems: [] as Array<{ url: string; reason: string }>,
       assets: [] as Array<{ id: string; title: string }>,
     };
 
@@ -91,10 +93,42 @@ export async function POST(request: NextRequest) {
       ? standardizeICPTargets(icpTargets)
       : [];
 
+    // Preload existing source URLs to avoid duplicate imports
+    const existingAssets = await prisma.asset.findMany({
+      where: {
+        accountId,
+        atomicSnippets: {
+          not: null,
+        },
+      },
+      select: {
+        atomicSnippets: true,
+      },
+    });
+
+    const existingSourceUrls = new Set<string>();
+    existingAssets.forEach(asset => {
+      const snippets = asset.atomicSnippets as any;
+      if (snippets?.sourceUrl && typeof snippets.sourceUrl === "string") {
+        existingSourceUrls.add(snippets.sourceUrl);
+      }
+    });
+
+    const processedUrls = new Set<string>();
+
     // Process posts in parallel batches (5 at a time to avoid overwhelming the system)
     const BATCH_SIZE = 5;
-    const processPost = async (post: { url: string; title: string }) => {
+    const processPost = async (post: { url: string; title: string; detectedAssetType?: string | null }) => {
       try {
+        if (processedUrls.has(post.url)) {
+          return { success: false, skipped: true, url: post.url, reason: "Duplicate selected in this import" };
+        }
+        processedUrls.add(post.url);
+
+        if (existingSourceUrls.has(post.url)) {
+          return { success: false, skipped: true, url: post.url, reason: "Already imported" };
+        }
+
         // Fetch content and extract published date
         const { content, publishedDate } = await fetchBlogPostContentWithDate(post.url);
         
@@ -166,6 +200,8 @@ export async function POST(request: NextRequest) {
           },
         });
 
+        existingSourceUrls.add(post.url);
+
         // Create product line associations if provided
         if (productLineIds.length > 0) {
           await prisma.assetProductLine.createMany({
@@ -193,6 +229,9 @@ export async function POST(request: NextRequest) {
         if (result.success) {
           results.success++;
           results.assets.push(result.asset!);
+        } else if (result.skipped) {
+          results.skipped++;
+          results.skippedItems.push({ url: result.url, reason: result.reason || "Duplicate" });
         } else {
           results.failed++;
           results.errors.push({ url: result.url, error: result.error! });
@@ -200,7 +239,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log(`[Bulk Import] Completed: ${results.success} succeeded, ${results.failed} failed`);
+    console.log(`[Bulk Import] Completed: ${results.success} succeeded, ${results.failed} failed, ${results.skipped} skipped`);
 
     return NextResponse.json({
       success: true,
