@@ -27,6 +27,12 @@ const NEXTAUTH_URL = process.env.NEXTAUTH_URL ||
   (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
 
 const NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET;
+const AUTH_DEBUG = process.env.NEXTAUTH_DEBUG === "true";
+const authLog = (...args: unknown[]) => {
+  if (AUTH_DEBUG) {
+    console.log(...args);
+  }
+};
 
 // In production, this MUST be set and stable across all instances.
 // If it changes between issuing and consuming the email link, the verification token lookup will fail.
@@ -57,7 +63,7 @@ if (NEXTAUTH_URL.includes("localhost") && process.env.NODE_ENV === "production")
 
 export const authOptions: NextAuthOptions = {
   // Enable debug mode to see NextAuth's internal flow
-  debug: process.env.NODE_ENV !== "production" || process.env.NEXTAUTH_DEBUG === "true",
+  debug: process.env.NODE_ENV !== "production" || AUTH_DEBUG,
   adapter: CustomPrismaAdapter(),
   session: {
     strategy: "jwt",
@@ -228,9 +234,9 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     async jwt({ token, user, trigger }) {
-      console.log("🔄 [JWT Callback] Called with trigger:", trigger || "initial");
+      authLog("🔄 [JWT Callback] Called with trigger:", trigger || "initial");
       if (user) {
-        console.log("🔄 [JWT Callback] User object present, email:", user.email, "id:", user.id);
+        authLog("🔄 [JWT Callback] User object present, email:", user.email, "id:", user.id);
         // CRITICAL: Set token.sub FIRST before any database calls
         // token.sub is required for session callback to work
         token.sub = user.id
@@ -242,10 +248,12 @@ export const authOptions: NextAuthOptions = {
             where: { email: user.email! }
           })
           if (dbUser) {
-            console.log("✅ [JWT Callback] Found user, emailVerified:", dbUser.emailVerified);
+            authLog("✅ [JWT Callback] Found user, emailVerified:", dbUser.emailVerified);
             token.emailVerified = dbUser.emailVerified
           } else {
-            console.warn("⚠️  [JWT Callback] User not found in database:", user.email);
+            if (AUTH_DEBUG) {
+              console.warn("⚠️  [JWT Callback] User not found in database:", user.email);
+            }
             // Still allow authentication even if database lookup fails
             token.emailVerified = "UNVERIFIED"
           }
@@ -256,28 +264,28 @@ export const authOptions: NextAuthOptions = {
           token.emailVerified = "UNVERIFIED"
         }
       } else {
-        console.log("🔄 [JWT Callback] No user object, using existing token");
-        console.log("🔄 [JWT Callback] Existing token sub:", token.sub);
+        authLog("🔄 [JWT Callback] No user object, using existing token");
+        authLog("🔄 [JWT Callback] Existing token sub:", token.sub);
       }
       
       if (!token.sub) {
         console.error("❌ [JWT Callback] WARNING: token.sub is not set! This will cause session creation to fail.");
       }
       
-      console.log("🔄 [JWT Callback] Returning token with sub:", token.sub, "email:", token.email, "emailVerified:", token.emailVerified);
+      authLog("🔄 [JWT Callback] Returning token with sub:", token.sub, "email:", token.email, "emailVerified:", token.emailVerified);
       return token
     },
     async session({ session, token }) {
-      console.log("🔄 [Session Callback] Called");
-      console.log("🔄 [Session Callback] Token sub:", token.sub);
-      console.log("🔄 [Session Callback] Token emailVerified:", token.emailVerified);
+      authLog("🔄 [Session Callback] Called");
+      authLog("🔄 [Session Callback] Token sub:", token.sub);
+      authLog("🔄 [Session Callback] Token emailVerified:", token.emailVerified);
       if (session.user) {
         if (!token.sub) {
           console.error("❌ [Session Callback] Token.sub is missing!");
         }
         session.user.id = token.sub!
         session.user.emailVerified = (token.emailVerified as string) || "UNVERIFIED"
-        console.log("✅ [Session Callback] Session created for user:", session.user.email, "id:", session.user.id);
+        authLog("✅ [Session Callback] Session created for user:", session.user.email, "id:", session.user.id);
       } else {
         console.error("❌ [Session Callback] session.user is missing!");
       }
@@ -294,9 +302,9 @@ export const authOptions: NextAuthOptions = {
       // Don't block sign-in - the email link itself proves ownership
       // We mark email as verified in the signIn event instead
       try {
-        console.log("✅ [SignIn Callback] User signing in:", user.email);
-        console.log("✅ [SignIn Callback] User ID:", user.id);
-        console.log("✅ [SignIn Callback] Account provider:", account?.provider);
+        authLog("✅ [SignIn Callback] User signing in:", user.email);
+        authLog("✅ [SignIn Callback] User ID:", user.id);
+        authLog("✅ [SignIn Callback] Account provider:", account?.provider);
         return true;
       } catch (error) {
         console.error("❌ [SignIn Callback] Error during sign-in:", error);
@@ -306,31 +314,33 @@ export const authOptions: NextAuthOptions = {
       }
     },
     async redirect({ url, baseUrl }) {
-      console.log("🔄 [Redirect Callback] Called");
-      console.log("🔄 [Redirect Callback] URL:", url);
-      console.log("🔄 [Redirect Callback] Base URL:", baseUrl);
+      authLog("🔄 [Redirect Callback] Called");
+      authLog("🔄 [Redirect Callback] URL:", url);
+      authLog("🔄 [Redirect Callback] Base URL:", baseUrl);
       
       // If redirecting to error page, allow it (don't override)
       if (url.includes("/auth/error")) {
-        console.log("⚠️  [Redirect Callback] NextAuth is redirecting to error page - allowing it");
-        console.log("⚠️  [Redirect Callback] This suggests authentication failed");
+        if (AUTH_DEBUG) {
+          console.warn("⚠️  [Redirect Callback] NextAuth is redirecting to error page - allowing it");
+          console.warn("⚠️  [Redirect Callback] This suggests authentication failed");
+        }
         return url;
       }
       
       // If url is relative, make it absolute
       if (url.startsWith("/")) {
         const redirectUrl = `${baseUrl}${url}`;
-        console.log("✅ [Redirect Callback] Redirecting to:", redirectUrl);
+        authLog("✅ [Redirect Callback] Redirecting to:", redirectUrl);
         return redirectUrl;
       }
       // If url is on the same origin, allow it
       if (new URL(url).origin === baseUrl) {
-        console.log("✅ [Redirect Callback] Redirecting to same origin:", url);
+        authLog("✅ [Redirect Callback] Redirecting to same origin:", url);
         return url;
       }
       // Default to dashboard
       const defaultUrl = `${baseUrl}/dashboard`;
-      console.log("✅ [Redirect Callback] Default redirect to:", defaultUrl);
+      authLog("✅ [Redirect Callback] Default redirect to:", defaultUrl);
       return defaultUrl;
     },
   },
