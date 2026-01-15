@@ -251,7 +251,7 @@ function resolveUrl(baseUrl: string, relativeUrl: string): string {
  * @param url - The URL to extract the slug from
  * @returns A readable title derived from the URL slug, or empty string if slug is invalid
  */
-function deriveTitleFromSlug(url: string): string {
+export function deriveTitleFromSlug(url: string): string {
   try {
     const urlObj = new URL(url);
     const pathParts = urlObj.pathname.split('/').filter(p => p);
@@ -411,7 +411,11 @@ async function callJinaReaderAPI(
         headers['X-With-Shadow-Dom'] = 'true';
       }
       if (proxy) {
-        headers['X-Proxy'] = proxy;
+        if (proxy === 'auto') {
+          headers['X-Proxy-Country'] = 'auto';
+        } else {
+          headers['X-Proxy'] = proxy;
+        }
       }
       if (locale) {
         headers['X-Locale'] = locale;
@@ -452,6 +456,18 @@ async function callJinaReaderAPI(
           logger.warn('Jina service unavailable (503), backing off', { attempt: attempt + 1, backoffMs: backoff });
           await new Promise((resolve) => setTimeout(resolve, backoff));
           continue;
+        }
+
+        if (response.status === 422 && attempt < retries && proxy === 'auto') {
+          // 422 means site blocked - try again without proxy
+          logger.warn('Jina returned 422 (site blocked) with proxy, retrying without proxy', { url: normalizedUrl, attempt: attempt + 1 });
+          // Remove proxy for next attempt - create new options without proxy
+          const retryOptions = { ...options, proxy: undefined };
+          // Use remaining retries
+          const remainingRetries = retries - attempt - 1;
+          if (remainingRetries >= 0) {
+            return callJinaReaderAPI(url, retryOptions, remainingRetries);
+          }
         }
 
         const errorText = await response.text().catch(() => '');
@@ -558,6 +574,7 @@ export async function fetchHtml(url: string, options?: { useJina?: boolean }): P
         format: 'html',
         engine: 'browser',
         noCache: true,
+        proxy: 'auto', // Use Jina's location-based proxy for better access
       }, 1); // Use 1 retry for speed
       return result.data.content;
     } catch (error) {
@@ -568,6 +585,10 @@ export async function fetchHtml(url: string, options?: { useJina?: boolean }): P
 
   // Fallback to direct fetch if Jina is not available or fails
   try {
+    // Build referer from target URL (same origin)
+    const urlObj = new URL(normalizedUrl);
+    const referer = `${urlObj.protocol}//${urlObj.host}/`;
+
     const response = await fetch(normalizedUrl, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -576,6 +597,11 @@ export async function fetchHtml(url: string, options?: { useJina?: boolean }): P
         "Accept-Encoding": "gzip, deflate, br",
         "Connection": "keep-alive",
         "Upgrade-Insecure-Requests": "1",
+        "Referer": referer,
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-User": "?1",
       },
       signal: AbortSignal.timeout(30000), // 30 seconds for blog pages
     });
@@ -1560,6 +1586,7 @@ async function fetchListingPageWithJina(url: string, retries = 2): Promise<strin
       withLinksSummary: true, // Get structured links for better extraction
       withGeneratedAlt: true,
       noCache: true,
+      proxy: 'auto', // Use Jina's location-based proxy for better access
       removeSelectors: "nav,footer,header,.navigation,.sidebar,.menu,.breadcrumb,.cookie-banner,.popup,.modal",
       timeout: DEFAULT_CONFIG.timeouts.jinaListingPage,
     }, retries);
@@ -2692,12 +2719,14 @@ export async function fetchBlogPostContentWithDate(url: string): Promise<{ conte
     const domainIsBlocked = isDirectFetchBlocked(url);
 
     // Use improved Jina Reader API with POST method and structured responses
+    // Try with proxy first (auto uses location-based proxy)
     try {
       const result = await callJinaReaderAPI(url, {
         format: 'markdown',
         engine: 'browser',
         withGeneratedAlt: true,
         noCache: true,
+        proxy: 'auto', // Use Jina's location-based proxy for better access
         removeSelectors: "nav,footer,header,.navigation,.sidebar,.menu,.breadcrumb,.social-share,.related-posts,.comments,.newsletter,.subscribe,.cookie-banner,.popup,.modal",
         targetSelector: "article,main,.post-content,.entry-content,.article-content,.blog-post,.post-body,.content-main",
         timeout: DEFAULT_CONFIG.timeouts.jinaReader,
@@ -2708,11 +2737,12 @@ export async function fetchBlogPostContentWithDate(url: string): Promise<{ conte
       jinaError = jinaErr instanceof Error ? jinaErr : new Error(String(jinaErr));
       const errorMessage = jinaError.message;
       
-      // Handle 422 errors (No content available) - try direct fetch as fallback
+      // Handle 422 errors (No content available) - already retried without proxy in callJinaReaderAPI
+      // If we still get 422, try direct fetch as fallback
       const is422Error = errorMessage.includes('422') || errorMessage.includes('No content available');
       
       if (is422Error) {
-        logger.warn('Jina returned 422 (no content), will try direct fetch', { url });
+        logger.warn('Jina returned 422 (no content) even after retry, will try direct fetch', { url });
         skipJinaHtml = false; // Still try direct fetch even if Jina failed
       } else {
         logger.warn(`[Blog Extractor] Jina content fetch failed for ${url}, falling back to HTML:`, errorMessage);
