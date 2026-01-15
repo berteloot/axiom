@@ -151,8 +151,9 @@ export async function POST(request: NextRequest) {
     const processedUrls = new Set<string>();
 
     // Process posts in parallel batches (5 at a time to avoid overwhelming the system)
+    // BUT: Process Firecrawl requests sequentially to respect rate limits (20 req/min free tier)
     const BATCH_SIZE = 5;
-    const processPost = async (post: { url: string; title: string; detectedAssetType?: string | null; publishedDate?: string | null; content?: string }) => {
+    const processPost = async (post: { url: string; title: string; detectedAssetType?: string | null; publishedDate?: string | null; content?: string }, useSequentialFirecrawl: boolean = false) => {
       try {
         if (processedUrls.has(post.url)) {
           return { success: false, skipped: true, url: post.url, reason: "Duplicate selected in this import" };
@@ -174,12 +175,26 @@ export async function POST(request: NextRequest) {
           if (isFirecrawlConfigured()) {
             try {
               console.log(`[Bulk Import] Fetching content with Firecrawl for ${post.url}...`);
+              
+              // If sequential mode, add a small delay to respect rate limits
+              if (useSequentialFirecrawl) {
+                await new Promise(resolve => setTimeout(resolve, 3500)); // ~3.5s between requests = ~17 req/min (under 20 limit)
+              }
+              
               const firecrawlResult = await fetchBlogPostContentWithFirecrawl(post.url);
               content = firecrawlResult.content;
               resolvedPublishedDate = post.publishedDate || firecrawlResult.publishedDate || null;
               console.log(`[Bulk Import] ✅ Firecrawl extracted ${content.length} chars for ${post.url}, date: ${resolvedPublishedDate || 'not found'}`);
             } catch (firecrawlError) {
-              console.log(`[Bulk Import] Firecrawl failed for ${post.url}, falling back to Jina:`, firecrawlError instanceof Error ? firecrawlError.message : firecrawlError);
+              const errorMessage = firecrawlError instanceof Error ? firecrawlError.message : String(firecrawlError);
+              const isRateLimit = errorMessage.includes('Rate limit') || errorMessage.includes('rate limit');
+              
+              if (isRateLimit) {
+                console.log(`[Bulk Import] ⚠️ Firecrawl rate limit hit for ${post.url}, falling back to Jina immediately`);
+              } else {
+                console.log(`[Bulk Import] Firecrawl failed for ${post.url}, falling back to Jina:`, errorMessage);
+              }
+              
               // Fall through to Jina fallback
               try {
                 const { content: fetchedContent, publishedDate } = await fetchBlogPostContentWithDate(post.url);
@@ -302,11 +317,15 @@ export async function POST(request: NextRequest) {
     };
 
     // Process in batches
-    for (let i = 0; i < postsToImport.length; i += BATCH_SIZE) {
-      const batch = postsToImport.slice(i, i + BATCH_SIZE);
-      const batchResults = await Promise.all(batch.map(processPost));
-      
-      for (const result of batchResults) {
+    // For Firecrawl, process sequentially to respect rate limits (20 req/min free tier)
+    const useFirecrawl = isFirecrawlConfigured();
+    const useSequentialFirecrawl = useFirecrawl && postsNeedingScraping.length > 0;
+    
+    if (useSequentialFirecrawl) {
+      console.log(`[Bulk Import] Processing ${postsToImport.length} posts sequentially (Firecrawl rate limit protection)`);
+      // Process sequentially when using Firecrawl to avoid rate limits
+      for (const post of postsToImport) {
+        const result = await processPost(post, true);
         if (result.success) {
           results.success++;
           results.assets.push(result.asset!);
@@ -320,6 +339,29 @@ export async function POST(request: NextRequest) {
         } else {
           results.failed++;
           results.errors.push({ url: result.url, error: result.error! });
+        }
+      }
+    } else {
+      // Process in parallel batches when not using Firecrawl
+      for (let i = 0; i < postsToImport.length; i += BATCH_SIZE) {
+        const batch = postsToImport.slice(i, i + BATCH_SIZE);
+        const batchResults = await Promise.all(batch.map(post => processPost(post, false)));
+        
+        for (const result of batchResults) {
+          if (result.success) {
+            results.success++;
+            results.assets.push(result.asset!);
+            if (result.warning) {
+              results.withErrors++;
+              results.warnings.push({ url: result.url, warning: result.warning });
+            }
+          } else if (result.skipped) {
+            results.skipped++;
+            results.skippedItems.push({ url: result.url, reason: result.reason || "Duplicate" });
+          } else {
+            results.failed++;
+            results.errors.push({ url: result.url, error: result.error! });
+          }
         }
       }
     }

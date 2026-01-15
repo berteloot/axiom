@@ -102,7 +102,8 @@ export class FirecrawlError extends Error {
     message: string,
     public code?: string,
     public statusCode?: number,
-    public retryable: boolean = true
+    public retryable: boolean = true,
+    public retryAfterMs?: number // Delay before retry (for rate limits)
   ) {
     super(message);
     this.name = 'FirecrawlError';
@@ -389,6 +390,7 @@ function extractDateFromContent(content: string): string | null {
 
 /**
  * Retry wrapper for Firecrawl operations
+ * Handles rate limits with proper backoff
  */
 async function withRetry<T>(
   operation: () => Promise<T>,
@@ -409,12 +411,23 @@ async function withRetry<T>(
       }
 
       if (attempt <= maxRetries) {
-        logFirecrawl('warn', `Attempt ${attempt} failed, retrying...`, {
-          error: lastError.message,
-          nextAttempt: attempt + 1,
-          delayMs: delayMs * attempt,
-        });
-        await sleep(delayMs * attempt);
+        // For rate limit errors, use the retryAfterMs if provided
+        let backoffDelay = delayMs * attempt;
+        if (error instanceof FirecrawlError && error.code === 'ERR::RATE_LIMIT' && error.retryAfterMs) {
+          backoffDelay = error.retryAfterMs;
+          logFirecrawl('warn', `Rate limit hit, waiting for reset...`, {
+            error: lastError.message,
+            retryAfterMs: backoffDelay,
+            nextAttempt: attempt + 1,
+          });
+        } else {
+          logFirecrawl('warn', `Attempt ${attempt} failed, retrying...`, {
+            error: lastError.message,
+            nextAttempt: attempt + 1,
+            delayMs: backoffDelay,
+          });
+        }
+        await sleep(backoffDelay);
       }
     }
   }
@@ -490,14 +503,33 @@ export async function scrapeWithFirecrawl(url: string): Promise<FirecrawlScrapeR
   try {
     const result = await withRetry(() =>
       enqueueFirecrawlRequest(async () => {
-        const response = await firecrawl.scrape(url, {
-          formats: ['markdown'],
-          onlyMainContent: true, // Exclude headers, footers, navs - key advantage over Jina
-          waitFor: 2000, // Wait for JS to render
-          timeout: FIRECRAWL_DEFAULT_TIMEOUT,
-        });
+        try {
+          const response = await firecrawl.scrape(url, {
+            formats: ['markdown'],
+            onlyMainContent: true, // Exclude headers, footers, navs - key advantage over Jina
+            waitFor: 2000, // Wait for JS to render
+            timeout: FIRECRAWL_DEFAULT_TIMEOUT,
+          });
 
-        return response;
+          return response;
+        } catch (apiError: any) {
+          // Check for rate limit errors
+          const errorMessage = apiError?.message || String(apiError);
+          if (errorMessage.includes('Rate limit exceeded') || errorMessage.includes('rate limit')) {
+            // Extract reset time from error message if available
+            const resetMatch = errorMessage.match(/retry after (\d+)s/i);
+            const resetSeconds = resetMatch ? parseInt(resetMatch[1], 10) : 60;
+            
+            throw new FirecrawlError(
+              errorMessage,
+              'ERR::RATE_LIMIT',
+              429,
+              true, // Retryable
+              resetSeconds * 1000 // Pass reset delay in milliseconds
+            );
+          }
+          throw apiError;
+        }
       })
     );
 
@@ -548,11 +580,38 @@ export async function scrapeWithFirecrawl(url: string): Promise<FirecrawlScrapeR
       url: (metadata.sourceURL as string) || (metadata.url as string) || url,
     };
   } catch (error) {
+    // Check if it's a rate limit error
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const isRateLimit = errorMessage.includes('Rate limit exceeded') || 
+                        errorMessage.includes('rate limit') ||
+                        (error as any)?.statusCode === 429;
+    
+    if (isRateLimit) {
+      // Extract reset time from error message if available
+      const resetMatch = errorMessage.match(/retry after (\d+)s/i);
+      const resetSeconds = resetMatch ? parseInt(resetMatch[1], 10) : 60;
+      
+      logFirecrawl('warn', 'Rate limit exceeded', {
+        url,
+        retryAfterSeconds: resetSeconds,
+        message: errorMessage,
+      });
+      
+      // Don't record as failure for rate limits - it's temporary
+      throw new FirecrawlError(
+        errorMessage,
+        'ERR::RATE_LIMIT',
+        429,
+        true,
+        resetSeconds * 1000
+      );
+    }
+    
     recordFirecrawlFailure();
     
     logFirecrawl('error', 'Scrape failed', {
       url,
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage,
     });
 
     if (error instanceof FirecrawlError) {
@@ -560,7 +619,7 @@ export async function scrapeWithFirecrawl(url: string): Promise<FirecrawlScrapeR
     }
 
     throw new FirecrawlError(
-      error instanceof Error ? error.message : String(error),
+      errorMessage,
       'ERR::SCRAPE::UNKNOWN',
       500,
       true
