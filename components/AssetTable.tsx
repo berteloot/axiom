@@ -238,7 +238,7 @@ export function AssetTable({
   // Selectable assets on current page only - use useMemo to ensure it's stable
   const selectableAssetIdsOnPage = useMemo(() => {
     return paginatedAssets
-      .filter((asset) => asset.status === "APPROVED" || asset.status === "PROCESSED")
+      .filter((asset) => asset.status === "APPROVED" || asset.status === "PROCESSED" || asset.status === "ERROR")
       .map((asset) => asset.id);
   }, [paginatedAssets]);
 
@@ -256,7 +256,7 @@ export function AssetTable({
       // CRITICAL: Only select assets from the CURRENT PAGE (paginatedAssets)
       // Do NOT use the full assets array - only use paginatedAssets which contains only current page items
       const selectableAssetsOnCurrentPage = paginatedAssets.filter(
-        asset => asset.status === "APPROVED" || asset.status === "PROCESSED"
+        asset => asset.status === "APPROVED" || asset.status === "PROCESSED" || asset.status === "ERROR"
       );
       
       const currentPageAssetIds = selectableAssetsOnCurrentPage.map(asset => asset.id);
@@ -363,7 +363,7 @@ export function AssetTable({
           </TableHeader>
             <TableBody>
               {paginatedAssets.map((asset) => {
-                const isSelectable = asset.status === "APPROVED" || asset.status === "PROCESSED";
+                const isSelectable = asset.status === "APPROVED" || asset.status === "PROCESSED" || asset.status === "ERROR";
                 const isSelected = selectedAssetIds.includes(asset.id);
                 
                 return (
