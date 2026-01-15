@@ -144,7 +144,7 @@ const URL_PATTERNS = {
  * Normalize URL (add protocol if missing)
  */
 function normalizeUrl(url: string): string {
-  let normalized = url.trim();
+  let normalized = sanitizeUrl(url);
   if (!normalized.startsWith("http://") && !normalized.startsWith("https://")) {
     normalized = `https://${normalized}`;
   }
@@ -152,13 +152,22 @@ function normalizeUrl(url: string): string {
 }
 
 /**
+ * Remove trailing punctuation from URLs (common in text/markdown)
+ */
+function sanitizeUrl(url: string): string {
+  let cleaned = url.trim();
+  cleaned = cleaned.replace(/[)\],.;:!?]+$/g, "");
+  return cleaned;
+}
+
+/**
  * Resolve relative URLs to absolute URLs
  */
 function resolveUrl(baseUrl: string, relativeUrl: string): string {
   try {
-    return new URL(relativeUrl, baseUrl).href;
+    return sanitizeUrl(new URL(relativeUrl, baseUrl).href);
   } catch {
-    return relativeUrl;
+    return sanitizeUrl(relativeUrl);
   }
 }
 
@@ -1616,7 +1625,7 @@ function extractUrlsFromMarkdown(content: string, baseUrl: URL): Array<{ url: st
   // Pattern 2: Plain URLs in text (http:// or https://)
   const urlPattern = /https?:\/\/[^\s\)\]"']+/g;
   while ((match = urlPattern.exec(content)) !== null) {
-    const url = match[0].trim();
+    const url = sanitizeUrl(match[0]);
     if (seenUrls.has(url)) continue;
     if (shouldExcludeUrl(url, baseUrl)) continue;
 
