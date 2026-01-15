@@ -7,6 +7,7 @@ import { FunnelStage } from "@/lib/types";
 import { standardizeICPTargets } from "@/lib/icp-targets";
 import { extractBlogPostUrls, fetchBlogPostContentWithDate } from "@/lib/services/blog-extractor";
 import { scrapeSelectedUrls } from "@/lib/blog-extraction";
+import { fetchBlogPostContentWithFirecrawl, isFirecrawlConfigured } from "@/lib/services/firecrawl-client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -167,15 +168,41 @@ export async function POST(request: NextRequest) {
         let extractionWarning: string | null = null;
         let resolvedPublishedDate = post.publishedDate || null;
 
-        // If no pre-scraped content, try to fetch (fallback to Jina)
+        // If no pre-scraped content, try to fetch
         if (!content || content.trim().length === 0) {
-          try {
-            const { content: fetchedContent, publishedDate } = await fetchBlogPostContentWithDate(post.url);
-            content = fetchedContent;
-            resolvedPublishedDate = post.publishedDate || publishedDate || null;
-          } catch (error) {
-            extractionWarning = error instanceof Error ? error.message : "Unknown error during content extraction";
-            content = `Content extraction failed for ${post.url}\n\nError: ${extractionWarning}`;
+          // Try Firecrawl first if configured (better date extraction)
+          if (isFirecrawlConfigured()) {
+            try {
+              console.log(`[Bulk Import] Fetching content with Firecrawl for ${post.url}...`);
+              const firecrawlResult = await fetchBlogPostContentWithFirecrawl(post.url);
+              content = firecrawlResult.content;
+              resolvedPublishedDate = post.publishedDate || firecrawlResult.publishedDate || null;
+              console.log(`[Bulk Import] ✅ Firecrawl extracted ${content.length} chars for ${post.url}, date: ${resolvedPublishedDate || 'not found'}`);
+            } catch (firecrawlError) {
+              console.log(`[Bulk Import] Firecrawl failed for ${post.url}, falling back to Jina:`, firecrawlError instanceof Error ? firecrawlError.message : firecrawlError);
+              // Fall through to Jina fallback
+              try {
+                const { content: fetchedContent, publishedDate } = await fetchBlogPostContentWithDate(post.url);
+                content = fetchedContent;
+                resolvedPublishedDate = post.publishedDate || publishedDate || null;
+                console.log(`[Bulk Import] ✅ Jina extracted ${content.length} chars for ${post.url}`);
+              } catch (error) {
+                extractionWarning = error instanceof Error ? error.message : "Unknown error during content extraction";
+                content = `Content extraction failed for ${post.url}\n\nError: ${extractionWarning}`;
+              }
+            }
+          } else {
+            // Firecrawl not configured, use Jina
+            try {
+              console.log(`[Bulk Import] Fetching content with Jina for ${post.url}...`);
+              const { content: fetchedContent, publishedDate } = await fetchBlogPostContentWithDate(post.url);
+              content = fetchedContent;
+              resolvedPublishedDate = post.publishedDate || publishedDate || null;
+              console.log(`[Bulk Import] ✅ Jina extracted ${content.length} chars for ${post.url}`);
+            } catch (error) {
+              extractionWarning = error instanceof Error ? error.message : "Unknown error during content extraction";
+              content = `Content extraction failed for ${post.url}\n\nError: ${extractionWarning}`;
+            }
           }
         } else {
           // Content was pre-scraped, no additional credits needed

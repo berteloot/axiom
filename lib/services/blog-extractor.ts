@@ -636,9 +636,11 @@ function extractDateFromText(text: string): string | null {
   if (!text) return null;
 
   const patterns = [
-    // "11 Aug 2025" or "11 August 2025"
+    // "26 Aug 2025" or "26 August 2025" (day first, no comma)
+    new RegExp(`(\\d{1,2})\\s+${MONTH_NAME_PATTERN}\\s+(\\d{4})`, 'i'),
+    // "11 Aug 2025" or "11 August 2025" (with optional comma)
     new RegExp(`(\\d{1,2})\\.?\\s+${MONTH_NAME_PATTERN}\\s*,?\\s+(\\d{4})`, 'i'),
-    // "Aug 11, 2025" or "August 11, 2025"
+    // "Aug 11, 2025" or "August 11, 2025" (month first)
     new RegExp(`${MONTH_NAME_PATTERN}\\s+(\\d{1,2})[\\.,]?\\s+(\\d{4})`, 'i'),
     // "2025-09-11" or "2025/09/11"
     /(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})/,
@@ -650,19 +652,40 @@ function extractDateFromText(text: string): string | null {
     const match = text.match(pattern);
     if (!match) continue;
 
-    let dateStr = match[1];
+    let dateStr = match[0]; // Use the full match
+    
+    // For patterns with 3+ groups, reconstruct the date string
     if (match.length >= 4) {
-      if (/^\d{1,2}$/.test(match[1])) {
-        dateStr = `${match[1]} ${match[2]} ${match[3]}`;
+      const day = match[1];
+      const month = match[2];
+      const year = match[3];
+      
+      // Check if first match is a day number (1-31) or month name
+      if (/^\d{1,2}$/.test(day)) {
+        // Format: "26 Aug 2025" -> "26 Aug 2025"
+        dateStr = `${day} ${month} ${year}`;
       } else {
-        dateStr = `${match[1]} ${match[2]}, ${match[3]}`;
+        // Format: "Aug 26, 2025" -> "Aug 26, 2025" or "Aug 26 2025"
+        dateStr = `${month} ${day} ${year}`;
       }
+    } else if (match.length === 2) {
+      // ISO format like "2025-09-11" or "09/11/2025"
+      dateStr = match[1];
     }
 
     try {
       const date = new Date(dateStr);
-      if (!isNaN(date.getTime()) && date <= new Date()) {
-        return date.toISOString().split('T')[0];
+      if (!isNaN(date.getTime())) {
+        // Allow dates up to 1 year in the future (for scheduled posts)
+        const maxFutureDate = new Date();
+        maxFutureDate.setFullYear(maxFutureDate.getFullYear() + 1);
+        
+        // Allow dates from 2000 onwards (reasonable blog post range)
+        const minDate = new Date('2000-01-01');
+        
+        if (date >= minDate && date <= maxFutureDate) {
+          return date.toISOString().split('T')[0];
+        }
       }
     } catch {
       // Continue to next pattern
