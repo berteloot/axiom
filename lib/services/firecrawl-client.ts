@@ -293,6 +293,8 @@ function extractDateFromMetadata(metadata: Record<string, unknown> | undefined):
     'publishDate',
     'created',
     'createdAt',
+    'modifiedTime',
+    'article:modified_time',
   ];
 
   for (const field of dateFields) {
@@ -302,6 +304,79 @@ function extractDateFromMetadata(metadata: Record<string, unknown> | undefined):
         const date = new Date(value);
         if (!isNaN(date.getTime())) {
           return date.toISOString().split('T')[0]; // Return YYYY-MM-DD
+        }
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Extract date from markdown content (fallback when metadata doesn't have date)
+ * Looks for common date patterns in the content
+ */
+function extractDateFromContent(content: string): string | null {
+  if (!content) return null;
+
+  // Common date patterns in markdown/blog posts
+  const datePatterns = [
+    // "26 Aug 2025" or "Aug 26, 2025" or "August 26, 2025"
+    /\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})\b/i,
+    /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{1,2}),?\s+(\d{4})\b/i,
+    // "2025-08-26" or "2025/08/26"
+    /\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b/,
+    // "08/26/2025" (US format)
+    /\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b/,
+  ];
+
+  const monthMap: Record<string, number> = {
+    jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+    jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+  };
+
+  for (const pattern of datePatterns) {
+    const match = content.match(pattern);
+    if (match) {
+      try {
+        let date: Date | null = null;
+
+        if (match[0].includes('-') || match[0].includes('/')) {
+          // ISO or numeric format
+          const parts = match[0].split(/[-/]/);
+          if (parts.length === 3) {
+            // Determine format: YYYY-MM-DD vs MM/DD/YYYY
+            if (parts[0].length === 4) {
+              // YYYY-MM-DD
+              date = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+            } else {
+              // MM/DD/YYYY (US format)
+              date = new Date(parseInt(parts[2], 10), parseInt(parts[0], 10) - 1, parseInt(parts[1], 10));
+            }
+          }
+        } else {
+          // Text format: "26 Aug 2025" or "Aug 26, 2025"
+          const monthName = match[1] || match[2];
+          const day = match[1] ? parseInt(match[1], 10) : parseInt(match[2], 10);
+          const year = match[3] || match[4];
+          const month = monthMap[monthName.toLowerCase().substring(0, 3)];
+
+          if (month !== undefined && day && year) {
+            date = new Date(parseInt(year, 10), month, day);
+          }
+        }
+
+        if (date && !isNaN(date.getTime())) {
+          // Validate date is reasonable (not too far in past/future)
+          const now = new Date();
+          const tenYearsAgo = new Date(now.getFullYear() - 10, 0, 1);
+          const tenYearsFromNow = new Date(now.getFullYear() + 10, 11, 31);
+          
+          if (date >= tenYearsAgo && date <= tenYearsFromNow) {
+            return date.toISOString().split('T')[0];
+          }
         }
       } catch {
         continue;
@@ -456,11 +531,20 @@ export async function scrapeWithFirecrawl(url: string): Promise<FirecrawlScrapeR
       totalCreditsUsed: estimatedCreditsUsed,
     });
 
+    // Try metadata first, then fall back to content parsing
+    let publishedDate = extractDateFromMetadata(metadata);
+    if (!publishedDate) {
+      publishedDate = extractDateFromContent(scrapeResult.markdown);
+      if (publishedDate) {
+        logFirecrawl('debug', 'Date extracted from content', { url, date: publishedDate });
+      }
+    }
+
     return {
       content: scrapeResult.markdown,
       title: (metadata.title as string) || (metadata.ogTitle as string) || null,
       description: (metadata.description as string) || (metadata.ogDescription as string) || null,
-      publishedDate: extractDateFromMetadata(metadata),
+      publishedDate,
       url: (metadata.sourceURL as string) || (metadata.url as string) || url,
     };
   } catch (error) {

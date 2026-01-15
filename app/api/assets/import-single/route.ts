@@ -6,6 +6,7 @@ import { z } from "zod";
 import { FunnelStage } from "@/lib/types";
 import { standardizeICPTargets } from "@/lib/icp-targets";
 import { fetchBlogPostContentWithDate, deriveTitleFromSlug } from "@/lib/services/blog-extractor";
+import { fetchBlogPostContentWithFirecrawl, isFirecrawlActive } from "@/lib/services/firecrawl-client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -106,15 +107,37 @@ export async function POST(request: NextRequest) {
     }
 
     // Fetch content and extract published date
+    // Try Firecrawl first (better date extraction), fall back to Jina
     let content = "";
     let extractionWarning: string | null = null;
     let publishedDate: string | null = null;
     let title: string | null = null;
+    let usedFirecrawl = false;
 
     try {
-      const { content: fetchedContent, publishedDate: extractedDate } = await fetchBlogPostContentWithDate(url);
-      content = fetchedContent;
-      publishedDate = extractedDate || null;
+      // Try Firecrawl first if it's active
+      if (isFirecrawlActive()) {
+        try {
+          console.log(`[Single Import] Trying Firecrawl for ${url}...`);
+          const firecrawlResult = await fetchBlogPostContentWithFirecrawl(url);
+          content = firecrawlResult.content;
+          publishedDate = firecrawlResult.publishedDate || null;
+          usedFirecrawl = true;
+          console.log(`[Single Import] ✅ Firecrawl extracted ${content.length} chars, date: ${publishedDate || 'not found'}`);
+        } catch (firecrawlError) {
+          console.log(`[Single Import] Firecrawl failed, falling back to Jina:`, firecrawlError instanceof Error ? firecrawlError.message : firecrawlError);
+          // Fall through to Jina fallback
+        }
+      }
+
+      // If Firecrawl wasn't used or failed, use Jina
+      if (!usedFirecrawl) {
+        console.log(`[Single Import] Using Jina for ${url}...`);
+        const { content: fetchedContent, publishedDate: extractedDate } = await fetchBlogPostContentWithDate(url);
+        content = fetchedContent;
+        publishedDate = extractedDate || null;
+        console.log(`[Single Import] ✅ Jina extracted ${content.length} chars, date: ${publishedDate || 'not found'}`);
+      }
       
       // Try to extract title from content (look for markdown heading or HTML title)
       const titleMatch = content.match(/^#\s+(.+)$/m);
