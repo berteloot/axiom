@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { requireAccountId } from "@/lib/account-utils";
 import { extractBlogPostUrls, fetchHtml, extractPublishedDateFromHtml } from "@/lib/services/blog-extractor";
 import { detectAssetTypeFromUrl, detectAssetTypeFromHtml } from "@/lib/constants/asset-types";
+import { discoverBlogUrls } from "@/lib/blog-discovery";
+import { checkForDuplicates } from "@/lib/duplicate-checker";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -175,15 +177,16 @@ export async function POST(request: NextRequest) {
       }
     };
     
-    // Extract blog post URLs with maxPosts
-    // Date filtering happens after HTML enrichment for accuracy
-    console.log(`[Bulk Import Preview] Extracting blog posts from ${normalizedUrl}... (maxPosts: ${maxPosts || 'unlimited'}, dateRange: ${dateRangeStart || 'none'} to ${dateRangeEnd || 'none'})`);
+    // PHASE 1: Discover blog post URLs (FREE or very cheap)
+    console.log(`[Bulk Import Preview] Phase 1: Discovering URLs from ${normalizedUrl}...`);
     
     let blogPosts: Array<{ url: string; title: string; publishedDate: string | null }> = [];
+    let discoveryMethod: string = 'unknown';
+    let discoveryCreditsUsed: number = 0;
     
     // If URL is a single post, return it directly without extraction
     if (isSinglePostUrl(normalizedUrl)) {
-      console.log(`[Bulk Import Preview] Detected single post URL, skipping extraction: ${normalizedUrl}`);
+      console.log(`[Bulk Import Preview] Detected single post URL, skipping discovery: ${normalizedUrl}`);
       
       // Derive title from URL slug
       const urlObj = new URL(normalizedUrl);
@@ -196,71 +199,93 @@ export async function POST(request: NextRequest) {
       blogPosts = [{
         url: normalizedUrl,
         title,
-        publishedDate: null, // Will be enriched later
+        publishedDate: null,
       }];
       
+      discoveryMethod = 'single-post';
+      discoveryCreditsUsed = 0;
       console.log(`[Bulk Import Preview] Single post detected: "${title}"`);
     } else {
+      // Try new discovery method first (free/cheap)
       try {
-        blogPosts = await extractBlogPostUrls(
-          normalizedUrl,
-          maxPosts ? Number(maxPosts) : undefined,
-          null,
-          null
-        );
+        const discovery = await discoverBlogUrls(normalizedUrl, {
+          maxUrls: maxPosts ? Number(maxPosts) : 100,
+        });
         
-        console.log(`[Bulk Import Preview] Extraction completed. Found ${blogPosts.length} posts.`);
-      } catch (extractionError) {
-        console.error(`[Bulk Import Preview] Extraction failed:`, extractionError);
-        const errorMessage = extractionError instanceof Error ? extractionError.message : 'Unknown extraction error';
-        return NextResponse.json(
-          { error: `Failed to extract blog posts: ${errorMessage}` },
-          { status: 500 }
-        );
+        if (discovery.urls.length > 0) {
+          blogPosts = discovery.urls;
+          discoveryMethod = discovery.discoveryMethod;
+          discoveryCreditsUsed = discovery.creditsUsed;
+          console.log(`[Bulk Import Preview] ✅ Discovery completed via ${discoveryMethod} (${discoveryCreditsUsed} credits). Found ${blogPosts.length} posts.`);
+        } else if (discovery.fallbackRequired) {
+          // All free methods failed - fall back to old Jina method
+          console.log(`[Bulk Import Preview] Discovery methods failed, falling back to Jina extraction...`);
+          try {
+            blogPosts = await extractBlogPostUrls(
+              normalizedUrl,
+              maxPosts ? Number(maxPosts) : undefined,
+              null,
+              null
+            );
+            discoveryMethod = 'jina-fallback';
+            discoveryCreditsUsed = 0; // Jina doesn't use Firecrawl credits
+            console.log(`[Bulk Import Preview] Jina fallback found ${blogPosts.length} posts.`);
+          } catch (extractionError) {
+            console.error(`[Bulk Import Preview] Jina fallback also failed:`, extractionError);
+            const errorMessage = extractionError instanceof Error ? extractionError.message : 'Unknown extraction error';
+            return NextResponse.json(
+              { 
+                error: `Failed to discover blog posts: ${errorMessage}`,
+                discoveryFailed: true,
+                requiresCrawl: true,
+              },
+              { status: 500 }
+            );
+          }
+        }
+      } catch (discoveryError) {
+        console.error(`[Bulk Import Preview] Discovery failed, trying Jina fallback:`, discoveryError);
+        // Fall back to old method
+        try {
+          blogPosts = await extractBlogPostUrls(
+            normalizedUrl,
+            maxPosts ? Number(maxPosts) : undefined,
+            null,
+            null
+          );
+          discoveryMethod = 'jina-fallback';
+          discoveryCreditsUsed = 0;
+        } catch (extractionError) {
+          const errorMessage = extractionError instanceof Error ? extractionError.message : 'Unknown extraction error';
+          return NextResponse.json(
+            { error: `Failed to extract blog posts: ${errorMessage}` },
+            { status: 500 }
+          );
+        }
       }
     }
     
     if (blogPosts.length === 0) {
-      console.warn(`[Bulk Import Preview] No posts found for ${normalizedUrl}. This could mean:
-        - The URL is not a blog listing page
-        - The page structure doesn't match expected patterns
-        - All posts were filtered out by exclusion rules
-        - The sitemap doesn't contain blog posts
-        - The page requires JavaScript rendering that failed`);
+      console.warn(`[Bulk Import Preview] No posts found for ${normalizedUrl}`);
       return NextResponse.json(
         { error: "No blog posts found on this page. Please check the URL and ensure it's a blog listing page." },
         { status: 400 }
       );
     }
 
-    // Check for duplicates by sourceUrl in atomicSnippets
-    // Fetch all assets with atomicSnippets and filter in memory (Prisma JSON filtering is limited)
-    const sourceUrls = blogPosts.map(post => post.url);
-    const existingAssets = await prisma.asset.findMany({
-      where: {
-        accountId,
-        atomicSnippets: {
-          not: null,
-        },
-      },
-      select: {
-        id: true,
-        title: true,
-        atomicSnippets: true,
-      },
-    });
-
-    // Create a map of existing source URLs
-    const existingSourceUrls = new Map<string, string>(); // url -> assetId
-    existingAssets.forEach(asset => {
-      const snippets = asset.atomicSnippets as any;
-      if (snippets?.sourceUrl && typeof snippets.sourceUrl === "string") {
-        existingSourceUrls.set(snippets.sourceUrl, asset.id);
-      }
-    });
+    // PHASE 2: Check for duplicates (FREE)
+    console.log(`[Bulk Import Preview] Phase 2: Checking for duplicates...`);
+    const duplicateCheck = await checkForDuplicates(blogPosts, accountId);
+    
+    // Use the checked URLs from duplicate check
+    blogPosts = duplicateCheck.all.map(u => ({
+      url: u.url,
+      title: u.title,
+      publishedDate: u.publishedDate,
+    }));
 
     // Detect language for each post and collect available languages
-    const postsWithLanguage = blogPosts.map(post => ({
+    const postsWithLanguage = duplicateCheck.all.map(post => ({
       ...post,
       language: detectLanguageFromUrl(post.url),
     }));
@@ -375,8 +400,8 @@ export async function POST(request: NextRequest) {
         return {
           url: post.url,
           title: post.title,
-          isDuplicate: existingSourceUrls.has(post.url),
-          existingAssetId: existingSourceUrls.get(post.url),
+          isDuplicate: post.isDuplicate, // Use from duplicate check
+          existingAssetId: post.existingAssetId, // Use from duplicate check
           detectedAssetType: detectedType,
           isUnknownType: detectedType === null,
           publishedDate,
@@ -436,6 +461,18 @@ export async function POST(request: NextRequest) {
       new: newCount,
       detectedLanguages, // Available languages for filtering
       dateStats,
+      // Credit optimization info
+      discovery: {
+        method: discoveryMethod,
+        creditsUsed: discoveryCreditsUsed,
+      },
+      creditInfo: {
+        discoveryCredits: discoveryCreditsUsed,
+        scrapingCreditsNeeded: 0, // No scraping in preview
+        message: duplicateCheck.stats.new > 0
+          ? `Found ${duplicateCheck.stats.new} new posts. Select how many to preview (1 credit per post).`
+          : 'All posts already exist in your library.',
+      },
     });
   } catch (error) {
     console.error("[Bulk Import Preview] Error previewing blog posts:", error);

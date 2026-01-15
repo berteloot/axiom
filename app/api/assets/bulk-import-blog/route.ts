@@ -6,6 +6,7 @@ import { z } from "zod";
 import { FunnelStage } from "@/lib/types";
 import { standardizeICPTargets } from "@/lib/icp-targets";
 import { extractBlogPostUrls, fetchBlogPostContentWithDate } from "@/lib/services/blog-extractor";
+import { scrapeSelectedUrls } from "@/lib/blog-extraction";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,11 +33,16 @@ const BulkImportRequestSchema = z.object({
     url: z.string().url(),
     title: z.string(),
     detectedAssetType: z.string().nullable().optional(),
+    // Optional: Pre-scraped content (from /scrape endpoint)
+    content: z.string().optional(),
+    publishedDate: z.string().nullable().optional(),
   })).min(1).max(100), // Selected posts to import
   funnelStage: z.enum(["TOFU_AWARENESS", "MOFU_CONSIDERATION", "BOFU_DECISION", "RETENTION"]).optional(),
   icpTargets: z.array(z.string()).optional(),
   painClusters: z.array(z.string()).optional(),
   productLineIds: z.array(z.string()).optional(),
+  // If true, scrape missing content on-the-fly (uses credits)
+  scrapeMissingContent: z.boolean().optional().default(false),
 });
 
 /**
@@ -67,6 +73,7 @@ export async function POST(request: NextRequest) {
       icpTargets = [],
       painClusters = [],
       productLineIds = [],
+      scrapeMissingContent = false,
     } = validationResult.data;
 
     if (!BUCKET_NAME) {
@@ -76,7 +83,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Check how many posts have pre-scraped content
+    const postsWithContent = postsToImport.filter(p => p.content && p.content.trim().length > 0);
+    const postsNeedingScraping = postsToImport.filter(p => !p.content || p.content.trim().length === 0);
+    
     console.log(`[Bulk Import] Importing ${postsToImport.length} blog posts...`);
+    console.log(`[Bulk Import] ${postsWithContent.length} with pre-scraped content, ${postsNeedingScraping.length} need scraping`);
+    
+    // If there are posts needing content and scrapeMissingContent is true, scrape them
+    if (postsNeedingScraping.length > 0 && scrapeMissingContent) {
+      console.log(`[Bulk Import] Scraping ${postsNeedingScraping.length} posts (${postsNeedingScraping.length} credits)...`);
+      const urlsToScrape = postsNeedingScraping.map(p => p.url);
+      const scrapedResults = await scrapeSelectedUrls(urlsToScrape);
+      
+      // Merge scraped content into posts
+      const scrapedMap = new Map(scrapedResults.map(r => [r.url, r]));
+      for (const post of postsNeedingScraping) {
+        const scraped = scrapedMap.get(post.url);
+        if (scraped && scraped.success) {
+          (post as any).content = scraped.content;
+          post.publishedDate = scraped.publishedDate || post.publishedDate || null;
+        }
+      }
+    } else if (postsNeedingScraping.length > 0) {
+      console.log(`[Bulk Import] ⚠️ ${postsNeedingScraping.length} posts missing content. Set scrapeMissingContent=true to scrape them.`);
+    }
 
     const results = {
       total: postsToImport.length,
@@ -120,7 +151,7 @@ export async function POST(request: NextRequest) {
 
     // Process posts in parallel batches (5 at a time to avoid overwhelming the system)
     const BATCH_SIZE = 5;
-    const processPost = async (post: { url: string; title: string; detectedAssetType?: string | null; publishedDate?: string | null }) => {
+    const processPost = async (post: { url: string; title: string; detectedAssetType?: string | null; publishedDate?: string | null; content?: string }) => {
       try {
         if (processedUrls.has(post.url)) {
           return { success: false, skipped: true, url: post.url, reason: "Duplicate selected in this import" };
@@ -131,18 +162,24 @@ export async function POST(request: NextRequest) {
           return { success: false, skipped: true, url: post.url, reason: "Already imported" };
         }
 
-        // Fetch content and extract published date
-        let content = "";
+        // Use pre-scraped content if available, otherwise fetch
+        let content = (post as any).content || "";
         let extractionWarning: string | null = null;
         let resolvedPublishedDate = post.publishedDate || null;
 
-        try {
-          const { content: fetchedContent, publishedDate } = await fetchBlogPostContentWithDate(post.url);
-          content = fetchedContent;
-          resolvedPublishedDate = post.publishedDate || publishedDate || null;
-        } catch (error) {
-          extractionWarning = error instanceof Error ? error.message : "Unknown error during content extraction";
-          content = `Content extraction failed for ${post.url}\n\nError: ${extractionWarning}`;
+        // If no pre-scraped content, try to fetch (fallback to Jina)
+        if (!content || content.trim().length === 0) {
+          try {
+            const { content: fetchedContent, publishedDate } = await fetchBlogPostContentWithDate(post.url);
+            content = fetchedContent;
+            resolvedPublishedDate = post.publishedDate || publishedDate || null;
+          } catch (error) {
+            extractionWarning = error instanceof Error ? error.message : "Unknown error during content extraction";
+            content = `Content extraction failed for ${post.url}\n\nError: ${extractionWarning}`;
+          }
+        } else {
+          // Content was pre-scraped, no additional credits needed
+          console.log(`[Bulk Import] Using pre-scraped content for ${post.url} (0 additional credits)`);
         }
         
         // Validate content - if content is too short or invalid, mark as ERROR
@@ -262,10 +299,20 @@ export async function POST(request: NextRequest) {
 
     console.log(`[Bulk Import] Completed: ${results.success} succeeded, ${results.failed} failed, ${results.skipped} skipped`);
 
+    const creditsUsed = scrapeMissingContent && postsNeedingScraping.length > 0 
+      ? postsNeedingScraping.length 
+      : 0;
+
     return NextResponse.json({
       success: true,
       results,
       message: `Imported ${results.success} of ${results.total} blog posts`,
+      creditInfo: {
+        additionalCreditsUsed: creditsUsed,
+        message: creditsUsed > 0
+          ? `${creditsUsed} credits used for scraping missing content`
+          : 'No additional credits used (used pre-scraped content)',
+      },
     });
   } catch (error) {
     console.error("Error bulk importing blog posts:", error);
