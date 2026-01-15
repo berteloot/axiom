@@ -6,6 +6,42 @@ const JINA_MIN_DELAY_MS = 1500;
 let lastJinaRequestTime = 0;
 let jinaQueue: Promise<void> = Promise.resolve();
 
+// Circuit breaker for Jina API
+let jinaFailureCount = 0;
+let jinaLastFailureTime = 0;
+const JINA_CIRCUIT_BREAKER_THRESHOLD = 3;
+const JINA_CIRCUIT_BREAKER_RESET_MS = 60000; // 1 minute
+
+function isJinaCircuitBreakerOpen(): boolean {
+  if (jinaFailureCount >= JINA_CIRCUIT_BREAKER_THRESHOLD) {
+    const timeSinceLastFailure = Date.now() - jinaLastFailureTime;
+    if (timeSinceLastFailure < JINA_CIRCUIT_BREAKER_RESET_MS) {
+      return true; // Circuit breaker is open
+    } else {
+      // Reset circuit breaker after timeout
+      jinaFailureCount = 0;
+      logger.info('Jina circuit breaker reset after timeout');
+      return false;
+    }
+  }
+  return false;
+}
+
+function recordJinaFailure(): void {
+  jinaFailureCount++;
+  jinaLastFailureTime = Date.now();
+  if (jinaFailureCount >= JINA_CIRCUIT_BREAKER_THRESHOLD) {
+    logger.warn('Jina circuit breaker opened', { failureCount: jinaFailureCount });
+  }
+}
+
+function recordJinaSuccess(): void {
+  if (jinaFailureCount > 0) {
+    jinaFailureCount = 0;
+    logger.info('Jina circuit breaker closed after successful request');
+  }
+}
+
 /**
  * Configuration for blog extractor
  * Centralizes all magic numbers and hard-coded values
@@ -270,6 +306,12 @@ async function callJinaReaderAPI(
     throw new Error("JINA_API_KEY environment variable is not set. Get your Jina AI API key for free: https://jina.ai/?sui=apikey");
   }
 
+  // Check circuit breaker
+  if (isJinaCircuitBreakerOpen()) {
+    logger.warn('Jina circuit breaker is open, skipping API call', { url });
+    throw new Error('Jina service temporarily unavailable (circuit breaker open)');
+  }
+
   const normalizedUrl = normalizeUrl(url);
   const {
     format = 'html',
@@ -367,14 +409,33 @@ async function callJinaReaderAPI(
           continue;
         }
 
+        if (response.status === 503 && attempt < retries) {
+          // Service unavailable - use exponential backoff with longer delays
+          const backoff = Math.min(
+            DEFAULT_CONFIG.retry.baseDelayMs * Math.pow(3, attempt + 1),
+            60000 // Max 60 seconds
+          );
+          logger.warn('Jina service unavailable (503), backing off', { attempt: attempt + 1, backoffMs: backoff });
+          await new Promise((resolve) => setTimeout(resolve, backoff));
+          continue;
+        }
+
         const errorText = await response.text().catch(() => '');
         console.error(`[Jina Reader] API error: ${response.status} ${response.statusText}`);
         if (errorText) {
           console.error(`[Jina Reader] Error details: ${errorText.substring(0, 200)}`);
         }
 
+        // Record failure for circuit breaker (only on last attempt or non-retryable errors)
+        if (attempt === retries || (response.status !== 429 && response.status !== 503)) {
+          recordJinaFailure();
+        }
+
         throw new Error(`Jina API error: ${response.status} - ${response.statusText}`);
       }
+
+      // Record success to reset circuit breaker
+      recordJinaSuccess();
 
       const rateLimitRemaining = response.headers.get('X-RateLimit-Remaining');
       if (rateLimitRemaining && parseInt(rateLimitRemaining, 10) < 10) {
@@ -439,6 +500,7 @@ async function callJinaReaderAPI(
       if (isLastAttempt) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         console.error(`[Jina Reader] Failed after ${retries + 1} attempts: ${errorMessage}`);
+        recordJinaFailure();
         throw error;
       }
     }
@@ -2492,14 +2554,24 @@ export async function extractBlogPostUrls(
 
     const concurrency = DEFAULT_CONFIG.pagination.validationConcurrency;
 
+    // Skip validation if Jina circuit breaker is open (service is down)
+    const shouldSkipValidation = isJinaCircuitBreakerOpen() && isBlogListingPage;
+
     if (isBlogListingPage && uniquePosts.length > 0) {
       // For blog listing pages, trust the extraction but still enrich dates when missing
       const missingDates = uniquePosts.filter((post) => !post.publishedDate).length;
-      logger.info('Skipping validation for blog listing page', { blogUrl, candidateCount: beforeCount, missingDates });
-      validated = await enrichDatesOnly(uniquePosts, concurrency);
+      if (shouldSkipValidation) {
+        logger.info('Skipping validation for blog listing page (Jina circuit breaker open)', { blogUrl, candidateCount: beforeCount, missingDates });
+        validated = uniquePosts; // Trust sitemap/extraction results
+      } else {
+        logger.info('Skipping validation for blog listing page', { blogUrl, candidateCount: beforeCount, missingDates });
+        validated = await enrichDatesOnly(uniquePosts, concurrency);
+      }
     } else {
       // For other pages, validate candidates
-      validated = await filterAndEnrichCandidates(uniquePosts, concurrency);
+      // Increase concurrency if Jina is down to speed up direct fetch attempts
+      const effectiveConcurrency = isJinaCircuitBreakerOpen() ? Math.min(concurrency * 2, 10) : concurrency;
+      validated = await filterAndEnrichCandidates(uniquePosts, effectiveConcurrency);
     }
 
     // Respect maxPosts after validation (validation may drop many non-articles)
