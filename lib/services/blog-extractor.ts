@@ -9,20 +9,28 @@ let jinaQueue: Promise<void> = Promise.resolve();
 // Circuit breaker for Jina API
 let jinaFailureCount = 0;
 let jinaLastFailureTime = 0;
+let jinaCircuitBreakerOpenTime: number | null = null;
 const JINA_CIRCUIT_BREAKER_THRESHOLD = 3;
 const JINA_CIRCUIT_BREAKER_RESET_MS = 60000; // 1 minute
 
 function isJinaCircuitBreakerOpen(): boolean {
   if (jinaFailureCount >= JINA_CIRCUIT_BREAKER_THRESHOLD) {
-    const timeSinceLastFailure = Date.now() - jinaLastFailureTime;
-    if (timeSinceLastFailure < JINA_CIRCUIT_BREAKER_RESET_MS) {
-      return true; // Circuit breaker is open
-    } else {
+    // If circuit breaker was just opened, record the time
+    if (jinaCircuitBreakerOpenTime === null) {
+      jinaCircuitBreakerOpenTime = Date.now();
+      logger.warn('Jina circuit breaker opened', { failureCount: jinaFailureCount });
+    }
+    
+    // Check if enough time has passed to reset
+    const timeSinceOpen = Date.now() - jinaCircuitBreakerOpenTime;
+    if (timeSinceOpen >= JINA_CIRCUIT_BREAKER_RESET_MS) {
       // Reset circuit breaker after timeout
       jinaFailureCount = 0;
-      logger.info('Jina circuit breaker reset after timeout');
+      jinaCircuitBreakerOpenTime = null;
+      logger.info('Jina circuit breaker reset after timeout', { timeSinceOpenMs: timeSinceOpen });
       return false;
     }
+    return true; // Circuit breaker is still open
   }
   return false;
 }
@@ -30,7 +38,8 @@ function isJinaCircuitBreakerOpen(): boolean {
 function recordJinaFailure(): void {
   jinaFailureCount++;
   jinaLastFailureTime = Date.now();
-  if (jinaFailureCount >= JINA_CIRCUIT_BREAKER_THRESHOLD) {
+  if (jinaFailureCount >= JINA_CIRCUIT_BREAKER_THRESHOLD && jinaCircuitBreakerOpenTime === null) {
+    jinaCircuitBreakerOpenTime = Date.now();
     logger.warn('Jina circuit breaker opened', { failureCount: jinaFailureCount });
   }
 }
@@ -38,6 +47,7 @@ function recordJinaFailure(): void {
 function recordJinaSuccess(): void {
   if (jinaFailureCount > 0) {
     jinaFailureCount = 0;
+    jinaCircuitBreakerOpenTime = null;
     logger.info('Jina circuit breaker closed after successful request');
   }
 }
@@ -536,7 +546,12 @@ export async function fetchHtml(url: string, options?: { useJina?: boolean }): P
   try {
     const response = await fetch(normalizedUrl, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; BlogExtractor/1.0)",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
       },
       signal: AbortSignal.timeout(30000), // 30 seconds for blog pages
     });
@@ -2224,6 +2239,24 @@ export async function extractBlogPostUrls(
             dateRange: { start: dateRangeStart, end: dateRangeEnd }
           });
         }
+        
+        // If we got enough posts from sitemap and it's a blog listing page, trust sitemap data and skip validation
+        if (isBlogListingPage && blogPosts.length > 0 && 
+            (maxPosts === undefined || blogPosts.length >= maxPosts || scopedSitemapPosts.length >= 50)) {
+          logger.info('Trusting sitemap data for blog listing page, skipping validation and pagination', { 
+            count: blogPosts.length, 
+            blogUrl 
+          });
+          // Apply date filtering and return early
+          const finalPosts = maxPosts !== undefined ? blogPosts.slice(0, maxPosts) : blogPosts;
+          logger.info('Extraction complete (sitemap only)', {
+            candidates: scopedSitemapPosts.length,
+            validated: finalPosts.length,
+            returning: finalPosts.length,
+            blogUrl
+          });
+          return finalPosts;
+        }
       }
     } catch (error) {
       logger.warn('Sitemap/RSS fetch failed, continuing with page extraction', { 
@@ -2328,126 +2361,126 @@ export async function extractBlogPostUrls(
       if (html && typeof html === "string" && html.trim().length > 0) {
         const $ = cheerio.load(html);
         const seenUrls = new Set(blogPosts.map(p => p.url));
-      
-      // Check if we're in library context
-      const basePath = baseUrl.pathname.toLowerCase();
-      const isLibraryContext =
-        basePath.includes("/library") ||
-        basePath.includes("/resources") ||
-        basePath.includes("/all-media") ||
-        basePath.includes("/media");
-
-      // Common selectors for blog post links
-      const selectors = [
-        'article a[href]',
-        '.blog-post a[href]',
-        '.post a[href]',
-        'a[href*="/blog/"]',
-        'a[href*="/post/"]',
-        'a[href*="/article/"]',
-        '.entry-title a',
-        'h2 a[href]',
-        'h3 a[href]',
-        '.card a[href]',
-        '[class*="blog"] a[href]',
-        '[class*="post"] a[href]',
-      ];
-
-      // Try each selector
-      let totalLinksFound = 0;
-      let totalLinksExcluded = 0;
-      
-      for (const selector of selectors) {
-        // Stop early if we've reached maxPosts
-        if (maxPosts !== undefined && blogPosts.length >= maxPosts) {
-          break;
-        }
         
-        const linksForSelector = $(selector).length;
-        if (linksForSelector > 0) {
-          console.log(`[Blog Extractor] Selector "${selector}" found ${linksForSelector} links`);
-        }
+        // Check if we're in library context
+        const basePath = baseUrl.pathname.toLowerCase();
+        const isLibraryContext =
+          basePath.includes("/library") ||
+          basePath.includes("/resources") ||
+          basePath.includes("/all-media") ||
+          basePath.includes("/media");
+
+        // Common selectors for blog post links
+        const selectors = [
+          'article a[href]',
+          '.blog-post a[href]',
+          '.post a[href]',
+          'a[href*="/blog/"]',
+          'a[href*="/post/"]',
+          'a[href*="/article/"]',
+          '.entry-title a',
+          'h2 a[href]',
+          'h3 a[href]',
+          '.card a[href]',
+          '[class*="blog"] a[href]',
+          '[class*="post"] a[href]',
+        ];
+
+        // Try each selector
+        let totalLinksFound = 0;
+        let totalLinksExcluded = 0;
         
-        $(selector).each((_, element) => {
-          totalLinksFound++;
+        for (const selector of selectors) {
           // Stop early if we've reached maxPosts
           if (maxPosts !== undefined && blogPosts.length >= maxPosts) {
-            return false; // Break out of each loop
+            break;
           }
           
-          const $link = $(element);
-          const href = $link.attr('href');
-          if (!href) return;
-
-          // Resolve relative URLs
-          const absoluteUrl = resolveUrl(baseUrl.href, href);
-          
-          // Skip if we've seen this URL
-          if (seenUrls.has(absoluteUrl)) return;
-          
-          // Use the exclusion function to filter out non-post pages
-          if (shouldExcludeUrl(absoluteUrl, baseUrl)) {
-            totalLinksExcluded++;
-            return;
+          const linksForSelector = $(selector).length;
+          if (linksForSelector > 0) {
+            console.log(`[Blog Extractor] Selector "${selector}" found ${linksForSelector} links`);
           }
-
-          // Get title from link text or nearby elements
-          let title = $link.text().trim();
           
-          // If link text is empty or too short, try image alt text (for image-only links like ACSIS)
-          if (!title || title.length < 5) {
-            const imgAlt = $link.find('img').attr('alt')?.trim();
-            if (imgAlt && imgAlt.length >= 5) {
-              title = imgAlt;
+          $(selector).each((_, element) => {
+            totalLinksFound++;
+            // Stop early if we've reached maxPosts
+            if (maxPosts !== undefined && blogPosts.length >= maxPosts) {
+              return false; // Break out of each loop
             }
-          }
-          
-          // If still no title, try parent container elements
-          if (!title || title.length < 5) {
-            const $parent = $link.closest('article, .post, .blog-post, .card, .entry, .item, [class*="blog"], [class*="post"]');
-            title = $parent.find('h1, h2, h3, h4, .title, .entry-title, .post-title').first().text().trim() || title;
-          }
-          
-          // CRITICAL: If still no title, derive from URL slug (for ALL contexts, not just library)
-          // This handles image-only links like ACSIS blog where links contain only <img> tags
-          let isSlugDerived = false;
-          if (!title || title.length < 5) {
-            const slugTitle = deriveTitleFromSlug(absoluteUrl);
-            if (slugTitle && slugTitle.length >= DEFAULT_CONFIG.validation.slugDerivedMinTitleLength) {
-              title = slugTitle;
-              isSlugDerived = true;
-              logger.debug('Derived title from URL slug', { url: absoluteUrl, title });
-            }
-          }
+            
+            const $link = $(element);
+            const href = $link.attr('href');
+            if (!href) return;
 
-          // Use lower minimum length for slug-derived titles (they're always valid if derived from URL)
-          // For extracted titles, use the standard minimum
-          const minTitleLength = isSlugDerived 
-            ? DEFAULT_CONFIG.validation.slugDerivedMinTitleLength
-            : (isLibraryContext ? DEFAULT_CONFIG.validation.libraryMinTitleLength : DEFAULT_CONFIG.validation.minTitleLength);
-          
-          if (title && title.length >= minTitleLength && absoluteUrl.startsWith('http')) {
-            const $parentForDate = $link.closest('article, .post, .blog-post, .card, .entry, .item, [class*="blog"], [class*="post"]');
-            const parentText = ($parentForDate.length ? $parentForDate : $link.parent()).text().trim();
-            const listingDate = extractDateFromText(parentText);
-            const publishedDate = listingDate || extractPublishedDate(absoluteUrl);
-            // Filter by date range if provided
-            if (matchesDateRange(publishedDate)) {
-              blogPosts.push({ 
-                url: absoluteUrl, 
-                title,
-                publishedDate,
-              });
-              seenUrls.add(absoluteUrl);
-              // Stop early if we've reached maxPosts
-              if (maxPosts !== undefined && blogPosts.length >= maxPosts) {
-                return false; // Break out of each loop
+            // Resolve relative URLs
+            const absoluteUrl = resolveUrl(baseUrl.href, href);
+            
+            // Skip if we've seen this URL
+            if (seenUrls.has(absoluteUrl)) return;
+            
+            // Use the exclusion function to filter out non-post pages
+            if (shouldExcludeUrl(absoluteUrl, baseUrl)) {
+              totalLinksExcluded++;
+              return;
+            }
+
+            // Get title from link text or nearby elements
+            let title = $link.text().trim();
+            
+            // If link text is empty or too short, try image alt text (for image-only links like ACSIS)
+            if (!title || title.length < 5) {
+              const imgAlt = $link.find('img').attr('alt')?.trim();
+              if (imgAlt && imgAlt.length >= 5) {
+                title = imgAlt;
               }
             }
-          }
-        });
-      }
-      
+            
+            // If still no title, try parent container elements
+            if (!title || title.length < 5) {
+              const $parent = $link.closest('article, .post, .blog-post, .card, .entry, .item, [class*="blog"], [class*="post"]');
+              title = $parent.find('h1, h2, h3, h4, .title, .entry-title, .post-title').first().text().trim() || title;
+            }
+            
+            // CRITICAL: If still no title, derive from URL slug (for ALL contexts, not just library)
+            // This handles image-only links like ACSIS blog where links contain only <img> tags
+            let isSlugDerived = false;
+            if (!title || title.length < 5) {
+              const slugTitle = deriveTitleFromSlug(absoluteUrl);
+              if (slugTitle && slugTitle.length >= DEFAULT_CONFIG.validation.slugDerivedMinTitleLength) {
+                title = slugTitle;
+                isSlugDerived = true;
+                logger.debug('Derived title from URL slug', { url: absoluteUrl, title });
+              }
+            }
+
+            // Use lower minimum length for slug-derived titles (they're always valid if derived from URL)
+            // For extracted titles, use the standard minimum
+            const minTitleLength = isSlugDerived 
+              ? DEFAULT_CONFIG.validation.slugDerivedMinTitleLength
+              : (isLibraryContext ? DEFAULT_CONFIG.validation.libraryMinTitleLength : DEFAULT_CONFIG.validation.minTitleLength);
+            
+            if (title && title.length >= minTitleLength && absoluteUrl.startsWith('http')) {
+              const $parentForDate = $link.closest('article, .post, .blog-post, .card, .entry, .item, [class*="blog"], [class*="post"]');
+              const parentText = ($parentForDate.length ? $parentForDate : $link.parent()).text().trim();
+              const listingDate = extractDateFromText(parentText);
+              const publishedDate = listingDate || extractPublishedDate(absoluteUrl);
+              // Filter by date range if provided
+              if (matchesDateRange(publishedDate)) {
+                blogPosts.push({ 
+                  url: absoluteUrl, 
+                  title,
+                  publishedDate,
+                });
+                seenUrls.add(absoluteUrl);
+                // Stop early if we've reached maxPosts
+                if (maxPosts !== undefined && blogPosts.length >= maxPosts) {
+                  return false; // Break out of each loop
+                }
+              }
+            }
+          });
+        }
+        
         if (totalLinksFound > 0) {
           console.log(`[Blog Extractor] Single-page extraction: Found ${totalLinksFound} total links, excluded ${totalLinksExcluded}, kept ${blogPosts.length} posts`);
         } else {
