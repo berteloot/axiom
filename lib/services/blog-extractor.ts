@@ -3012,7 +3012,33 @@ export async function fetchBlogPostContentWithDate(url: string): Promise<{ conte
       }
     }
 
-    // Try direct fetch if content is insufficient and domain is not blocked
+    // Try simple Jina GET request if content is insufficient (works better for JS-rendered sites)
+    if ((!content || content.trim().length < 100) && JINA_API_KEY && !isJinaCircuitBreakerOpen()) {
+      try {
+        logger.info('Trying simple Jina GET request', { url });
+        const jinaGetResponse = await fetch(`https://r.jina.ai/${normalizedUrl}`, {
+          headers: {
+            'Authorization': `Bearer ${JINA_API_KEY}`,
+            'Accept': 'text/plain',
+          },
+          signal: AbortSignal.timeout(60000),
+        });
+        
+        if (jinaGetResponse.ok) {
+          const jinaText = await jinaGetResponse.text();
+          if (jinaText && jinaText.length > 200) {
+            content = jinaText;
+            logger.info('Simple Jina GET request succeeded', { url, contentLength: content.length });
+          }
+        } else {
+          logger.warn('Simple Jina GET request failed', { url, status: jinaGetResponse.status });
+        }
+      } catch (jinaGetError) {
+        logger.warn('Simple Jina GET request error', { url, error: jinaGetError instanceof Error ? jinaGetError.message : String(jinaGetError) });
+      }
+    }
+    
+    // Try direct fetch if content is still insufficient and domain is not blocked
     if ((!content || content.trim().length < 100) && !domainIsBlocked) {
       try {
         const html = await fetchHtml(normalizedUrl, { useJina: !skipJinaHtml }).catch(() => "");
