@@ -2274,21 +2274,6 @@ export async function extractBlogPostUrls(
         basePath.includes("/resources") ||
         basePath.includes("/all-media") ||
         basePath.includes("/media");
-      
-      // Helper to derive title from URL slug if title is too short
-      const deriveTitleFromSlug = (url: string): string => {
-        try {
-          const urlObj = new URL(url);
-          const pathParts = urlObj.pathname.split('/').filter(p => p);
-          const slug = pathParts[pathParts.length - 1] || '';
-          // Convert slug to readable title (replace hyphens with spaces, capitalize)
-          return slug
-            .replace(/-/g, ' ')
-            .replace(/\b\w/g, (char) => char.toUpperCase());
-        } catch {
-          return '';
-        }
-      };
 
       // Common selectors for blog post links
       const selectors = [
@@ -2401,11 +2386,11 @@ export async function extractBlogPostUrls(
         });
       }
       
-      if (totalLinksFound > 0) {
-        console.log(`[Blog Extractor] Single-page extraction: Found ${totalLinksFound} total links, excluded ${totalLinksExcluded}, kept ${blogPosts.length} posts`);
-      } else {
-        console.warn(`[Blog Extractor] Single-page extraction: No links found with any selector. Page might require JavaScript rendering.`);
-      }
+        if (totalLinksFound > 0) {
+          console.log(`[Blog Extractor] Single-page extraction: Found ${totalLinksFound} total links, excluded ${totalLinksExcluded}, kept ${blogPosts.length} posts`);
+        } else {
+          console.warn(`[Blog Extractor] Single-page extraction: No links found with any selector. Page might require JavaScript rendering.`);
+        }
       } else {
         console.warn(`[Blog Extractor] Failed to fetch HTML for fallback parsing, skipping HTML extraction`);
       }
