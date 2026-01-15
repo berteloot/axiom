@@ -52,6 +52,30 @@ function recordJinaSuccess(): void {
   }
 }
 
+// Track direct fetch failures per domain to skip enrichment when site is blocking
+const directFetchFailures = new Map<string, number>();
+const DIRECT_FETCH_FAILURE_THRESHOLD = 3;
+
+function recordDirectFetchFailure(url: string): void {
+  try {
+    const domain = new URL(url).hostname;
+    const count = (directFetchFailures.get(domain) || 0) + 1;
+    directFetchFailures.set(domain, count);
+    if (count === DIRECT_FETCH_FAILURE_THRESHOLD) {
+      logger.warn('Direct fetch failures threshold reached for domain', { domain, count });
+    }
+  } catch { /* ignore invalid URLs */ }
+}
+
+function isDirectFetchBlocked(url: string): boolean {
+  try {
+    const domain = new URL(url).hostname;
+    return (directFetchFailures.get(domain) || 0) >= DIRECT_FETCH_FAILURE_THRESHOLD;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Configuration for blog extractor
  * Centralizes all magic numbers and hard-coded values
@@ -2662,6 +2686,10 @@ export async function fetchBlogPostContentWithDate(url: string): Promise<{ conte
     let content = '';
     let htmlForDate: string | undefined;
     let skipJinaHtml = false;
+    let jinaError: Error | null = null;
+
+    // Check if domain is blocking direct fetch before attempting
+    const domainIsBlocked = isDirectFetchBlocked(url);
 
     // Use improved Jina Reader API with POST method and structured responses
     try {
@@ -2676,20 +2704,44 @@ export async function fetchBlogPostContentWithDate(url: string): Promise<{ conte
       });
 
       content = result.data.content || '';
-    } catch (jinaError) {
-      const errorMessage = jinaError instanceof Error ? jinaError.message : String(jinaError);
-      console.warn(`[Blog Extractor] Jina content fetch failed for ${url}, falling back to HTML:`, errorMessage);
-      skipJinaHtml = true;
+    } catch (jinaErr) {
+      jinaError = jinaErr instanceof Error ? jinaErr : new Error(String(jinaErr));
+      const errorMessage = jinaError.message;
+      
+      // Handle 422 errors (No content available) - try direct fetch as fallback
+      const is422Error = errorMessage.includes('422') || errorMessage.includes('No content available');
+      
+      if (is422Error) {
+        logger.warn('Jina returned 422 (no content), will try direct fetch', { url });
+        skipJinaHtml = false; // Still try direct fetch even if Jina failed
+      } else {
+        logger.warn(`[Blog Extractor] Jina content fetch failed for ${url}, falling back to HTML:`, errorMessage);
+        skipJinaHtml = true;
+      }
     }
 
-    if (!content || content.trim().length < 100) {
-      const html = await fetchHtml(normalizedUrl, { useJina: !skipJinaHtml }).catch(() => "");
-      htmlForDate = html;
-      content = extractTextFromHtml(html);
+    // Try direct fetch if content is insufficient and domain is not blocked
+    if ((!content || content.trim().length < 100) && !domainIsBlocked) {
+      try {
+        const html = await fetchHtml(normalizedUrl, { useJina: !skipJinaHtml }).catch(() => "");
+        htmlForDate = html;
+        const extractedText = extractTextFromHtml(html);
+        if (extractedText && extractedText.trim().length >= 100) {
+          content = extractedText;
+        }
+      } catch (fetchError) {
+        recordDirectFetchFailure(url);
+        logger.warn('Direct fetch failed', { url, error: fetchError instanceof Error ? fetchError.message : String(fetchError) });
+      }
+    } else if (domainIsBlocked) {
+      logger.info('Skipping direct fetch (domain is blocked)', { url });
     }
 
+    // If we still don't have content, provide a minimal fallback instead of throwing
     if (!content || content.trim().length < 100) {
-      throw new Error("Could not extract meaningful content from the blog post");
+      const fallbackTitle = deriveTitleFromSlug(url) || new URL(normalizedUrl).pathname.split('/').pop() || 'Blog Post';
+      content = `# ${fallbackTitle}\n\nContent extraction failed for this blog post.\n\nURL: ${normalizedUrl}\n\n${jinaError ? `Jina Error: ${jinaError.message}\n\n` : ''}${domainIsBlocked ? 'Note: Direct fetch is blocked for this domain.\n\n' : ''}Please visit the URL directly to view the content.`;
+      logger.warn('Using fallback content due to extraction failure', { url, jinaError: jinaError?.message, domainBlocked: domainIsBlocked });
     }
 
     // Try to fetch HTML for date extraction (in parallel or as fallback)
@@ -2700,7 +2752,8 @@ export async function fetchBlogPostContentWithDate(url: string): Promise<{ conte
       publishedDate = extractPublishedDate(normalizedUrl, undefined, content);
       
       // If not found in content, try fetching HTML for meta tags/structured data
-      if (!publishedDate) {
+      // Only if domain is not blocked
+      if (!publishedDate && !domainIsBlocked) {
         const html = htmlForDate || await fetchHtml(normalizedUrl, { useJina: !skipJinaHtml }).catch(() => undefined);
         if (html) {
           publishedDate = extractPublishedDate(normalizedUrl, html, content);
@@ -2722,6 +2775,8 @@ export async function fetchBlogPostContentWithDate(url: string): Promise<{ conte
     
     return { content, publishedDate };
   } catch (error) {
+    // This catch block should rarely be hit now since we provide fallback content
+    // But keep it for any unexpected errors
     if (error instanceof Error) {
       throw new Error(`Failed to fetch blog post content: ${error.message}`);
     }
