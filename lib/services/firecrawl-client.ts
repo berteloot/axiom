@@ -12,7 +12,7 @@
  * - 2 concurrent requests max
  */
 
-import FirecrawlApp from '@mendable/firecrawl-js';
+import Firecrawl from '@mendable/firecrawl-js';
 
 // ============================================================================
 // Configuration
@@ -44,7 +44,7 @@ const FIRECRAWL_CIRCUIT_BREAKER_RESET_MS = 60000; // 1 minute
 
 // Initialize Firecrawl client (only if API key is set)
 const firecrawl = FIRECRAWL_API_KEY 
-  ? new FirecrawlApp({ apiKey: FIRECRAWL_API_KEY }) 
+  ? new Firecrawl({ apiKey: FIRECRAWL_API_KEY }) 
   : null;
 
 if (!FIRECRAWL_API_KEY) {
@@ -415,7 +415,7 @@ export async function scrapeWithFirecrawl(url: string): Promise<FirecrawlScrapeR
   try {
     const result = await withRetry(() =>
       enqueueFirecrawlRequest(async () => {
-        const response = await firecrawl.scrapeUrl(url, {
+        const response = await firecrawl.scrape(url, {
           formats: ['markdown'],
           onlyMainContent: true, // Exclude headers, footers, navs - key advantage over Jina
           waitFor: 2000, // Wait for JS to render
@@ -426,40 +426,40 @@ export async function scrapeWithFirecrawl(url: string): Promise<FirecrawlScrapeR
       })
     );
 
-    // Type assertion for the result
+    // SDK v2 returns { markdown, metadata } directly
     const scrapeResult = result as {
-      success: boolean;
-      error?: string;
       markdown?: string;
       metadata?: Record<string, unknown>;
     };
 
-    if (!scrapeResult.success) {
+    if (!scrapeResult.markdown) {
       throw new FirecrawlError(
-        scrapeResult.error || 'Scrape failed',
-        'ERR::SCRAPE::FAILED',
+        'Scrape returned empty content',
+        'ERR::SCRAPE::EMPTY',
         500,
         true
       );
     }
 
-    // Track credit usage
-    trackCreditUsage(1);
+    // Track credit usage (metadata includes creditsUsed)
+    const creditsUsed = (scrapeResult.metadata?.creditsUsed as number) || 1;
+    trackCreditUsage(creditsUsed);
     recordFirecrawlSuccess();
 
     const metadata = scrapeResult.metadata || {};
     
     logFirecrawl('info', 'Scrape successful', {
       url,
-      contentLength: scrapeResult.markdown?.length || 0,
+      contentLength: scrapeResult.markdown.length,
       title: metadata.title as string || null,
-      creditsUsed: estimatedCreditsUsed,
+      creditsUsed,
+      totalCreditsUsed: estimatedCreditsUsed,
     });
 
     return {
-      content: scrapeResult.markdown || '',
-      title: (metadata.title as string) || null,
-      description: (metadata.description as string) || null,
+      content: scrapeResult.markdown,
+      title: (metadata.title as string) || (metadata.ogTitle as string) || null,
+      description: (metadata.description as string) || (metadata.ogDescription as string) || null,
       publishedDate: extractDateFromMetadata(metadata),
       url: (metadata.sourceURL as string) || (metadata.url as string) || url,
     };
@@ -536,7 +536,7 @@ export async function mapWithFirecrawl(
   try {
     const result = await withRetry(() =>
       enqueueFirecrawlRequest(async () => {
-        const response = await firecrawl.mapUrl(baseUrl, {
+        const response = await firecrawl.map(baseUrl, {
           search: options?.search,
           limit: options?.limit || 100,
         });
@@ -545,27 +545,24 @@ export async function mapWithFirecrawl(
       })
     );
 
-    // Type assertion
+    // SDK v2 returns { links: [{ url: string }] }
     const mapResult = result as {
-      success: boolean;
-      error?: string;
-      links?: string[];
+      links?: Array<{ url: string } | string>;
     };
 
-    if (!mapResult.success) {
-      throw new FirecrawlError(
-        mapResult.error || 'Map failed',
-        'ERR::MAP::FAILED',
-        500,
-        true
-      );
+    if (!mapResult.links || mapResult.links.length === 0) {
+      logFirecrawl('warn', 'Map returned no links', { baseUrl });
+      return [];
     }
 
     // Track credit usage (map costs 1 credit)
     trackCreditUsage(1);
     recordFirecrawlSuccess();
 
-    const links = mapResult.links || [];
+    // Extract URLs from links (can be objects or strings)
+    const links = mapResult.links.map(link => 
+      typeof link === 'string' ? link : link.url
+    );
 
     // Filter by include/exclude paths if specified
     let filteredLinks = links;
@@ -669,7 +666,7 @@ export async function crawlWithFirecrawl(
   try {
     const result = await withRetry(() =>
       enqueueFirecrawlRequest(async () => {
-        const response = await firecrawl.crawlUrl(baseUrl, {
+        const response = await firecrawl.crawl(baseUrl, {
           limit: maxPages,
           scrapeOptions: {
             formats: ['markdown'],
