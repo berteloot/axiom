@@ -2208,27 +2208,69 @@ export async function extractBlogPostUrls(
   logger.info('Starting extraction', { blogUrl, maxPosts, dateRangeStart, dateRangeEnd });
   const baseUrl = new URL(normalizeUrl(blogUrl));
   let blogPosts: Array<{ url: string; title: string; publishedDate: string | null }> = [];
-  const isBlogListingPage = baseUrl.pathname.toLowerCase().includes('/blog');
   const basePath = baseUrl.pathname.replace(/\/+$/, '').toLowerCase();
   const isPathScoped = basePath.length > 1;
+  
+  // Check if URL is a single article (not a listing page)
+  // Single articles have a slug after a common listing path like /blog/, /resources/, /articles/
+  const listingPaths = ['blog', 'blogs', 'resources', 'articles', 'news', 'insights', 'posts', 'library', 'media'];
+  const pathParts = basePath.split('/').filter(p => p);
+  const isSingleArticleUrl = pathParts.length >= 2 && 
+    listingPaths.includes(pathParts[0]) && 
+    pathParts[pathParts.length - 1].includes('-') && // Slugs typically have hyphens
+    pathParts[pathParts.length - 1].length > 10;     // Slugs are typically longer than 10 chars
+  
+  if (isSingleArticleUrl) {
+    logger.info('Detected single article URL, returning directly', { blogUrl });
+    // Derive title from URL slug
+    const slug = pathParts[pathParts.length - 1];
+    const title = slug
+      .replace(/[-_]+/g, ' ')
+      .replace(/\b\w/g, (char) => char.toUpperCase())
+      .trim() || 'Blog Post';
+    
+    // Try to extract published date from the URL or fetch HTML
+    let publishedDate = extractPublishedDate(blogUrl);
+    
+    return [{
+      url: blogUrl,
+      title,
+      publishedDate,
+    }];
+  }
+  
+  const isBlogListingPage = baseUrl.pathname.toLowerCase().includes('/blog');
 
   const filterPostsByPath = (
     posts: Array<{ url: string; title: string; publishedDate: string | null }>
   ): Array<{ url: string; title: string; publishedDate: string | null }> => {
     if (!isPathScoped) return posts;
+    
+    // Get just the base listing path (e.g., /resources from /resources/some-article)
+    // This ensures we filter to posts under the same section, not requiring exact match
+    const baseListingPath = '/' + pathParts[0]; // e.g., /resources, /blog
+    
     const scoped = posts.filter((post) => {
       try {
         const postPath = new URL(post.url).pathname.replace(/\/+$/, '').toLowerCase();
-        return postPath === basePath || postPath.startsWith(`${basePath}/`);
+        // Match posts under the same listing section
+        return postPath === basePath || 
+               postPath.startsWith(`${basePath}/`) ||
+               postPath.startsWith(`${baseListingPath}/`);
       } catch {
         return false;
       }
     });
+    
     if (scoped.length > 0) {
-      logger.info('Scoped extraction to base path', { basePath, before: posts.length, after: scoped.length });
+      logger.info('Scoped extraction to base path', { basePath, baseListingPath, before: posts.length, after: scoped.length });
       return scoped;
     }
-    return posts;
+    
+    // BUG FIX: Return empty array instead of ALL posts when no matches found
+    // This prevents returning random posts when a specific URL was requested
+    logger.warn('No posts matched the requested path, returning empty', { basePath, baseListingPath, totalPosts: posts.length });
+    return [];
   };
   
   // Parse date range if provided
@@ -2677,6 +2719,132 @@ export async function extractBlogPostUrls(
 }
 
 /**
+ * Clean up Jina Reader markdown output to extract just the article content
+ * Removes navigation, footer, and other non-article content
+ */
+function cleanupJinaMarkdown(markdown: string): string {
+  if (!markdown || markdown.length < 100) {
+    return markdown;
+  }
+
+  const lines = markdown.split('\n');
+  
+  // Patterns that indicate navigation/header/footer content (to skip)
+  const skipPatterns = [
+    /^\[.*\]\(https?:\/\/[^\)]+\)$/, // Links that are just navigation
+    /^!\[Image \d+:.*tracker.*\]/i, // Tracking pixels
+    /^\*\s+\[/,                       // Bullet point navigation links
+    /^#{1,6}\s+(About Us|Contact|Careers|Solutions|Industries|Products|Resources|News|Events)\s*$/i,
+    /^(About Us|Contact Us|Apply Now|Get Started)\s*$/i,
+    /©\s*\d{4}/,                      // Copyright notices
+    /All rights reserved/i,
+    /^Terms and Privacy/i,
+    /^\[Contact Us\]/i,
+    /^\[Apply Now\]/i,
+    /^NEW PRODUCT/i,
+  ];
+
+  // Find where the actual article starts (look for main heading)
+  let articleStartIndex = -1;
+  let articleEndIndex = lines.length;
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    
+    // Main article heading patterns:
+    // - "# Title" or "## Title" with substantial text
+    // - "Title\n=====" (setext heading)
+    if (articleStartIndex === -1) {
+      // Check for setext-style heading (line followed by ===)
+      if (i < lines.length - 1 && /^={3,}$/.test(lines[i + 1]?.trim())) {
+        // Check if this looks like an article title (not navigation)
+        const titleLine = line;
+        if (titleLine.length > 20 && !skipPatterns.some(p => p.test(titleLine))) {
+          articleStartIndex = i;
+          continue;
+        }
+      }
+      
+      // Check for atx-style heading (# Title)
+      const headingMatch = line.match(/^(#{1,2})\s+(.+)$/);
+      if (headingMatch) {
+        const title = headingMatch[2];
+        // Article titles are usually longer and not navigation
+        if (title.length > 20 && !skipPatterns.some(p => p.test(title))) {
+          articleStartIndex = i;
+          continue;
+        }
+      }
+    }
+    
+    // Find where article ends (footer starts)
+    if (articleStartIndex !== -1) {
+      // Footer indicators
+      if (/^#{1,6}\s+(About Us|Contact|Resources)\s*$/i.test(line) && i > articleStartIndex + 10) {
+        // Check if this is in a footer context (multiple nav-like items nearby)
+        let navItemCount = 0;
+        for (let j = i; j < Math.min(i + 10, lines.length); j++) {
+          if (/^\*\s+\[/.test(lines[j]) || /^\[.*\]\(/.test(lines[j])) {
+            navItemCount++;
+          }
+        }
+        if (navItemCount >= 3) {
+          articleEndIndex = i;
+          break;
+        }
+      }
+      
+      // Copyright/legal footer
+      if (/©\s*\d{4}|All rights reserved/i.test(line)) {
+        articleEndIndex = i;
+        break;
+      }
+    }
+  }
+  
+  // If we found article boundaries, extract just that portion
+  if (articleStartIndex !== -1) {
+    const articleLines = lines.slice(articleStartIndex, articleEndIndex);
+    
+    // Clean up the extracted article
+    const cleanedLines: string[] = [];
+    for (const line of articleLines) {
+      const trimmed = line.trim();
+      
+      // Skip empty image alt text lines
+      if (/^!\[Image \d+:.*\]\(/.test(trimmed) && trimmed.includes('small image')) {
+        continue;
+      }
+      
+      // Skip navigation-like patterns
+      if (skipPatterns.some(p => p.test(trimmed))) {
+        continue;
+      }
+      
+      cleanedLines.push(line);
+    }
+    
+    const result = cleanedLines.join('\n').trim();
+    
+    // Only return cleaned version if it has substantial content
+    if (result.length > 200) {
+      return result;
+    }
+  }
+  
+  // Fallback: return original but with obvious noise removed
+  const fallbackLines = lines.filter(line => {
+    const trimmed = line.trim();
+    // Remove tracking pixels and very short navigation
+    if (/^!\[Image \d+:.*tracker/i.test(trimmed)) return false;
+    if (/^NEW PRODUCT/i.test(trimmed)) return false;
+    return true;
+  });
+  
+  return fallbackLines.join('\n').trim();
+}
+
+/**
  * Fetch blog post content using Jina Reader
  */
 export async function fetchBlogPostContent(url: string): Promise<string> {
@@ -2824,6 +2992,9 @@ export async function fetchBlogPostContentWithDate(url: string): Promise<{ conte
       });
 
       content = result.data.content || '';
+      
+      // Post-process Jina markdown to extract just the article content
+      content = cleanupJinaMarkdown(content);
     } catch (jinaErr) {
       jinaError = jinaErr instanceof Error ? jinaErr : new Error(String(jinaErr));
       const errorMessage = jinaError.message;
