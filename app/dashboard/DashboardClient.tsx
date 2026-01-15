@@ -178,6 +178,8 @@ export default function DashboardClient() {
         assetTypes: urlFilters.assetTypes ?? [],
         color: urlFilters.color ?? "",
         inUse: urlFilters.inUse ?? "all",
+        uploadedBy: urlFilters.uploadedBy ?? [],
+        dateRange: urlFilters.dateRange ?? { start: null, end: null },
         sortBy: urlFilters.sortBy ?? "createdAt",
         sortDirection: urlFilters.sortDirection ?? "desc",
       });
@@ -918,6 +920,7 @@ export default function DashboardClient() {
           try {
             const response = await fetch("/api/assets/bulk-delete", {
               method: "DELETE",
+              credentials: "include",
               headers: {
                 "Content-Type": "application/json",
               },

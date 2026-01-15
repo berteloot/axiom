@@ -374,6 +374,13 @@ export async function DELETE(
     return NextResponse.json({ success: true, message: "Asset deleted successfully" });
   } catch (error) {
     console.error("Error deleting asset:", error);
+    const errorMessage = error instanceof Error ? error.message : "Failed to delete asset";
+    if (errorMessage.includes("No account selected")) {
+      return NextResponse.json(
+        { error: errorMessage },
+        { status: 401 }
+      );
+    }
     return NextResponse.json(
       { error: "Failed to delete asset" },
       { status: 500 }

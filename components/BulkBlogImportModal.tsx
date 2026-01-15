@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import { ALL_JOB_TITLES } from "@/lib/icp-targets";
 import { ASSET_TYPE_VALUES } from "@/lib/constants/asset-types";
+import { parseJsonResponse } from "@/lib/utils";
 
 interface BulkBlogImportModalProps {
   open: boolean;
@@ -133,20 +134,6 @@ export function BulkBlogImportModal({
   const [isLoadingIcp, setIsLoadingIcp] = useState(true);
   const [productLines, setProductLines] = useState<ProductLine[]>([]);
   const [isLoadingProductLines, setIsLoadingProductLines] = useState(true);
-
-  const parseJsonResponse = async (response: Response) => {
-    const contentType = response.headers.get("content-type") || "";
-    if (contentType.includes("application/json")) {
-      return response.json();
-    }
-
-    const text = await response.text();
-    const isHtml = text.trim().startsWith("<!DOCTYPE") || text.trim().startsWith("<html");
-    const fallbackMessage = isHtml
-      ? "Session expired or server returned HTML instead of JSON. Please refresh and try again."
-      : "Server returned an unexpected response format.";
-    throw new Error(fallbackMessage);
-  };
 
   // Fetch ICP targets and product lines
   useEffect(() => {

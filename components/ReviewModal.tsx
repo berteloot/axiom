@@ -26,6 +26,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { parseJsonResponse } from "@/lib/utils";
 
 interface ReviewModalProps {
   asset: Asset;
@@ -247,10 +248,12 @@ export function ReviewModal({
     try {
       const response = await fetch(`/api/assets/${asset.id}`, {
         method: "DELETE",
+        credentials: "include",
       });
 
       if (!response.ok) {
-        throw new Error("Failed to delete asset");
+        const errorData = await parseJsonResponse(response).catch(() => ({}));
+        throw new Error(errorData.error || "Failed to delete asset");
       }
 
       onApprove(); // Refresh the list
