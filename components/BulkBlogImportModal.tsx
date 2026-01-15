@@ -134,6 +134,20 @@ export function BulkBlogImportModal({
   const [productLines, setProductLines] = useState<ProductLine[]>([]);
   const [isLoadingProductLines, setIsLoadingProductLines] = useState(true);
 
+  const parseJsonResponse = async (response: Response) => {
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      return response.json();
+    }
+
+    const text = await response.text();
+    const isHtml = text.trim().startsWith("<!DOCTYPE") || text.trim().startsWith("<html");
+    const fallbackMessage = isHtml
+      ? "Session expired or server returned HTML instead of JSON. Please refresh and try again."
+      : "Server returned an unexpected response format.";
+    throw new Error(fallbackMessage);
+  };
+
   // Fetch ICP targets and product lines
   useEffect(() => {
     if (open) {
@@ -200,7 +214,7 @@ export function BulkBlogImportModal({
         }),
       });
 
-      const data = await response.json();
+      const data = await parseJsonResponse(response);
 
       if (!response.ok) {
         throw new Error(data.error || "Failed to preview blog posts");
@@ -324,7 +338,7 @@ export function BulkBlogImportModal({
             }),
           });
 
-          const data = await response.json();
+          const data = await parseJsonResponse(response);
 
           if (!response.ok) {
             const errorMessage = data.error || "Failed to import blog posts";
