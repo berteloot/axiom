@@ -244,6 +244,11 @@ export async function POST(request: NextRequest) {
     // Use normalizedUrl for same-domain checks
     const baseUrlForChecks = normalizedUrl;
     
+    // Track HTML fetch success rate to skip if consistently failing
+    let htmlFetchSuccessCount = 0;
+    let htmlFetchAttemptCount = 0;
+    const HTML_FETCH_SKIP_THRESHOLD = 3; // Skip HTML fetching if first 3 attempts all fail
+    
     const enrichedPosts = await processBatchWithConcurrency(
       filteredPosts,
       async (post) => {
@@ -251,30 +256,48 @@ export async function POST(request: NextRequest) {
         let publishedDate = post.publishedDate;
         let fetchedHtml: string | null = null;
         
-        // ALWAYS try HTML-based detection to get the most accurate type
-        // URL-based detection is just a fast first pass, but HTML has the definitive signals
-        try {
-          fetchedHtml = await fetchHtml(post.url).catch(() => null);
-          if (fetchedHtml) {
-            // HTML-based detection is more reliable - use it if we get a result
-            const htmlDetectedType = await detectAssetTypeFromHtml(post.url, fetchedHtml);
-            if (htmlDetectedType) {
-              detectedType = htmlDetectedType;
-            }
-            // Extract date from HTML if not found in URL
-            if (!publishedDate) {
-              const extractedDate = extractPublishedDateFromHtml(post.url, fetchedHtml);
-              if (extractedDate) {
-                publishedDate = extractedDate;
-                console.log(`[Bulk Import Preview] Extracted date ${publishedDate} from HTML for ${post.url}`);
-              } else {
-                console.log(`[Bulk Import Preview] No date found in HTML for ${post.url}`);
+        // Try HTML-based detection, but skip if we've had too many failures
+        const shouldTryHtml = htmlFetchAttemptCount < HTML_FETCH_SKIP_THRESHOLD || 
+                              (htmlFetchAttemptCount >= HTML_FETCH_SKIP_THRESHOLD && 
+                               htmlFetchSuccessCount > 0);
+        
+        if (shouldTryHtml) {
+          try {
+            htmlFetchAttemptCount++;
+            // Use a shorter timeout for preview (5 seconds) to fail fast
+            const fetchWithTimeout = Promise.race([
+              fetchHtml(post.url),
+              new Promise<string>((_, reject) => 
+                setTimeout(() => reject(new Error("HTML fetch timeout")), 5000)
+              )
+            ]);
+            fetchedHtml = await fetchWithTimeout.catch(() => null);
+            if (fetchedHtml && fetchedHtml.trim().length > 0) {
+              htmlFetchSuccessCount++;
+              // HTML-based detection is more reliable - use it if we get a result
+              const htmlDetectedType = await detectAssetTypeFromHtml(post.url, fetchedHtml);
+              if (htmlDetectedType) {
+                detectedType = htmlDetectedType;
+              }
+              // Extract date from HTML if not found in URL
+              if (!publishedDate) {
+                const extractedDate = extractPublishedDateFromHtml(post.url, fetchedHtml);
+                if (extractedDate) {
+                  publishedDate = extractedDate;
+                  console.log(`[Bulk Import Preview] Extracted date ${publishedDate} from HTML for ${post.url}`);
+                }
               }
             }
+          } catch (error) {
+            // HTML fetch failed, keep detectedType from URL (if any)
+            // Only log if we're still trying HTML fetches
+            if (htmlFetchAttemptCount <= HTML_FETCH_SKIP_THRESHOLD) {
+              console.log(`[Bulk Import Preview] Failed to fetch HTML for ${post.url}:`, error);
+            }
           }
-        } catch (error) {
-          // HTML fetch failed, keep detectedType from URL (if any)
-          console.log(`[Bulk Import Preview] Failed to fetch HTML for ${post.url}:`, error);
+        } else if (htmlFetchAttemptCount >= HTML_FETCH_SKIP_THRESHOLD && htmlFetchSuccessCount === 0) {
+          // All HTML fetches failed, skip for remaining posts
+          console.log(`[Bulk Import Preview] Skipping HTML fetching for remaining posts (all attempts failed)`);
         }
         
         // Fallback: For items extracted from blog URLs, default to "Blog Post"
@@ -298,7 +321,7 @@ export async function POST(request: NextRequest) {
           language: post.language,
         };
       },
-      5 // Process 5 posts at a time
+      3 // Process 3 posts at a time (reduced to avoid overwhelming with timeouts)
     );
 
     const dateValues = enrichedPosts
