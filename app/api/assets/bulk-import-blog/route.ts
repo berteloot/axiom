@@ -83,7 +83,9 @@ export async function POST(request: NextRequest) {
       success: 0,
       failed: 0,
       skipped: 0,
+      withErrors: 0,
       errors: [] as Array<{ url: string; error: string }>,
+      warnings: [] as Array<{ url: string; warning: string }>,
       skippedItems: [] as Array<{ url: string; reason: string }>,
       assets: [] as Array<{ id: string; title: string }>,
     };
@@ -130,12 +132,25 @@ export async function POST(request: NextRequest) {
         }
 
         // Fetch content and extract published date
-        const { content, publishedDate } = await fetchBlogPostContentWithDate(post.url);
-        const resolvedPublishedDate = post.publishedDate || publishedDate || null;
+        let content = "";
+        let extractionWarning: string | null = null;
+        let resolvedPublishedDate = post.publishedDate || null;
+
+        try {
+          const { content: fetchedContent, publishedDate } = await fetchBlogPostContentWithDate(post.url);
+          content = fetchedContent;
+          resolvedPublishedDate = post.publishedDate || publishedDate || null;
+        } catch (error) {
+          extractionWarning = error instanceof Error ? error.message : "Unknown error during content extraction";
+          content = `Content extraction failed for ${post.url}\n\nError: ${extractionWarning}`;
+        }
         
         // Validate content - if content is too short or invalid, mark as ERROR
-        const isValidContent = content && content.trim().length >= 100;
+        const isValidContent = !extractionWarning && content && content.trim().length >= 100;
         const status = isValidContent ? "PROCESSED" : "ERROR";
+        const warningMessage = !isValidContent
+          ? extractionWarning || "Content extraction failed or content too short"
+          : null;
         
         // Generate filename
         const timestamp = Date.now();
@@ -158,6 +173,7 @@ export async function POST(request: NextRequest) {
             "source-url": post.url,
             "imported-at": new Date().toISOString(),
             ...(resolvedPublishedDate ? { "published-date": resolvedPublishedDate } : {}),
+            ...(warningMessage ? { "extraction-warning": warningMessage.substring(0, 2000) } : {}),
           },
         });
 
@@ -196,7 +212,7 @@ export async function POST(request: NextRequest) {
               sourceUrl: post.url,
               importedAt: new Date().toISOString(),
               ...(resolvedPublishedDate ? { publishedDate: resolvedPublishedDate } : {}),
-              ...(!isValidContent ? { error: "Content extraction failed or content too short" } : {}),
+              ...(!isValidContent ? { error: warningMessage } : {}),
             },
           },
         });
@@ -213,7 +229,7 @@ export async function POST(request: NextRequest) {
           });
         }
 
-        return { success: true, asset: { id: asset.id, title: asset.title }, url: post.url };
+        return { success: true, asset: { id: asset.id, title: asset.title }, url: post.url, warning: warningMessage };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "Unknown error";
         console.error(`[Bulk Import] Failed to import ${post.url}:`, errorMessage);
@@ -230,6 +246,10 @@ export async function POST(request: NextRequest) {
         if (result.success) {
           results.success++;
           results.assets.push(result.asset!);
+          if (result.warning) {
+            results.withErrors++;
+            results.warnings.push({ url: result.url, warning: result.warning });
+          }
         } else if (result.skipped) {
           results.skipped++;
           results.skippedItems.push({ url: result.url, reason: result.reason || "Duplicate" });

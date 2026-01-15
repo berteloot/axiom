@@ -120,7 +120,9 @@ export function BulkBlogImportModal({
     success: number;
     failed: number;
     skipped?: number;
+    withErrors?: number;
     errors: Array<{ url: string; error: string }>;
+    warnings?: Array<{ url: string; warning: string }>;
     skippedItems?: Array<{ url: string; reason: string }>;
     assets: Array<{ id: string; title: string }>;
   } | null>(null);
@@ -274,6 +276,11 @@ export function BulkBlogImportModal({
 
     try {
       const selectedPosts = previewPosts.filter(p => selectedPostUrls.has(p.url));
+      const chunkSize = 5;
+      const chunks: PreviewPost[][] = [];
+      for (let i = 0; i < selectedPosts.length; i += chunkSize) {
+        chunks.push(selectedPosts.slice(i, i + chunkSize));
+      }
       
       // Parse pain clusters from comma-separated string
       const painClustersArray = painClusters
@@ -281,45 +288,83 @@ export function BulkBlogImportModal({
         .map(c => c.trim())
         .filter(c => c.length > 0);
 
-      const response = await fetch("/api/assets/bulk-import-blog", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          posts: selectedPosts.map(p => ({ 
-            url: p.url, 
-            title: p.title,
-            detectedAssetType: p.detectedAssetType || null,
-            publishedDate: p.publishedDate || null,
-          })),
-          funnelStage,
-          icpTargets: selectedIcpTargets,
-          painClusters: painClustersArray,
-          productLineIds: selectedProductLineIds,
-        }),
-      });
+      const aggregateResults = {
+        total: selectedPosts.length,
+        success: 0,
+        failed: 0,
+        skipped: 0,
+        withErrors: 0,
+        errors: [] as Array<{ url: string; error: string }>,
+        warnings: [] as Array<{ url: string; warning: string }>,
+        skippedItems: [] as Array<{ url: string; reason: string }>,
+        assets: [] as Array<{ id: string; title: string }>,
+      };
 
-      // Simulate progress updates
-      const progressInterval = setInterval(() => {
-        setProgress((prev) => {
-          if (prev >= 90) return prev;
-          return prev + 5;
-        });
-      }, 1000);
+      for (let i = 0; i < chunks.length; i += 1) {
+        const chunk = chunks[i];
+        const startIndex = i * chunkSize + 1;
+        const endIndex = Math.min(startIndex + chunk.length - 1, selectedPosts.length);
+        setCurrentImportStep(`Importing posts ${startIndex}-${endIndex} of ${selectedPosts.length}...`);
 
-      setCurrentImportStep(`Importing ${selectedPosts.length} posts...`);
+        try {
+          const response = await fetch("/api/assets/bulk-import-blog", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              posts: chunk.map(p => ({ 
+                url: p.url, 
+                title: p.title,
+                detectedAssetType: p.detectedAssetType || null,
+                publishedDate: p.publishedDate || null,
+              })),
+              funnelStage,
+              icpTargets: selectedIcpTargets,
+              painClusters: painClustersArray,
+              productLineIds: selectedProductLineIds,
+            }),
+          });
 
-      const data = await response.json();
+          const data = await response.json();
 
-      clearInterval(progressInterval);
-      setProgress(95);
+          if (!response.ok) {
+            const errorMessage = data.error || "Failed to import blog posts";
+            chunk.forEach((post) => {
+              aggregateResults.failed += 1;
+              aggregateResults.errors.push({ url: post.url, error: errorMessage });
+            });
+          } else if (data?.results) {
+            const resultsChunk = data.results;
+            aggregateResults.success += resultsChunk.success || 0;
+            aggregateResults.failed += resultsChunk.failed || 0;
+            aggregateResults.skipped += resultsChunk.skipped || 0;
+            aggregateResults.withErrors += resultsChunk.withErrors || 0;
+            if (Array.isArray(resultsChunk.errors)) {
+              aggregateResults.errors.push(...resultsChunk.errors);
+            }
+            if (Array.isArray(resultsChunk.warnings)) {
+              aggregateResults.warnings.push(...resultsChunk.warnings);
+            }
+            if (Array.isArray(resultsChunk.skippedItems)) {
+              aggregateResults.skippedItems.push(...resultsChunk.skippedItems);
+            }
+            if (Array.isArray(resultsChunk.assets)) {
+              aggregateResults.assets.push(...resultsChunk.assets);
+            }
+          }
+        } catch (chunkError) {
+          const errorMessage = chunkError instanceof Error ? chunkError.message : "Failed to import blog posts";
+          chunk.forEach((post) => {
+            aggregateResults.failed += 1;
+            aggregateResults.errors.push({ url: post.url, error: errorMessage });
+          });
+        }
 
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to import blog posts");
+        const progressPercent = Math.round(((i + 1) / chunks.length) * 100);
+        setProgress(progressPercent);
       }
 
       setCurrentImportStep("Import complete!");
-      setResults(data.results);
-      setProgress(100);
+      setResults(aggregateResults);
       
       if (onSuccess) {
         setTimeout(() => {
@@ -892,6 +937,13 @@ export function BulkBlogImportModal({
                         (already imported)
                       </p>
                     )}
+                    {results.withErrors && results.withErrors > 0 && (
+                      <p className="text-sm">
+                        <span className="font-medium text-amber-700 dark:text-amber-400">
+                          {results.withErrors} post{results.withErrors !== 1 ? "s" : ""} imported with extraction issues
+                        </span>
+                      </p>
+                    )}
                     {results.failed > 0 && (
                       <p className="text-sm">
                         <span className="font-medium text-amber-700 dark:text-amber-400">
@@ -922,6 +974,34 @@ export function BulkBlogImportModal({
                         {results.skippedItems.length > 10 && (
                           <li className="text-muted-foreground italic">
                             ... and {results.skippedItems.length - 10} more duplicates
+                          </li>
+                        )}
+                      </ul>
+                    </details>
+                  )}
+                  {Array.isArray(results.warnings) && results.warnings.length > 0 && (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-sm font-medium hover:underline">
+                        View extraction warnings ({results.warnings.length})
+                      </summary>
+                      <ul className="mt-2 space-y-1.5 text-xs max-h-40 overflow-y-auto pl-4 list-disc">
+                        {results.warnings.slice(0, 10).map((warning, idx) => (
+                          <li key={idx} className="break-all">
+                            <a
+                              href={warning?.url || '#'}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1"
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                              {warning?.url ? warning.url.substring(0, 60) : 'Unknown URL'}...
+                            </a>
+                            <span className="text-muted-foreground ml-1">: {warning?.warning || 'Content extraction issue'}</span>
+                          </li>
+                        ))}
+                        {results.warnings.length > 10 && (
+                          <li className="text-muted-foreground italic">
+                            ... and {results.warnings.length - 10} more warnings
                           </li>
                         )}
                       </ul>
