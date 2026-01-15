@@ -52,26 +52,78 @@ export function ReviewModal({
     uploadedById: asset.uploadedBy?.id || null,
     uploadedByNameOverride: (asset as any).uploadedByNameOverride || null,
   });
-  // Extract published date from atomicSnippets if customCreatedAt is not set
-  const getInitialCreatedAt = (): Date | null => {
-    if (asset.customCreatedAt) {
-      return new Date(asset.customCreatedAt);
+  const tryParseDate = (value?: string | null): Date | null => {
+    if (!value) return null;
+    const date = new Date(value);
+    return isNaN(date.getTime()) ? null : date;
+  };
+
+  const extractPublishedDateFromSnippets = (): Date | null => {
+    const snippets = asset.atomicSnippets;
+    const getDateFromSnippet = (snippet: any): Date | null => {
+      return tryParseDate(snippet?.publishedDate || snippet?.metadata?.publishedDate);
+    };
+
+    if (!snippets) return null;
+
+    if (Array.isArray(snippets)) {
+      for (const snippet of snippets) {
+        const date = getDateFromSnippet(snippet);
+        if (date) return date;
+      }
+      return null;
     }
-    // Check atomicSnippets for publishedDate (from blog imports)
-    if (asset.atomicSnippets && typeof asset.atomicSnippets === 'object') {
-      const snippets = asset.atomicSnippets as any;
-      if (snippets.publishedDate) {
-        try {
-          const date = new Date(snippets.publishedDate);
-          if (!isNaN(date.getTime())) {
-            return date;
+
+    if (typeof snippets === "string") {
+      try {
+        const parsed = JSON.parse(snippets);
+        if (Array.isArray(parsed)) {
+          for (const snippet of parsed) {
+            const date = getDateFromSnippet(snippet);
+            if (date) return date;
           }
-        } catch {
-          // Invalid date, continue
+        } else {
+          return getDateFromSnippet(parsed);
         }
+      } catch {
+        return null;
+      }
+    }
+
+    if (typeof snippets === "object") {
+      return getDateFromSnippet(snippets);
+    }
+
+    return null;
+  };
+
+  const extractPublishedDateFromText = (): Date | null => {
+    if (!asset.extractedText) return null;
+    const text = asset.extractedText.slice(0, 800);
+    const patterns = [
+      /\b\d{4}-\d{2}-\d{2}\b/,
+      /\b\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+\d{4}\b/i,
+      /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}\b/i,
+    ];
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match?.[0]) {
+        const date = tryParseDate(match[0]);
+        if (date) return date;
       }
     }
     return null;
+  };
+
+  // Extract published date from atomicSnippets if customCreatedAt is not set
+  const getInitialCreatedAt = (): Date | null => {
+    const explicit = tryParseDate(asset.customCreatedAt);
+    if (explicit) return explicit;
+
+    const fromSnippets = extractPublishedDateFromSnippets();
+    if (fromSnippets) return fromSnippets;
+
+    return extractPublishedDateFromText();
   };
 
   const [customCreatedAt, setCustomCreatedAt] = useState<Date | null>(getInitialCreatedAt());
