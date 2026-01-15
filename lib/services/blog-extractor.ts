@@ -86,7 +86,6 @@ class BlogExtractorLogger {
       timestamp: new Date().toISOString(),
       ...(data && { data }),
     };
-
     if (level === 'error') {
       console.error(JSON.stringify(logEntry));
     } else if (level === 'warn') {
@@ -137,7 +136,7 @@ const URL_PATTERNS = {
   DATE_IN_URL: /\/(\d{4})[\/\-](\d{1,2})[\/\-]?(\d{1,2})?/,
   ISO_DATE: /(\d{4}-\d{2}-\d{2})/,
   PUBLISHED_TIME: /Published\s+Time[:\s]+([\d\-T:+\s]+)/i,
-  NUMERIC_SLUG: /^\/\d+(-2)?\/$/, // Draft/unpublished posts (numeric slugs like /3467-2/)
+  NUMERIC_SLUG: /^\/\d+(-2)?\/?$/, // Draft/unpublished posts (numeric slugs like /3467-2/)
 } as const;
 
 /**
@@ -1876,7 +1875,7 @@ async function fetchAllPagesWithPagination(
   
   let pageCount = 0;
   let consecutiveEmptyPages = 0;
-  let lastPaginationPattern: string | null = null; // Track which pattern worked
+  let lastPaginationPattern: 'query' | 'path' | 'paged' | null = null; // Track which pattern worked
   
   while (pagesToVisit.length > 0 && pageCount < maxPages) {
     // Stop early if we've reached maxPosts
@@ -1971,9 +1970,9 @@ async function fetchAllPagesWithPagination(
         }
         
         // Use detected pattern if available, otherwise use lastPaginationPattern
-        const patternToUse: 'query' | 'path' | 'paged' = 
-          detectedPattern || 
-          (lastPaginationPattern && (lastPaginationPattern as 'query' | 'path' | 'paged')) || 
+        const patternToUse: 'query' | 'path' | 'paged' =
+          detectedPattern ||
+          lastPaginationPattern ||
           'query';
         const nextPage = currentPageNum + 1;
         
@@ -2465,11 +2464,7 @@ export async function extractBlogPostUrls(
       // For blog listing pages, trust the extraction but still enrich dates when missing
       const missingDates = uniquePosts.filter((post) => !post.publishedDate).length;
       logger.info('Skipping validation for blog listing page', { blogUrl, candidateCount: beforeCount, missingDates });
-      if (missingDates > 0) {
-        validated = await enrichDatesOnly(uniquePosts, concurrency);
-      } else {
-        validated = await enrichDatesOnly(uniquePosts, concurrency);
-      }
+      validated = await enrichDatesOnly(uniquePosts, concurrency);
     } else {
       // For other pages, validate candidates
       validated = await filterAndEnrichCandidates(uniquePosts, concurrency);
