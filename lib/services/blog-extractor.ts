@@ -568,7 +568,7 @@ function extractPublishedDate(url: string, html?: string, content?: string, skip
   }
 
   // 2. Try to extract from HTML meta tags and structured data
-  if (html) {
+  if (html && typeof html === "string" && html.trim().length > 0) {
     try {
       const $ = cheerio.load(html);
       
@@ -816,6 +816,10 @@ function getMainTextWordCount($: cheerio.Root): number {
 }
 
 function validateAndExtractFromHtml(url: string, html: string): PageValidation {
+  if (!html || typeof html !== "string" || html.trim().length === 0) {
+    // Return default validation if HTML is invalid
+    return { isArticle: true, schemaTypes: [], publishedDate: null, title: null };
+  }
   const $ = cheerio.load(html);
 
   // 1) Schema types (best signal)
@@ -932,7 +936,16 @@ async function filterAndEnrichCandidates(
   // Validate each URL by fetching its HTML and confirming it is an article-like page.
   const validations = await mapWithConcurrency(candidates, concurrency, async (c) => {
     try {
-      const html = await fetchHtml(c.url);
+      const html = await fetchHtml(c.url).catch(() => "");
+      if (!html || typeof html !== "string" || html.trim().length === 0) {
+        // If HTML fetch failed or returned invalid content, keep the candidate
+        logger.warn('Validation failed, keeping candidate', { url: c.url, error: "Failed to fetch HTML or empty response" });
+        return { 
+          candidate: c, 
+          validation: { isArticle: true, schemaTypes: [], publishedDate: c.publishedDate, title: null } as PageValidation,
+          validationSucceeded: false 
+        };
+      }
       const v = validateAndExtractFromHtml(c.url, html);
       return { candidate: c, validation: v, validationSucceeded: true };
     } catch (e) {
@@ -1488,6 +1501,9 @@ function extractUrlsFromMarkdown(content: string, baseUrl: URL): Array<{ url: st
   
 
   // Try parsing as HTML first (Jina might return HTML despite requesting markdown)
+  if (!content || typeof content !== "string" || content.trim().length === 0) {
+    return blogPosts;
+  }
   try {
     const $ = cheerio.load(content);
     const selectors = [
@@ -1830,7 +1846,11 @@ async function tryFetchFromSitemapOrRSS(baseUrl: URL): Promise<Array<{ url: stri
 function extractPaginationLinks(content: string, baseUrl: URL): string[] {
   const paginationUrls: string[] = [];
   const seenUrls = new Set<string>();
-  
+
+  if (!content || typeof content !== "string" || content.trim().length === 0) {
+    return paginationUrls;
+  }
+
   try {
     const $ = cheerio.load(content);
     
@@ -2242,9 +2262,10 @@ export async function extractBlogPostUrls(
     // Only if we haven't reached maxPosts yet
     if ((maxPosts === undefined || blogPosts.length < maxPosts) && blogPosts.length < 5) {
       console.log(`[Blog Extractor] Falling back to HTML parsing (found ${blogPosts.length} posts with Jina)...`);
-      const html = await fetchHtml(blogUrl);
-      const $ = cheerio.load(html);
-      const seenUrls = new Set(blogPosts.map(p => p.url));
+      const html = await fetchHtml(blogUrl).catch(() => "");
+      if (html && typeof html === "string" && html.trim().length > 0) {
+        const $ = cheerio.load(html);
+        const seenUrls = new Set(blogPosts.map(p => p.url));
       
       // Check if we're in library context
       const basePath = baseUrl.pathname.toLowerCase();
@@ -2384,6 +2405,9 @@ export async function extractBlogPostUrls(
         console.log(`[Blog Extractor] Single-page extraction: Found ${totalLinksFound} total links, excluded ${totalLinksExcluded}, kept ${blogPosts.length} posts`);
       } else {
         console.warn(`[Blog Extractor] Single-page extraction: No links found with any selector. Page might require JavaScript rendering.`);
+      }
+      } else {
+        console.warn(`[Blog Extractor] Failed to fetch HTML for fallback parsing, skipping HTML extraction`);
       }
     }
 
