@@ -6,7 +6,7 @@ import { z } from "zod";
 import { FunnelStage } from "@/lib/types";
 import { standardizeICPTargets } from "@/lib/icp-targets";
 import { fetchBlogPostContentWithDate, deriveTitleFromSlug } from "@/lib/services/blog-extractor";
-import { fetchBlogPostContentWithFirecrawl, isFirecrawlActive } from "@/lib/services/firecrawl-client";
+import { fetchBlogPostContentWithFirecrawl, isFirecrawlActive, isFirecrawlConfigured } from "@/lib/services/firecrawl-client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -115,10 +115,11 @@ export async function POST(request: NextRequest) {
     let usedFirecrawl = false;
 
     try {
-      // Try Firecrawl first if it's active
-      if (isFirecrawlActive()) {
+      // Try Firecrawl first if it's configured (even if not explicitly set as provider)
+      // Single imports benefit from Firecrawl's better date extraction
+      if (isFirecrawlConfigured()) {
         try {
-          console.log(`[Single Import] Trying Firecrawl for ${url}...`);
+          console.log(`[Single Import] Trying Firecrawl for ${url} (API key configured)...`);
           const firecrawlResult = await fetchBlogPostContentWithFirecrawl(url);
           content = firecrawlResult.content;
           publishedDate = firecrawlResult.publishedDate || null;
@@ -128,6 +129,8 @@ export async function POST(request: NextRequest) {
           console.log(`[Single Import] Firecrawl failed, falling back to Jina:`, firecrawlError instanceof Error ? firecrawlError.message : firecrawlError);
           // Fall through to Jina fallback
         }
+      } else {
+        console.log(`[Single Import] Firecrawl not configured (no API key), using Jina...`);
       }
 
       // If Firecrawl wasn't used or failed, use Jina
