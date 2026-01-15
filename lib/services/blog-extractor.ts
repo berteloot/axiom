@@ -2212,27 +2212,42 @@ export async function extractBlogPostUrls(
   const isPathScoped = basePath.length > 1;
   
   // Check if URL is a single article (not a listing page)
-  // Single articles can be:
-  // 1. Under a listing path like /blog/slug, /resources/slug
-  // 2. At root level with a long hyphenated slug like /my-article-title
-  const listingPaths = ['blog', 'blogs', 'resources', 'articles', 'news', 'insights', 'posts', 'library', 'media'];
+  // Generic detection: if the last path segment looks like a content slug, it's likely a single article
+  // 
+  // Listing pages typically look like: /blog, /news, /articles, /blog/page/2
+  // Single articles typically look like: /blog/my-article-title, /my-great-post-about-topic
+  //
+  // A "slug" is identified by:
+  // - Contains hyphens (word separators in URLs)
+  // - Reasonably long (article titles are descriptive)
+  // - Not a pagination or category segment
+  
   const pathParts = basePath.split('/').filter(p => p);
+  const lastSegment = pathParts[pathParts.length - 1] || '';
   
-  // Check for /blog/slug or /resources/slug pattern
-  const isUnderListingPath = pathParts.length >= 2 && 
-    listingPaths.includes(pathParts[0]) && 
-    pathParts[pathParts.length - 1].includes('-') &&
-    pathParts[pathParts.length - 1].length > 10;
+  // Patterns that indicate this is NOT a single article (it's a listing/section)
+  const listingPatterns = [
+    /^page[-_]?\d+$/i,           // page-2, page2, page_2
+    /^\d+$/,                      // Just a number (pagination)
+    /^category$/i,
+    /^tag$/i,
+    /^author$/i,
+    /^archive$/i,
+    /^search$/i,
+  ];
   
-  // Check for root-level blog post like /my-article-title-here
-  // These are long slugs with multiple hyphens, not short paths like /about or /contact
-  const isRootLevelArticle = pathParts.length === 1 &&
-    pathParts[0].includes('-') &&
-    pathParts[0].length > 20 &&  // Long slug
-    (pathParts[0].match(/-/g) || []).length >= 3 && // Multiple hyphens (like word separators)
-    !['contact-us', 'about-us', 'privacy-policy', 'terms-conditions', 'terms-of-service'].includes(pathParts[0]);
+  const isListingSegment = listingPatterns.some(p => p.test(lastSegment));
   
-  const isSingleArticleUrl = isUnderListingPath || isRootLevelArticle;
+  // A slug typically has:
+  // - Multiple words separated by hyphens
+  // - Reasonable length (titles are descriptive)
+  const hyphenCount = (lastSegment.match(/-/g) || []).length;
+  const looksLikeSlug = lastSegment.includes('-') && 
+                        lastSegment.length > 15 && 
+                        hyphenCount >= 2;
+  
+  // It's a single article if the last segment looks like a slug and isn't a listing pattern
+  const isSingleArticleUrl = looksLikeSlug && !isListingSegment && pathParts.length >= 1;
   
   if (isSingleArticleUrl) {
     logger.info('Detected single article URL, returning directly', { blogUrl });

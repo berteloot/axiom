@@ -136,40 +136,40 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if URL is a single blog post (not a listing page)
-    // Single post URLs typically have a slug after the base path
+    // Generic detection based on URL structure, not hardcoded paths
     const isSinglePostUrl = (url: string): boolean => {
       try {
         const urlObj = new URL(url);
         const pathParts = urlObj.pathname.split('/').filter(p => p);
         
-        // Common listing paths that indicate this is NOT a single post
-        const listingPaths = ['blog', 'blogs', 'resources', 'articles', 'news', 'insights', 'posts', 'library', 'media'];
+        if (pathParts.length === 0) return false;
         
-        // If path is ONLY a listing path (e.g., /resources or /blog), it's a listing page
-        if (pathParts.length === 1 && listingPaths.includes(pathParts[0].toLowerCase())) {
+        const lastSegment = pathParts[pathParts.length - 1].toLowerCase();
+        
+        // Patterns that indicate this is a listing/section page, NOT a single post
+        const listingPatterns = [
+          /^page[-_]?\d+$/i,           // page-2, page2, page_2
+          /^\d+$/,                      // Just a number (pagination)
+          /^category$/i,
+          /^tag$/i,
+          /^author$/i,
+          /^archive$/i,
+          /^search$/i,
+        ];
+        
+        if (listingPatterns.some(p => p.test(lastSegment))) {
           return false;
         }
         
-        // If path has more segments after a listing path, AND the last segment looks like a slug, it's a single post
-        if (pathParts.length >= 2) {
-          const basePath = pathParts[0].toLowerCase();
-          const lastSegment = pathParts[pathParts.length - 1];
-          
-          // Check if base path is a listing path
-          if (listingPaths.includes(basePath)) {
-            // Check if last segment looks like a slug (contains hyphens, not a page number, not a date-only)
-            const isSlug = lastSegment.includes('-') && 
-                           !/^page-?\d+$/.test(lastSegment) && 
-                           !/^\d{4}-\d{2}-\d{2}$/.test(lastSegment) &&
-                           lastSegment.length > 10; // Slugs are typically longer than 10 chars
-            
-            if (isSlug) {
-              return true;
-            }
-          }
-        }
+        // A slug typically has:
+        // - Multiple words separated by hyphens
+        // - Reasonable length (article titles are descriptive)
+        const hyphenCount = (lastSegment.match(/-/g) || []).length;
+        const looksLikeSlug = lastSegment.includes('-') && 
+                              lastSegment.length > 15 && 
+                              hyphenCount >= 2;
         
-        return false;
+        return looksLikeSlug;
       } catch {
         return false;
       }
