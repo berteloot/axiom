@@ -2,17 +2,114 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Asset, TranscriptSegment } from "@/lib/types";
-import { Image, Sparkles, Video, Music, FileText } from "lucide-react";
+import { Image, Sparkles, Video, Music, FileText, Pencil, Check, X } from "lucide-react";
 import { VideoDeepSearch } from "@/components/VideoDeepSearch";
 import { VideoCompressionGuide } from "@/components/VideoCompressionGuide";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { Loader2 } from "lucide-react";
 
 interface AssetPreviewProps {
   asset: Asset;
+  onExtractedTextChange?: (text: string) => void;
+  extractedTextValue?: string;
 }
 
-export function AssetPreview({ asset }: AssetPreviewProps) {
+// Editable extracted text component
+function EditableExtractedText({ 
+  text, 
+  onChange, 
+  editable 
+}: { 
+  text: string; 
+  onChange?: (text: string) => void;
+  editable: boolean;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedText, setEditedText] = useState(text);
+
+  const handleSave = () => {
+    if (onChange) {
+      onChange(editedText);
+    }
+    setIsEditing(false);
+  };
+
+  const handleCancel = () => {
+    setEditedText(text);
+    setIsEditing(false);
+  };
+
+  // Update local state when prop changes
+  useEffect(() => {
+    setEditedText(text);
+  }, [text]);
+
+  return (
+    <div className="border rounded-lg p-4 mt-4">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <FileText className="w-4 h-4 text-blue-500" />
+          <h3 className="font-semibold text-sm">Extracted Text</h3>
+        </div>
+        {editable && !isEditing && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsEditing(true)}
+            className="h-7 px-2 text-xs"
+          >
+            <Pencil className="w-3 h-3 mr-1" />
+            Edit
+          </Button>
+        )}
+        {isEditing && (
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleSave}
+              className="h-7 px-2 text-xs text-green-600 hover:text-green-700"
+            >
+              <Check className="w-3 h-3 mr-1" />
+              Save
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleCancel}
+              className="h-7 px-2 text-xs text-red-600 hover:text-red-700"
+            >
+              <X className="w-3 h-3 mr-1" />
+              Cancel
+            </Button>
+          </div>
+        )}
+      </div>
+      {isEditing ? (
+        <Textarea
+          value={editedText}
+          onChange={(e) => setEditedText(e.target.value)}
+          className="text-sm min-h-[200px] font-mono"
+          placeholder="Enter extracted text..."
+        />
+      ) : (
+        <p className="text-sm text-muted-foreground whitespace-pre-wrap max-h-40 overflow-y-auto">
+          {text || "No extracted text available"}
+        </p>
+      )}
+      {editable && (
+        <p className="text-xs text-muted-foreground mt-2">
+          {isEditing 
+            ? "Edit the text to remove unnecessary content. Click Save when done."
+            : "Click Edit to modify the extracted text."}
+        </p>
+      )}
+    </div>
+  );
+}
+
+export function AssetPreview({ asset, onExtractedTextChange, extractedTextValue }: AssetPreviewProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [transcriptSegments, setTranscriptSegments] = useState<TranscriptSegment[]>([]);
   const [segmentsLoading, setSegmentsLoading] = useState(false);
@@ -603,16 +700,12 @@ export function AssetPreview({ asset }: AssetPreviewProps) {
             </p>
           )}
         </div>
-      ) : asset.extractedText ? (
-        <div className="border rounded-lg p-4 mt-4">
-          <div className="flex items-center gap-2 mb-2">
-            <FileText className="w-4 h-4 text-blue-500" />
-            <h3 className="font-semibold text-sm">Extracted Text</h3>
-          </div>
-          <p className="text-sm text-muted-foreground whitespace-pre-wrap max-h-40 overflow-y-auto">
-            {asset.extractedText}
-          </p>
-        </div>
+      ) : (asset.extractedText || extractedTextValue) ? (
+        <EditableExtractedText
+          text={extractedTextValue ?? asset.extractedText ?? ""}
+          onChange={onExtractedTextChange}
+          editable={!!onExtractedTextChange}
+        />
       ) : null}
     </div>
   );

@@ -52,6 +52,7 @@ export function ReviewModal({
     inUse: asset.inUse || false,
     uploadedById: asset.uploadedBy?.id || null,
     uploadedByNameOverride: (asset as any).uploadedByNameOverride || null,
+    extractedText: asset.extractedText || "",
   });
   const tryParseDate = (value?: string | null): Date | null => {
     if (!value) return null;
@@ -154,6 +155,7 @@ export function ReviewModal({
         inUse: asset.inUse || false,
         uploadedById: asset.uploadedBy?.id || null,
         uploadedByNameOverride: (asset as any).uploadedByNameOverride || null,
+        extractedText: asset.extractedText || "",
       });
       setCustomCreatedAt(getInitialCreatedAt());
       setLastReviewedAt(asset.lastReviewedAt ? new Date(asset.lastReviewedAt) : null);
@@ -196,6 +198,7 @@ export function ReviewModal({
           inUse: formData.inUse,
           uploadedById: formData.uploadedById,
           uploadedByNameOverride: formData.uploadedByNameOverride,
+          extractedText: formData.extractedText,
         }),
       });
 
@@ -284,7 +287,11 @@ export function ReviewModal({
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
           {/* Left: Asset Preview */}
           <div className="space-y-4">
-            <AssetPreview asset={asset} />
+            <AssetPreview 
+              asset={asset} 
+              extractedTextValue={formData.extractedText}
+              onExtractedTextChange={(text) => handleFormDataChange({ extractedText: text })}
+            />
             <ContentMetrics asset={asset} />
             <AtomicSnippets snippets={atomicSnippets} />
           </div>
