@@ -135,27 +135,89 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Check if URL is a single blog post (not a listing page)
+    // Single post URLs typically have a slug after the base path
+    const isSinglePostUrl = (url: string): boolean => {
+      try {
+        const urlObj = new URL(url);
+        const pathParts = urlObj.pathname.split('/').filter(p => p);
+        
+        // Common listing paths that indicate this is NOT a single post
+        const listingPaths = ['blog', 'blogs', 'resources', 'articles', 'news', 'insights', 'posts', 'library', 'media'];
+        
+        // If path is ONLY a listing path (e.g., /resources or /blog), it's a listing page
+        if (pathParts.length === 1 && listingPaths.includes(pathParts[0].toLowerCase())) {
+          return false;
+        }
+        
+        // If path has more segments after a listing path, AND the last segment looks like a slug, it's a single post
+        if (pathParts.length >= 2) {
+          const basePath = pathParts[0].toLowerCase();
+          const lastSegment = pathParts[pathParts.length - 1];
+          
+          // Check if base path is a listing path
+          if (listingPaths.includes(basePath)) {
+            // Check if last segment looks like a slug (contains hyphens, not a page number, not a date-only)
+            const isSlug = lastSegment.includes('-') && 
+                           !/^page-?\d+$/.test(lastSegment) && 
+                           !/^\d{4}-\d{2}-\d{2}$/.test(lastSegment) &&
+                           lastSegment.length > 10; // Slugs are typically longer than 10 chars
+            
+            if (isSlug) {
+              return true;
+            }
+          }
+        }
+        
+        return false;
+      } catch {
+        return false;
+      }
+    };
+    
     // Extract blog post URLs with maxPosts
     // Date filtering happens after HTML enrichment for accuracy
     console.log(`[Bulk Import Preview] Extracting blog posts from ${normalizedUrl}... (maxPosts: ${maxPosts || 'unlimited'}, dateRange: ${dateRangeStart || 'none'} to ${dateRangeEnd || 'none'})`);
     
     let blogPosts: Array<{ url: string; title: string; publishedDate: string | null }> = [];
-    try {
-      blogPosts = await extractBlogPostUrls(
-        normalizedUrl,
-        maxPosts ? Number(maxPosts) : undefined,
-        null,
-        null
-      );
+    
+    // If URL is a single post, return it directly without extraction
+    if (isSinglePostUrl(normalizedUrl)) {
+      console.log(`[Bulk Import Preview] Detected single post URL, skipping extraction: ${normalizedUrl}`);
       
-      console.log(`[Bulk Import Preview] Extraction completed. Found ${blogPosts.length} posts.`);
-    } catch (extractionError) {
-      console.error(`[Bulk Import Preview] Extraction failed:`, extractionError);
-      const errorMessage = extractionError instanceof Error ? extractionError.message : 'Unknown extraction error';
-      return NextResponse.json(
-        { error: `Failed to extract blog posts: ${errorMessage}` },
-        { status: 500 }
-      );
+      // Derive title from URL slug
+      const urlObj = new URL(normalizedUrl);
+      const slug = urlObj.pathname.split('/').filter(p => p).pop() || '';
+      const title = slug
+        .replace(/[-_]+/g, ' ')
+        .replace(/\b\w/g, (char) => char.toUpperCase())
+        .trim() || 'Blog Post';
+      
+      blogPosts = [{
+        url: normalizedUrl,
+        title,
+        publishedDate: null, // Will be enriched later
+      }];
+      
+      console.log(`[Bulk Import Preview] Single post detected: "${title}"`);
+    } else {
+      try {
+        blogPosts = await extractBlogPostUrls(
+          normalizedUrl,
+          maxPosts ? Number(maxPosts) : undefined,
+          null,
+          null
+        );
+        
+        console.log(`[Bulk Import Preview] Extraction completed. Found ${blogPosts.length} posts.`);
+      } catch (extractionError) {
+        console.error(`[Bulk Import Preview] Extraction failed:`, extractionError);
+        const errorMessage = extractionError instanceof Error ? extractionError.message : 'Unknown extraction error';
+        return NextResponse.json(
+          { error: `Failed to extract blog posts: ${errorMessage}` },
+          { status: 500 }
+        );
+      }
     }
     
     if (blogPosts.length === 0) {

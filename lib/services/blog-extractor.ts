@@ -2702,12 +2702,103 @@ export async function fetchBlogPostContentWithDate(url: string): Promise<{ conte
         return "";
       }
       const $ = cheerio.load(html);
-      $('script, style, noscript').remove();
-      const contentNode = $('article, main, .post-content, .entry-content, .article-content, .blog-post, .post-body, .content-main').first();
-      const text = (contentNode.length ? contentNode.text() : $('body').text())
-        .replace(/\s+/g, ' ')
-        .trim();
-      return text;
+      
+      // Remove non-content elements aggressively
+      const removeSelectors = [
+        'script', 'style', 'noscript', 'iframe', 'svg', 'canvas',
+        'nav', 'header', 'footer', 'aside',
+        '.nav', '.navigation', '.navbar', '.menu', '.header', '.footer', '.sidebar',
+        '.social-share', '.share-buttons', '.social-links',
+        '.related-posts', '.related-articles', '.recommended',
+        '.comments', '.comment-section', '#comments',
+        '.newsletter', '.subscribe', '.subscription',
+        '.cookie-banner', '.cookie-notice', '.gdpr',
+        '.popup', '.modal', '.overlay',
+        '.breadcrumb', '.breadcrumbs',
+        '.author-bio', '.author-box',
+        '.tags', '.tag-list', '.categories',
+        '.pagination', '.pager',
+        '.advertisement', '.ad', '.ads', '[class*="ad-"]',
+        '[role="navigation"]', '[role="banner"]', '[role="contentinfo"]',
+        '.hello-bar', '[class*="hello-bar"]',
+      ];
+      
+      removeSelectors.forEach(selector => {
+        try {
+          $(selector).remove();
+        } catch { /* ignore invalid selectors */ }
+      });
+      
+      // Try to find the main content area
+      const contentSelectors = [
+        'article .content', 'article .post-content', 'article .entry-content',
+        'article', 
+        'main .content', 'main .post-content', 'main .entry-content',
+        'main',
+        '.post-content', '.entry-content', '.article-content', 
+        '.blog-post', '.post-body', '.content-main',
+        '.page-content', '.main-content',
+        '[role="main"]',
+        '#content', '#main-content', '#article-content',
+      ];
+      
+      let contentNode = null;
+      for (const selector of contentSelectors) {
+        const node = $(selector).first();
+        if (node.length && node.text().trim().length > 200) {
+          contentNode = node;
+          break;
+        }
+      }
+      
+      // If no content node found, try body but with more aggressive cleanup
+      if (!contentNode || !contentNode.length) {
+        contentNode = $('body');
+      }
+      
+      // Extract text with some structure preservation
+      let text = '';
+      
+      // Get headings and paragraphs with structure
+      contentNode.find('h1, h2, h3, h4, h5, h6, p, li, blockquote').each((_, el) => {
+        const $el = $(el);
+        const tagName = ('tagName' in el ? el.tagName : '').toLowerCase();
+        const elText = $el.text().trim();
+        
+        if (!elText || elText.length < 3) return;
+        
+        // Skip if text looks like navigation or generic UI elements
+        const lowerText = elText.toLowerCase();
+        if (lowerText.includes('read more') || 
+            lowerText.includes('learn more') ||
+            lowerText.includes('contact us') ||
+            lowerText.includes('apply now') ||
+            lowerText.includes('get started') ||
+            lowerText.includes('sign up') ||
+            lowerText.includes('subscribe') ||
+            lowerText.includes('© ') ||
+            lowerText.includes('all rights reserved')) {
+          return;
+        }
+        
+        if (tagName.startsWith('h')) {
+          const level = parseInt(tagName[1], 10) || 2;
+          text += '\n\n' + '#'.repeat(level) + ' ' + elText + '\n\n';
+        } else if (tagName === 'li') {
+          text += '- ' + elText + '\n';
+        } else if (tagName === 'blockquote') {
+          text += '\n> ' + elText + '\n\n';
+        } else {
+          text += elText + '\n\n';
+        }
+      });
+      
+      // If structured extraction failed, fall back to plain text
+      if (text.trim().length < 200) {
+        text = contentNode.text().replace(/\s+/g, ' ').trim();
+      }
+      
+      return text.trim();
     };
 
     let content = '';
