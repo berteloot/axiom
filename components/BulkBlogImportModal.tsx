@@ -204,6 +204,7 @@ export function BulkBlogImportModal({
     try {
       const response = await fetch("/api/assets/bulk-import-blog/preview", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           blogUrl: blogUrl.trim(),
@@ -323,6 +324,7 @@ export function BulkBlogImportModal({
         try {
           const response = await fetch("/api/assets/bulk-import-blog", {
             method: "POST",
+            credentials: "include",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               posts: chunk.map(p => ({ 

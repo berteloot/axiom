@@ -269,11 +269,13 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Error bulk importing blog posts:", error);
+    const message = error instanceof Error ? error.message : "Failed to bulk import blog posts";
+    const status = message.includes("No account selected") ? 401 : 500;
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : "Failed to bulk import blog posts",
+        error: message,
       },
-      { status: 500 }
+      { status }
     );
   }
 }

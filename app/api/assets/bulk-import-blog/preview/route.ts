@@ -354,6 +354,8 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("[Bulk Import Preview] Error previewing blog posts:", error);
+    const message = error instanceof Error ? error.message : "Failed to preview blog posts. Please check the URL and try again.";
+    const status = message.includes("No account selected") ? 401 : 500;
     
     // Provide more specific error messages
     if (error instanceof Error) {
@@ -376,9 +378,9 @@ export async function POST(request: NextRequest) {
     
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : "Failed to preview blog posts. Please check the URL and try again.",
+        error: message,
       },
-      { status: 500 }
+      { status }
     );
   }
 }

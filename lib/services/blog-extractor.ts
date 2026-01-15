@@ -2,6 +2,9 @@ import * as cheerio from "cheerio";
 
 const JINA_READER_URL = "https://r.jina.ai/";
 const JINA_API_KEY = process.env.JINA_API_KEY;
+const JINA_MIN_DELAY_MS = 1500;
+let lastJinaRequestTime = 0;
+let jinaQueue: Promise<void> = Promise.resolve();
 
 /**
  * Configuration for blog extractor
@@ -240,6 +243,24 @@ interface JinaReaderResponse {
   };
 }
 
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const enqueueJinaRequest = async <T>(task: () => Promise<T>): Promise<T> => {
+  const run = async () => {
+    const now = Date.now();
+    const waitMs = Math.max(0, JINA_MIN_DELAY_MS - (now - lastJinaRequestTime));
+    if (waitMs > 0) {
+      await sleep(waitMs);
+    }
+    lastJinaRequestTime = Date.now();
+    return task();
+  };
+
+  const result = jinaQueue.then(run, run);
+  jinaQueue = result.then(() => undefined, () => undefined);
+  return result;
+};
+
 async function callJinaReaderAPI(
   url: string,
   options: JinaReaderOptions = {},
@@ -325,12 +346,14 @@ async function callJinaReaderAPI(
         body.viewport = viewport;
       }
 
-      const response = await fetch(JINA_READER_URL, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(timeout),
-      });
+      const response = await enqueueJinaRequest(() =>
+        fetch(JINA_READER_URL, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(timeout),
+        })
+      );
 
       if (!response.ok) {
         if (response.status === 429 && attempt < retries) {
@@ -2509,7 +2532,10 @@ export async function fetchBlogPostContentWithDate(url: string): Promise<{ conte
   try {
     const normalizedUrl = normalizeUrl(url);
 
-    const extractTextFromHtml = (html: string): string => {
+    const extractTextFromHtml = (html: string | null | undefined): string => {
+      if (!html || typeof html !== "string") {
+        return "";
+      }
       const $ = cheerio.load(html);
       $('script, style, noscript').remove();
       const contentNode = $('article, main, .post-content, .entry-content, .article-content, .blog-post, .post-body, .content-main').first();
@@ -2543,7 +2569,7 @@ export async function fetchBlogPostContentWithDate(url: string): Promise<{ conte
     }
 
     if (!content || content.trim().length < 100) {
-      const html = await fetchHtml(normalizedUrl, { useJina: !skipJinaHtml });
+      const html = await fetchHtml(normalizedUrl, { useJina: !skipJinaHtml }).catch(() => "");
       htmlForDate = html;
       content = extractTextFromHtml(html);
     }
