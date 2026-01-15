@@ -21,7 +21,8 @@ import {
   Target,
   AlertTriangle,
   Upload,
-  FileText
+  FileText,
+  ExternalLink
 } from "lucide-react";
 import { CriticalGapsModal, CriticalGap } from "@/components/dashboard/CriticalGapsModal";
 import { SaveSearchButton } from "@/components/smart-collections";
@@ -29,6 +30,7 @@ import DownloadReportButton from "@/components/reports/DownloadReportButton";
 import { useAccount } from "@/lib/account-context";
 import { PPCCampaignBuilder } from "@/components/ppc/PPCCampaignBuilder";
 import { BulkBlogImportModal } from "@/components/BulkBlogImportModal";
+import { SingleUrlImportModal } from "@/components/SingleUrlImportModal";
 
 const STAGES: FunnelStage[] = [
   "TOFU_AWARENESS",
@@ -129,6 +131,7 @@ export default function DashboardClient() {
   const [isBulkEditModalOpen, setIsBulkEditModalOpen] = useState(false);
   const [isCriticalGapsModalOpen, setIsCriticalGapsModalOpen] = useState(false);
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
+  const [isSingleImportOpen, setIsSingleImportOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("strategy");
   const [brandContext, setBrandContext] = useState<BrandContext | null>(null);
   
@@ -805,6 +808,16 @@ export default function DashboardClient() {
                     <Button
                       variant="outline"
                       size="sm"
+                      onClick={() => setIsSingleImportOpen(true)}
+                      className="gap-2"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      <span className="hidden sm:inline">Import URL</span>
+                      <span className="sm:hidden">URL</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={() => setIsBulkImportOpen(true)}
                       className="gap-2"
                     >
@@ -967,6 +980,15 @@ export default function DashboardClient() {
       <BulkBlogImportModal
         open={isBulkImportOpen}
         onOpenChange={setIsBulkImportOpen}
+        onSuccess={() => {
+          // Refresh assets after successful import
+          fetchAssets(true);
+        }}
+      />
+
+      <SingleUrlImportModal
+        open={isSingleImportOpen}
+        onOpenChange={setIsSingleImportOpen}
         onSuccess={() => {
           // Refresh assets after successful import
           fetchAssets(true);
