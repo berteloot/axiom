@@ -2212,13 +2212,27 @@ export async function extractBlogPostUrls(
   const isPathScoped = basePath.length > 1;
   
   // Check if URL is a single article (not a listing page)
-  // Single articles have a slug after a common listing path like /blog/, /resources/, /articles/
+  // Single articles can be:
+  // 1. Under a listing path like /blog/slug, /resources/slug
+  // 2. At root level with a long hyphenated slug like /my-article-title
   const listingPaths = ['blog', 'blogs', 'resources', 'articles', 'news', 'insights', 'posts', 'library', 'media'];
   const pathParts = basePath.split('/').filter(p => p);
-  const isSingleArticleUrl = pathParts.length >= 2 && 
+  
+  // Check for /blog/slug or /resources/slug pattern
+  const isUnderListingPath = pathParts.length >= 2 && 
     listingPaths.includes(pathParts[0]) && 
-    pathParts[pathParts.length - 1].includes('-') && // Slugs typically have hyphens
-    pathParts[pathParts.length - 1].length > 10;     // Slugs are typically longer than 10 chars
+    pathParts[pathParts.length - 1].includes('-') &&
+    pathParts[pathParts.length - 1].length > 10;
+  
+  // Check for root-level blog post like /my-article-title-here
+  // These are long slugs with multiple hyphens, not short paths like /about or /contact
+  const isRootLevelArticle = pathParts.length === 1 &&
+    pathParts[0].includes('-') &&
+    pathParts[0].length > 20 &&  // Long slug
+    (pathParts[0].match(/-/g) || []).length >= 3 && // Multiple hyphens (like word separators)
+    !['contact-us', 'about-us', 'privacy-policy', 'terms-conditions', 'terms-of-service'].includes(pathParts[0]);
+  
+  const isSingleArticleUrl = isUnderListingPath || isRootLevelArticle;
   
   if (isSingleArticleUrl) {
     logger.info('Detected single article URL, returning directly', { blogUrl });
