@@ -327,31 +327,44 @@ export function BulkBlogImportModal({
             }),
           });
 
-          const data = await parseJsonResponse(response);
-
           if (!response.ok) {
-            const errorMessage = data.error || "Failed to import blog posts";
-            chunk.forEach((post) => {
-              aggregateResults.failed += 1;
-              aggregateResults.errors.push({ url: post.url, error: errorMessage });
-            });
-          } else if (data?.results) {
-            const resultsChunk = data.results;
-            aggregateResults.success += resultsChunk.success || 0;
-            aggregateResults.failed += resultsChunk.failed || 0;
-            aggregateResults.skipped += resultsChunk.skipped || 0;
-            aggregateResults.withErrors += resultsChunk.withErrors || 0;
-            if (Array.isArray(resultsChunk.errors)) {
-              aggregateResults.errors.push(...resultsChunk.errors);
+            // Only parse JSON if response is not OK (to get error details)
+            try {
+              const errorData = await parseJsonResponse(response);
+              const errorMessage = errorData.error || "Failed to import blog posts";
+              chunk.forEach((post) => {
+                aggregateResults.failed += 1;
+                aggregateResults.errors.push({ url: post.url, error: errorMessage });
+              });
+            } catch (parseError) {
+              // If parsing fails (e.g., HTML redirect), use status text
+              const errorMessage = parseError instanceof Error ? parseError.message : `HTTP ${response.status}: ${response.statusText}`;
+              chunk.forEach((post) => {
+                aggregateResults.failed += 1;
+                aggregateResults.errors.push({ url: post.url, error: errorMessage });
+              });
             }
-            if (Array.isArray(resultsChunk.warnings)) {
-              aggregateResults.warnings.push(...resultsChunk.warnings);
-            }
-            if (Array.isArray(resultsChunk.skippedItems)) {
-              aggregateResults.skippedItems.push(...resultsChunk.skippedItems);
-            }
-            if (Array.isArray(resultsChunk.assets)) {
-              aggregateResults.assets.push(...resultsChunk.assets);
+          } else {
+            // Only parse JSON if response is OK
+            const data = await parseJsonResponse(response);
+            if (data?.results) {
+              const resultsChunk = data.results;
+              aggregateResults.success += resultsChunk.success || 0;
+              aggregateResults.failed += resultsChunk.failed || 0;
+              aggregateResults.skipped += resultsChunk.skipped || 0;
+              aggregateResults.withErrors += resultsChunk.withErrors || 0;
+              if (Array.isArray(resultsChunk.errors)) {
+                aggregateResults.errors.push(...resultsChunk.errors);
+              }
+              if (Array.isArray(resultsChunk.warnings)) {
+                aggregateResults.warnings.push(...resultsChunk.warnings);
+              }
+              if (Array.isArray(resultsChunk.skippedItems)) {
+                aggregateResults.skippedItems.push(...resultsChunk.skippedItems);
+              }
+              if (Array.isArray(resultsChunk.assets)) {
+                aggregateResults.assets.push(...resultsChunk.assets);
+              }
             }
           }
         } catch (chunkError) {
