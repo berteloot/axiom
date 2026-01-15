@@ -231,7 +231,7 @@ export async function POST(request: NextRequest) {
         funnelStage: funnelStage as FunnelStage,
         icpTargets: standardizedIcpTargets,
         painClusters,
-        outreachTip: `This asset was imported from ${url}. ${painClusters.length > 0 ? `Addresses: ${painClusters.join(", ")}.` : ""}`,
+        outreachTip: painClusters.length > 0 ? `Addresses: ${painClusters.join(", ")}.` : "",
         status: status as "PROCESSED" | "ERROR",
         aiModel: isValidContent ? "single-import" : null,
         promptVersion: isValidContent ? "v1" : null,

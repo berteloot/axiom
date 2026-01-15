@@ -32,7 +32,7 @@ import {
 import { Asset, AssetStatus } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
 import { LinkedInPostGenerator } from "@/components/LinkedInPostGenerator";
-import { Linkedin, FileText, Image, FileSpreadsheet, File, Video, Music, X, BookOpen, Eye, RotateCw } from "lucide-react";
+import { Linkedin, FileText, Image, FileSpreadsheet, File, Video, Music, X, BookOpen, Eye, RotateCw, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import React, { useState, useMemo, useEffect } from "react";
 import { VideoCompressionGuide } from "@/components/VideoCompressionGuide";
 import {
@@ -163,6 +163,7 @@ export function AssetTable({
   const [processingAssetSize, setProcessingAssetSize] = useState<number>(465);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState<number>(25);
+  const [titleSortOrder, setTitleSortOrder] = useState<'asc' | 'desc' | null>(null);
 
   if (assets.length === 0) {
     return (
@@ -222,18 +223,56 @@ export function AssetTable({
     });
   };
 
+  // Sorting logic
+  const sortedAssets = useMemo(() => {
+    if (!titleSortOrder) {
+      return assets;
+    }
+    
+    const sorted = [...assets].sort((a, b) => {
+      const titleA = a.title.toLowerCase();
+      const titleB = b.title.toLowerCase();
+      
+      if (titleSortOrder === 'asc') {
+        return titleA.localeCompare(titleB);
+      } else {
+        return titleB.localeCompare(titleA);
+      }
+    });
+    
+    return sorted;
+  }, [assets, titleSortOrder]);
+
   // Pagination logic
-  const totalPages = Math.ceil(assets.length / itemsPerPage);
+  const totalPages = Math.ceil(sortedAssets.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
   const paginatedAssets = useMemo(() => {
-    return assets.slice(startIndex, endIndex);
-  }, [assets, startIndex, endIndex]);
+    return sortedAssets.slice(startIndex, endIndex);
+  }, [sortedAssets, startIndex, endIndex]);
+
+  // Handle title sort toggle
+  const handleTitleSort = () => {
+    if (titleSortOrder === null) {
+      setTitleSortOrder('asc');
+    } else if (titleSortOrder === 'asc') {
+      setTitleSortOrder('desc');
+    } else {
+      setTitleSortOrder(null);
+    }
+    // Reset to page 1 when sorting changes
+    setCurrentPage(1);
+  };
 
   // Reset to page 1 when items per page changes
   useEffect(() => {
     setCurrentPage(1);
   }, [itemsPerPage]);
+
+  // Reset to page 1 when sort order changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [titleSortOrder]);
 
   // Selectable assets on current page only - use useMemo to ensure it's stable
   const selectableAssetIdsOnPage = useMemo(() => {
@@ -281,7 +320,7 @@ export function AssetTable({
     if (currentPage > totalPages && totalPages > 0) {
       setCurrentPage(1);
     }
-  }, [assets.length, currentPage, totalPages]);
+  }, [sortedAssets.length, currentPage, totalPages]);
 
   // Generate page numbers to display
   const getPageNumbers = () => {
@@ -340,7 +379,23 @@ export function AssetTable({
                   />
                 </TableHead>
               )}
-              <TableHead className="min-w-[180px] px-2">Title</TableHead>
+              <TableHead className="min-w-[180px] px-2">
+                <button
+                  onClick={handleTitleSort}
+                  className="flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer font-medium"
+                  type="button"
+                  aria-label={`Sort by title ${titleSortOrder === 'asc' ? 'descending' : titleSortOrder === 'desc' ? 'reset' : 'ascending'}`}
+                >
+                  <span>Title</span>
+                  {titleSortOrder === 'asc' ? (
+                    <ArrowUp className="h-3.5 w-3.5" />
+                  ) : titleSortOrder === 'desc' ? (
+                    <ArrowDown className="h-3.5 w-3.5" />
+                  ) : (
+                    <ArrowUpDown className="h-3.5 w-3.5 opacity-50" />
+                  )}
+                </button>
+              </TableHead>
               <TableHead className="w-16 px-2 text-center">
                 <TooltipProvider>
                   <Tooltip>

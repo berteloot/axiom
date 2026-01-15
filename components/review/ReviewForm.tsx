@@ -23,7 +23,7 @@ import { MultiSelectCombobox } from "@/components/ui/combobox";
 import { EditableBadge } from "@/components/ui/editable-badge";
 import { ALL_JOB_TITLES } from "@/lib/job-titles";
 import { extractCustomTargets, isCustomTarget } from "@/lib/icp-targets";
-import { Info, X, Package, CheckSquare } from "lucide-react";
+import { Info, X, Package, CheckSquare, ExternalLink } from "lucide-react";
 import { Asset, FunnelStage, ProductLine } from "@/lib/types";
 import { AssetTypeSelector } from "@/components/assets/AssetTypeSelector";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -473,6 +473,50 @@ export function ReviewForm({
           </div>
         )}
       </div>
+
+      {/* Source URL - Display if asset was imported from a URL */}
+      {(() => {
+        const snippets = asset.atomicSnippets;
+        let sourceUrl: string | null = null;
+        
+        if (snippets) {
+          if (typeof snippets === 'object' && !Array.isArray(snippets)) {
+            sourceUrl = (snippets as any)?.sourceUrl || null;
+          } else if (typeof snippets === 'string') {
+            try {
+              const parsed = JSON.parse(snippets);
+              sourceUrl = parsed?.sourceUrl || null;
+            } catch {
+              // Ignore parse errors
+            }
+          }
+        }
+        
+        // Remove trailing period if present
+        if (sourceUrl && sourceUrl.endsWith('.')) {
+          sourceUrl = sourceUrl.slice(0, -1);
+        }
+        
+        if (sourceUrl) {
+          return (
+            <div className="space-y-2">
+              <Label>Source URL</Label>
+              <div className="p-3 border rounded-md bg-muted/30">
+                <a
+                  href={sourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-primary hover:underline flex items-center gap-1.5 break-all"
+                >
+                  <ExternalLink className="h-3.5 w-3.5 flex-shrink-0" />
+                  <span>{sourceUrl}</span>
+                </a>
+              </div>
+            </div>
+          );
+        }
+        return null;
+      })()}
 
       <div className="space-y-2">
         <Label htmlFor="outreachTip">Outreach Tip</Label>

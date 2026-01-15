@@ -155,11 +155,14 @@ export async function POST(request: NextRequest) {
     const BATCH_SIZE = 5;
     const processPost = async (post: { url: string; title: string; detectedAssetType?: string | null; publishedDate?: string | null; content?: string }, useSequentialFirecrawl: boolean = false) => {
       try {
+        // Atomic check-and-add: if URL already exists, skip immediately
+        // This prevents duplicates within the same import batch
         if (processedUrls.has(post.url)) {
           return { success: false, skipped: true, url: post.url, reason: "Duplicate selected in this import" };
         }
         processedUrls.add(post.url);
 
+        // Check against existing database records
         if (existingSourceUrls.has(post.url)) {
           return { success: false, skipped: true, url: post.url, reason: "Already imported" };
         }
@@ -278,7 +281,7 @@ export async function POST(request: NextRequest) {
             funnelStage: funnelStage as FunnelStage,
             icpTargets: standardizedIcpTargets,
             painClusters,
-            outreachTip: `This blog post was imported from ${post.url}. ${painClusters.length > 0 ? `Addresses: ${painClusters.join(", ")}.` : ""}`,
+            outreachTip: painClusters.length > 0 ? `Addresses: ${painClusters.join(", ")}.` : "",
             status: status as "PROCESSED" | "ERROR",
             aiModel: isValidContent ? "bulk-import" : null,
             promptVersion: isValidContent ? "v1" : null,
@@ -296,6 +299,9 @@ export async function POST(request: NextRequest) {
           },
         });
 
+        // Add URL to existingSourceUrls to prevent duplicates within the same import
+        // This is especially important for parallel processing, but also helps if the same
+        // import is accidentally run twice
         existingSourceUrls.add(post.url);
 
         // Create product line associations if provided
