@@ -479,6 +479,16 @@ export function ReviewForm({
         const snippets = asset.atomicSnippets;
         let sourceUrl: string | null = null;
         
+        // Debug: Log atomicSnippets structure for troubleshooting
+        if (process.env.NODE_ENV === 'development' && snippets) {
+          console.log('[ReviewForm] atomicSnippets structure:', {
+            type: typeof snippets,
+            isArray: Array.isArray(snippets),
+            value: snippets,
+          });
+        }
+        
+        // First, try to extract from atomicSnippets
         if (snippets) {
           // Handle object (not array) - for single_import, blog_import, and merged structure with aiSnippets
           if (typeof snippets === 'object' && !Array.isArray(snippets)) {
@@ -518,6 +528,33 @@ export function ReviewForm({
           }
         }
         
+        // Fallback: If not found in atomicSnippets, try to extract from extractedText
+        // This handles cases where the URL might be in the content but not in atomicSnippets
+        if (!sourceUrl && asset.extractedText) {
+          // Look for URLs in the extracted text (common patterns)
+          const urlPatterns = [
+            /https?:\/\/[^\s\)]+/g,  // Standard HTTP/HTTPS URLs
+            /www\.[^\s\)]+/g,         // www. URLs
+          ];
+          
+          for (const pattern of urlPatterns) {
+            const matches = asset.extractedText.match(pattern);
+            if (matches && matches.length > 0) {
+              // Take the first valid URL found
+              const candidateUrl = matches[0].replace(/[.,;!?]+$/, ''); // Remove trailing punctuation
+              try {
+                // Validate it's a proper URL
+                const testUrl = candidateUrl.startsWith('http') ? candidateUrl : `https://${candidateUrl}`;
+                new URL(testUrl);
+                sourceUrl = testUrl;
+                break;
+              } catch {
+                // Not a valid URL, continue
+              }
+            }
+          }
+        }
+        
         // Remove trailing period if present
         if (sourceUrl && sourceUrl.endsWith('.')) {
           sourceUrl = sourceUrl.slice(0, -1);
@@ -526,8 +563,10 @@ export function ReviewForm({
         // Validate that sourceUrl is a valid URL format
         if (sourceUrl) {
           try {
-            // Basic URL validation
-            new URL(sourceUrl);
+            // Ensure URL has protocol
+            const testUrl = sourceUrl.startsWith('http') ? sourceUrl : `https://${sourceUrl}`;
+            new URL(testUrl);
+            sourceUrl = testUrl;
           } catch {
             // If it's not a valid URL, don't display it
             sourceUrl = null;
