@@ -64,13 +64,11 @@ const createContentIdeaSchema = (allowedPainClusters: string[], availableSourceI
   
   return z.object({
     assetType: z.enum([
-      "Whitepaper",
-      "Case_Study",
       "Blog_Post",
-      "Infographic",
-      "Webinar_Recording",
-      "Sales_Deck",
-      "Technical_Doc",
+      "Article",
+      "Opinion_Piece",
+      "Playbook",
+      "Top_Ten_List",
     ]),
     title: z.string().describe("Proposed content title/concept - make it ICP-specific"),
     strategicRationale: z.string().describe("Why this content matters for this gap type and ICP"),
@@ -518,6 +516,21 @@ Before generating ideas, you MUST analyze the gap strategically:
    - TOFU gaps need awareness content (explainers, risk maps, decision frameworks)
    - MOFU gaps need consideration content (comparisons, case studies, ROI calculators)
    - BOFU gaps need decision content (implementation guides, vendor comparisons)
+   
+   **CRITICAL: Only suggest easily producible content types:**
+   - Blog_Post (HIGHEST PRIORITY - suggest for most ideas)
+   - Article
+   - Opinion_Piece
+   - Playbook
+   - Top_Ten_List
+   
+   **DO NOT suggest:**
+   - Whitepapers (too much work, insufficient information)
+   - Infographics (insufficient data for creation)
+   - Webinar/Webcast recordings (require recording first)
+   - Case studies (unless you have specific case study data)
+   - Technical documentation (requires deep technical detail)
+   - Sales decks (requires extensive design work)
 
 Your goal is to generate 3-5 high-quality content ideas that:
 1. **PRIMARY FOCUS: Solve the specific pain cluster(s)** - Each idea MUST directly address and solve the pain cluster(s) identified
@@ -712,7 +725,7 @@ ${existingAssetsText}`;
     
     const gapTypeGuidance = gapAssetCount === 0 && gap.stage === "TOFU_AWARENESS"
       ? isCFO_TOFU_Awareness
-        ? "This is a pure CFO AWARENESS gap (0 assets). Content MUST be finance-native and non-technical. Focus on: risk exposure, timelines (2027/2030), budget shock, business continuity, governance and decision gates, hidden cost categories. Content should NOT be 'how to execute a conversion.' It should help the CFO understand financial/business exposure and what decisions to force now. Asset types MUST be Blog_Post, Infographic, or Whitepaper only (NO Technical_Doc)."
+        ? "This is a pure CFO AWARENESS gap (0 assets). Content MUST be finance-native and non-technical. Focus on: risk exposure, timelines (2027/2030), budget shock, business continuity, governance and decision gates, hidden cost categories. Content should NOT be 'how to execute a conversion.' It should help the CFO understand financial/business exposure and what decisions to force now. Asset types MUST be Blog_Post, Article, or Opinion_Piece only (prioritize Blog_Post)."
         : "This is a pure AWARENESS gap. Content should NOT be 'how to execute a conversion.' It should help the ICP understand financial/business exposure and what decisions to force now."
       : gapAssetCount === 0 && gap.stage === "MOFU_CONSIDERATION"
       ? "This is a CONSIDERATION gap. Content should help evaluate solutions and compare options."
