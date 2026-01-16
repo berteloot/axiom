@@ -5,6 +5,7 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { z } from "zod";
 import { FunnelStage } from "@/lib/types";
 import { standardizeICPTargets } from "@/lib/icp-targets";
+import { sanitizeS3Metadata } from "@/lib/s3-utils";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -128,15 +129,16 @@ export async function POST(request: NextRequest) {
 
     // Upload content to S3 as markdown
     try {
+      // Sanitize metadata values to ensure they're valid HTTP headers
       const uploadCommand = new PutObjectCommand({
         Bucket: BUCKET_NAME,
         Key: s3Key,
         Body: fullContent,
         ContentType: "text/markdown",
         Metadata: {
-          "original-title": title,
-          "asset-type": assetType,
-          "funnel-stage": funnelStage,
+          "original-title": sanitizeS3Metadata(title, 2000),
+          "asset-type": sanitizeS3Metadata(assetType, 2000),
+          "funnel-stage": sanitizeS3Metadata(funnelStage, 2000),
           "generated-at": new Date().toISOString(),
         },
       });

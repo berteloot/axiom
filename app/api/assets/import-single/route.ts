@@ -7,6 +7,7 @@ import { FunnelStage } from "@/lib/types";
 import { standardizeICPTargets } from "@/lib/icp-targets";
 import { fetchBlogPostContentWithDate, deriveTitleFromSlug } from "@/lib/services/blog-extractor";
 import { fetchBlogPostContentWithFirecrawl, isFirecrawlActive, isFirecrawlConfigured } from "@/lib/services/firecrawl-client";
+import { sanitizeS3Metadata } from "@/lib/s3-utils";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -195,17 +196,18 @@ export async function POST(request: NextRequest) {
     const s3Key = `single-imports/${accountId}/${filename}`;
 
     // Upload to S3
+    // Sanitize metadata values to ensure they're valid HTTP headers
     const uploadCommand = new PutObjectCommand({
       Bucket: BUCKET_NAME,
       Key: s3Key,
       Body: content,
       ContentType: "text/markdown",
       Metadata: {
-        "original-title": title,
-        "source-url": url,
+        "original-title": sanitizeS3Metadata(title, 2000),
+        "source-url": sanitizeS3Metadata(url, 2000),
         "imported-at": new Date().toISOString(),
-        ...(publishedDate ? { "published-date": publishedDate } : {}),
-        ...(warningMessage ? { "extraction-warning": warningMessage.substring(0, 2000) } : {}),
+        ...(publishedDate ? { "published-date": sanitizeS3Metadata(publishedDate, 2000) } : {}),
+        ...(warningMessage ? { "extraction-warning": sanitizeS3Metadata(warningMessage, 2000) } : {}),
       },
     });
 

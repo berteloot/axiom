@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { z } from "zod";
 import { zodResponseFormat } from "openai/helpers/zod";
-import { getPresignedDownloadUrl, extractKeyFromS3Url } from "./s3";
+import { getImageAsBase64, extractKeyFromS3Url } from "./s3";
 import { prisma } from "./prisma";
 
 const openai = new OpenAI({
@@ -420,11 +420,17 @@ INSTRUCTIONS:
     // --- HANDLE IMAGES ---
     if (isImage && s3Url) {
       const key = extractKeyFromS3Url(s3Url);
-      const imageUrl = key ? await getPresignedDownloadUrl(key, 3600) : s3Url;
+      if (!key) {
+        throw new Error(`Could not extract S3 key from URL: ${s3Url}`);
+      }
+      
+      // Download image from S3 and convert to base64 to avoid OpenAI timeout issues
+      console.log(`[IMAGE] Downloading image from S3 and converting to base64: ${key}`);
+      const imageDataUrl = await getImageAsBase64(key);
       
       userContent = [
         { type: "text", text: "Analyze this marketing asset image." },
-        { type: "image_url", image_url: { url: imageUrl } },
+        { type: "image_url", image_url: { url: imageDataUrl } },
       ];
     } 
     

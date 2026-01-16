@@ -128,3 +128,45 @@ export async function deleteS3Object(key: string): Promise<void> {
 
   await s3Client.send(command);
 }
+
+/**
+ * Download an image from S3 and convert it to base64
+ * This is used to avoid OpenAI API timeouts when downloading images from presigned URLs
+ * @param key - The S3 object key (file path)
+ * @returns Base64 encoded image data URL (e.g., "data:image/png;base64,...")
+ */
+export async function getImageAsBase64(key: string): Promise<string> {
+  if (!BUCKET_NAME) {
+    throw new Error("AWS_S3_BUCKET_NAME is not set");
+  }
+
+  const command = new GetObjectCommand({
+    Bucket: BUCKET_NAME,
+    Key: key,
+  });
+
+  const response = await s3Client.send(command);
+  
+  if (!response.Body) {
+    throw new Error(`Failed to download image from S3: ${key}`);
+  }
+
+  // Convert the stream to a buffer
+  const chunks: Uint8Array[] = [];
+  const stream = response.Body as any;
+  
+  for await (const chunk of stream) {
+    chunks.push(chunk);
+  }
+  
+  const buffer = Buffer.concat(chunks);
+  
+  // Determine content type from response or default to image/png
+  const contentType = response.ContentType || "image/png";
+  
+  // Convert to base64
+  const base64 = buffer.toString("base64");
+  
+  // Return as data URL
+  return `data:${contentType};base64,${base64}`;
+}

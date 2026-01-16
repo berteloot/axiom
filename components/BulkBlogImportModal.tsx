@@ -382,11 +382,19 @@ export function BulkBlogImportModal({
       setCurrentImportStep("Import complete!");
       setResults(aggregateResults);
       
-      if (onSuccess) {
+      // Only auto-close on success if there are no errors
+      // If there are errors, keep the modal open so user can see them
+      if (onSuccess && aggregateResults.failed === 0 && aggregateResults.errors.length === 0) {
         setTimeout(() => {
           onSuccess();
           handleClose();
         }, 3000);
+      } else if (aggregateResults.failed > 0 || aggregateResults.errors.length > 0) {
+        // Set error message if there are failures
+        const errorMessages = aggregateResults.errors.map(e => `${e.url}: ${e.error}`).join("\n");
+        setImportError(
+          `${aggregateResults.failed} post${aggregateResults.failed !== 1 ? "s" : ""} failed to import. ${errorMessages.length > 200 ? errorMessages.substring(0, 200) + "..." : errorMessages}`
+        );
       }
     } catch (err) {
       setImportError(err instanceof Error ? err.message : "Failed to import blog posts");
@@ -928,10 +936,10 @@ export function BulkBlogImportModal({
             </div>
 
             {importError && (
-              <Alert variant="destructive">
+              <Alert variant="destructive" className="mb-4">
                 <XCircle className="h-4 w-4" />
-                <AlertTitle>Import Failed</AlertTitle>
-                <AlertDescription className="mt-1">{importError}</AlertDescription>
+                <AlertTitle>Import Error</AlertTitle>
+                <AlertDescription className="mt-1 whitespace-pre-wrap break-words">{importError}</AlertDescription>
               </Alert>
             )}
 
@@ -1024,12 +1032,12 @@ export function BulkBlogImportModal({
                     </details>
                   )}
                   {Array.isArray(results.errors) && results.errors.length > 0 && (
-                    <details className="mt-2">
-                      <summary className="cursor-pointer text-sm font-medium hover:underline">
-                        View error details ({results.errors.length})
+                    <details className="mt-2" open={results.errors.length > 0}>
+                      <summary className="cursor-pointer text-sm font-medium hover:underline text-red-700 dark:text-red-400">
+                        ⚠️ View error details ({results.errors.length}) - Click to expand
                       </summary>
-                      <ul className="mt-2 space-y-1.5 text-xs max-h-40 overflow-y-auto pl-4 list-disc">
-                        {results.errors.slice(0, 10).map((err, idx) => (
+                      <ul className="mt-2 space-y-1.5 text-xs max-h-60 overflow-y-auto pl-4 list-disc">
+                        {results.errors.slice(0, 20).map((err, idx) => (
                           <li key={idx} className="break-all">
                             <a
                               href={err?.url || '#'}
@@ -1040,12 +1048,12 @@ export function BulkBlogImportModal({
                               <ExternalLink className="h-3 w-3" />
                               {err?.url ? err.url.substring(0, 60) : 'Unknown URL'}...
                             </a>
-                            <span className="text-muted-foreground ml-1">: {err?.error || 'Unknown error'}</span>
+                            <span className="text-red-600 dark:text-red-400 ml-1 font-medium">: {err?.error || 'Unknown error'}</span>
                           </li>
                         ))}
-                        {results.errors.length > 10 && (
+                        {results.errors.length > 20 && (
                           <li className="text-muted-foreground italic">
-                            ... and {results.errors.length - 10} more errors
+                            ... and {results.errors.length - 20} more errors
                           </li>
                         )}
                       </ul>

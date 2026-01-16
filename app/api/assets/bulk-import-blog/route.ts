@@ -8,6 +8,7 @@ import { standardizeICPTargets } from "@/lib/icp-targets";
 import { extractBlogPostUrls, fetchBlogPostContentWithDate } from "@/lib/services/blog-extractor";
 import { scrapeSelectedUrls } from "@/lib/blog-extraction";
 import { fetchBlogPostContentWithFirecrawl, isFirecrawlConfigured } from "@/lib/services/firecrawl-client";
+import { sanitizeS3Metadata } from "@/lib/s3-utils";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -245,17 +246,18 @@ export async function POST(request: NextRequest) {
         const s3Key = `blog-imports/${accountId}/${filename}`;
 
         // Upload to S3
+        // Sanitize metadata values to ensure they're valid HTTP headers
         const uploadCommand = new PutObjectCommand({
           Bucket: BUCKET_NAME,
           Key: s3Key,
           Body: content,
           ContentType: "text/markdown",
           Metadata: {
-            "original-title": post.title,
-            "source-url": post.url,
+            "original-title": sanitizeS3Metadata(post.title, 2000),
+            "source-url": sanitizeS3Metadata(post.url, 2000),
             "imported-at": new Date().toISOString(),
-            ...(resolvedPublishedDate ? { "published-date": resolvedPublishedDate } : {}),
-            ...(warningMessage ? { "extraction-warning": warningMessage.substring(0, 2000) } : {}),
+            ...(resolvedPublishedDate ? { "published-date": sanitizeS3Metadata(resolvedPublishedDate, 2000) } : {}),
+            ...(warningMessage ? { "extraction-warning": sanitizeS3Metadata(warningMessage, 2000) } : {}),
           },
         });
 

@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { z } from "zod";
 import { zodResponseFormat } from "openai/helpers/zod";
-import { getPresignedDownloadUrl, extractKeyFromS3Url } from "../s3";
+import { getImageAsBase64, extractKeyFromS3Url } from "../s3";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -188,9 +188,15 @@ export async function analyzeImage(
     if (!process.env.OPENAI_API_KEY) {
       throw new Error("OPENAI_API_KEY is not configured");
     }
-    // Get a presigned URL for OpenAI to access the image
+    
+    // Download image from S3 and convert to base64 to avoid OpenAI timeout issues
     const key = extractKeyFromS3Url(s3Url);
-    const imageUrl = key ? await getPresignedDownloadUrl(key, 3600) : s3Url;
+    if (!key) {
+      throw new Error(`Could not extract S3 key from URL: ${s3Url}`);
+    }
+    
+    console.log(`[IMAGE] Downloading image from S3 and converting to base64: ${key}`);
+    const imageDataUrl = await getImageAsBase64(key);
     
     const systemPrompt = `You are an expert at extracting data and text from marketing images.
 Your goal is to perform comprehensive OCR and visual analysis to extract every valuable piece of information.
@@ -215,7 +221,7 @@ IMPORTANT:
           role: "user", 
           content: [
             { type: "text", text: userPrompt },
-            { type: "image_url", image_url: { url: imageUrl, detail: "high" } }
+            { type: "image_url", image_url: { url: imageDataUrl, detail: "high" } }
           ]
         },
       ],
