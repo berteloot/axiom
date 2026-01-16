@@ -143,7 +143,12 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
   }, [assets]);
 
   const updateFilters = (updates: Partial<AssetFiltersState>) => {
-    onFiltersChange({ ...filters, ...updates });
+    // Ensure search is always a string to prevent crashes
+    const safeUpdates = { ...updates };
+    if ("search" in safeUpdates) {
+      safeUpdates.search = String(safeUpdates.search || "").slice(0, 1000); // Limit length to prevent issues
+    }
+    onFiltersChange({ ...filters, ...safeUpdates });
   };
 
   const clearFilters = () => {
@@ -628,46 +633,85 @@ export function applyAssetFilters(assets: Asset[], filters: AssetFiltersState): 
 
   // Text search (includes title, content, uploaded by name, custom name override, and upload date)
   if (filters.search) {
-    // Trim search term to remove leading/trailing spaces
-    const searchTerm = filters.search.trim();
-    if (searchTerm) {
-      const searchLower = searchTerm.toLowerCase();
-      filtered = filtered.filter((asset) => {
-        // Skip invalid assets
-        if (!asset || !asset.id) return false;
-        
+    try {
+      // Normalize search term: trim and validate
+      const searchTerm = String(filters.search || "").trim();
+      if (!searchTerm || searchTerm.length === 0) {
+        // Empty search, skip filtering
+      } else {
+        // Normalize to lowercase safely - handle any edge cases
+        let searchLower: string;
         try {
-          const titleMatch = asset.title?.toLowerCase().includes(searchLower) ?? false;
-          const userMatch = asset.uploadedBy?.name?.toLowerCase().includes(searchLower) ?? false;
-          const customNameMatch = (asset as any).uploadedByNameOverride?.toLowerCase().includes(searchLower) ?? false;
-          
-          // Search in extracted text content (handle null/undefined safely)
-          const contentMatch = asset.extractedText?.toLowerCase().includes(searchLower) ?? false;
-          
-          // Check if search matches date format or date string (with error handling)
-          let dateMatch = false;
-          try {
-            if (asset.createdAt) {
-              const uploadDate = new Date(asset.createdAt);
-              if (!isNaN(uploadDate.getTime())) {
-                dateMatch = 
-                  uploadDate.toLocaleDateString().toLowerCase().includes(searchLower) ||
-                  uploadDate.toISOString().toLowerCase().includes(searchLower) ||
-                  uploadDate.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }).toLowerCase().includes(searchLower);
-              }
-            }
-          } catch (error) {
-            // Silently ignore date parsing errors
-            console.warn("Error parsing date for search:", error);
-          }
-          
-          return titleMatch || userMatch || customNameMatch || contentMatch || dateMatch;
+          searchLower = searchTerm.toLowerCase();
         } catch (error) {
-          // If any error occurs during filtering, exclude this asset
-          console.warn("Error filtering asset:", asset.id, error);
-          return false;
+          // If toLowerCase fails, use original term (shouldn't happen, but be safe)
+          console.warn("Error normalizing search term:", error);
+          searchLower = searchTerm;
         }
-      });
+
+        // Helper function to safely check if a string contains the search term
+        const safeIncludes = (text: string | null | undefined): boolean => {
+          if (!text || typeof text !== "string") return false;
+          try {
+            const normalized = text.toLowerCase();
+            return normalized.includes(searchLower);
+          } catch (error) {
+            // If toLowerCase or includes fails, return false
+            return false;
+          }
+        };
+
+        filtered = filtered.filter((asset) => {
+          // Skip invalid assets
+          if (!asset || !asset.id) return false;
+          
+          try {
+            // Safe string matching for all fields
+            const titleMatch = safeIncludes(asset.title);
+            const userMatch = safeIncludes(asset.uploadedBy?.name);
+            const customNameMatch = safeIncludes((asset as any).uploadedByNameOverride);
+            const contentMatch = safeIncludes(asset.extractedText);
+            
+            // Check if search matches date format or date string (with comprehensive error handling)
+            let dateMatch = false;
+            try {
+              if (asset.createdAt) {
+                const uploadDate = new Date(asset.createdAt);
+                if (!isNaN(uploadDate.getTime())) {
+                  try {
+                    const dateStr1 = uploadDate.toLocaleDateString();
+                    const dateStr2 = uploadDate.toISOString();
+                    const dateStr3 = uploadDate.toLocaleDateString("en-US", { 
+                      year: "numeric", 
+                      month: "long", 
+                      day: "numeric" 
+                    });
+                    
+                    dateMatch = 
+                      safeIncludes(dateStr1) ||
+                      safeIncludes(dateStr2) ||
+                      safeIncludes(dateStr3);
+                  } catch (dateFormatError) {
+                    // Silently ignore date formatting errors
+                  }
+                }
+              }
+            } catch (dateError) {
+              // Silently ignore date parsing errors
+            }
+            
+            return titleMatch || userMatch || customNameMatch || contentMatch || dateMatch;
+          } catch (error) {
+            // If any error occurs during filtering, exclude this asset to prevent crashes
+            console.warn("Error filtering asset:", asset.id, error);
+            return false;
+          }
+        });
+      }
+    } catch (error) {
+      // If search filtering completely fails, log but don't crash - return all assets
+      console.error("Critical error in search filter:", error);
+      // Return filtered results without search applied
     }
   }
 
@@ -766,8 +810,8 @@ export function applyAssetFilters(assets: Asset[], filters: AssetFiltersState): 
       try {
         switch (filters.sortBy) {
       case "title":
-        aValue = a.title.toLowerCase();
-        bValue = b.title.toLowerCase();
+        aValue = (a.title && typeof a.title === "string") ? a.title.toLowerCase() : "";
+        bValue = (b.title && typeof b.title === "string") ? b.title.toLowerCase() : "";
         break;
       case "createdAt":
         aValue = new Date(a.createdAt).getTime();

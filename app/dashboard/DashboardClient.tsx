@@ -508,9 +508,25 @@ export default function DashboardClient() {
     }
   };
 
-  // Apply filters to assets
+  // Apply filters to assets (with error handling to prevent crashes)
   const filteredAssets = useMemo(() => {
-    return applyAssetFilters(assets, filters);
+    try {
+      // Ensure assets is an array
+      if (!Array.isArray(assets)) {
+        console.warn("Assets is not an array, returning empty array");
+        return [];
+      }
+      // Ensure filters is valid
+      if (!filters || typeof filters !== "object") {
+        console.warn("Filters is invalid, returning all assets");
+        return assets;
+      }
+      return applyAssetFilters(assets, filters);
+    } catch (error) {
+      console.error("Error applying asset filters:", error);
+      // Return all assets as fallback to prevent UI crash
+      return Array.isArray(assets) ? assets : [];
+    }
   }, [assets, filters]);
 
   // Calculate KPIs (use all assets, not filtered)
