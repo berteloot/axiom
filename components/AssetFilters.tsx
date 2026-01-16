@@ -187,7 +187,7 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search assets by title or uploader..."
+            placeholder="Search assets by title, content, or uploader..."
             value={filters.search}
             onChange={(e) => updateFilters({ search: e.target.value })}
             className="pl-9"
@@ -620,20 +620,35 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
 export function applyAssetFilters(assets: Asset[], filters: AssetFiltersState): Asset[] {
   let filtered = [...assets];
 
-  // Text search (includes title, uploaded by name, custom name override, and upload date)
+  // Text search (includes title, content, uploaded by name, custom name override, and upload date)
   if (filters.search) {
     const searchLower = filters.search.toLowerCase();
     filtered = filtered.filter((asset) => {
       const titleMatch = asset.title?.toLowerCase().includes(searchLower) ?? false;
       const userMatch = asset.uploadedBy?.name?.toLowerCase().includes(searchLower) ?? false;
       const customNameMatch = (asset as any).uploadedByNameOverride?.toLowerCase().includes(searchLower) ?? false;
-      // Check if search matches date format or date string
-      const uploadDate = new Date(asset.createdAt);
-      const dateMatch = 
-        uploadDate.toLocaleDateString().toLowerCase().includes(searchLower) ||
-        uploadDate.toISOString().toLowerCase().includes(searchLower) ||
-        uploadDate.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }).toLowerCase().includes(searchLower);
-      return titleMatch || userMatch || customNameMatch || dateMatch;
+      
+      // Search in extracted text content
+      const contentMatch = asset.extractedText?.toLowerCase().includes(searchLower) ?? false;
+      
+      // Check if search matches date format or date string (with error handling)
+      let dateMatch = false;
+      try {
+        if (asset.createdAt) {
+          const uploadDate = new Date(asset.createdAt);
+          if (!isNaN(uploadDate.getTime())) {
+            dateMatch = 
+              uploadDate.toLocaleDateString().toLowerCase().includes(searchLower) ||
+              uploadDate.toISOString().toLowerCase().includes(searchLower) ||
+              uploadDate.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }).toLowerCase().includes(searchLower);
+          }
+        }
+      } catch (error) {
+        // Silently ignore date parsing errors
+        console.warn("Error parsing date for search:", error);
+      }
+      
+      return titleMatch || userMatch || customNameMatch || contentMatch || dateMatch;
     });
   }
 
