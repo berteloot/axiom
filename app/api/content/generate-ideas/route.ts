@@ -685,48 +685,8 @@ ${existingAssetsText}`;
     
     const availableSourceIds = availableSources.map((s: any) => s.id || `src-${s.url}`).filter(Boolean);
     
-    // If mode is "trendingOnly", return early with just trending topics and sources
-    if (mode === "trendingOnly") {
-      const sourcesArray = (trendingData?.results || []).map((r: any) => ({
-        id: r.id || `src-${r.url}`,
-        url: r.url,
-        title: r.title,
-        publisher: r.publisher || null,
-        publishedDate: r.publishedDate || null,
-        excerpt: r.excerpt ? (r.excerpt.length > 500 ? r.excerpt.substring(0, 500) + "..." : r.excerpt) : null,
-        relevance: r.relevance || "medium",
-        sourceType: r.sourceType || "other",
-        isReputable: r.isReputable || false,
-        whyReputable: r.whyReputable || null,
-        whyRelevant: r.whyRelevant || null,
-      }));
-      
-      return NextResponse.json({
-        gap: {
-          icp: gap.icp,
-          stage: gap.stage,
-          painCluster: gap.painCluster || null,
-        },
-        strategicPriority: "medium" as const,
-        priorityRationale: "Trending discovery mode - ideas not generated",
-        trendingContext: trendingData?.insights || null,
-        trendingTopics: trendingData?.trendingTopics || [],
-        sources: sourcesArray,
-        ideas: [], // No ideas in trendingOnly mode
-        trendingSources: (trendingData?.results || []).map((r: any) => ({
-          id: r.id || `src-${r.url}`,
-          url: r.url,
-          title: r.title,
-          content: r.content ? (r.content.length > 800 ? r.content.substring(0, 800) + "..." : r.content) : "",
-          relevance: r.relevance,
-          sourceType: r.sourceType,
-          isReputable: r.isReputable,
-        })),
-        trendingInsights: trendingData?.insights || "",
-        sourceCountWarning: (trendingData as any)?.sourceCountWarning || undefined,
-        _apiWarnings: isAdmin && apiWarnings.length > 0 ? apiWarnings : undefined,
-      });
-    }
+    // STREAMLINED: Always generate ideas with research included
+    // Removed "trendingOnly" mode - research is now always automatic during idea generation
     
     // Create dynamic schemas with constrained pain clusters and available source IDs
     const ContentIdeasResponseSchema = createContentIdeasResponseSchema(allowedPainClusters, availableSourceIds);
@@ -968,11 +928,11 @@ ${trendingData && trendingData.trendingTopics && trendingData.trendingTopics.len
       return processed;
     });
 
-    // CRITICAL: Build sources array using availableSources (filtered selected sources) when mode is "ideas"
-    // This ensures only selected sources are returned and available for draft generation
-    const sourcesToReturn = mode === "ideas" && availableSources.length > 0
-      ? availableSources  // Use filtered selected sources
-      : (trendingData?.results || result.sources || []);  // Fallback to all sources
+    // STREAMLINED: Always return sources when available (research is now automatic)
+    // Use filtered selected sources if provided, otherwise use all trending sources
+    const sourcesToReturn = availableSources.length > 0
+      ? availableSources  // Use filtered selected sources if available
+      : (trendingData?.results || result.sources || []);  // Fallback to all sources from research
     
     const sourcesArray = sourcesToReturn.map((r: any) => ({
       id: r.id || `src-${r.url}`,

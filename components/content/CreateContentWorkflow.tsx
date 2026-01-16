@@ -170,7 +170,8 @@ interface ContentDraft {
   message?: string;
 }
 
-type WorkflowStep = "gap-selection" | "input-validation" | "trending-discovery" | "source-selection" | "idea-generation" | "idea-selection" | "brief-review" | "draft-generation" | "draft-review" | "complete";
+// STREAMLINED: Reduced from 10 steps to 5 steps
+type WorkflowStep = "gap-selection" | "idea-generation" | "idea-selection" | "brief-review" | "draft-review" | "complete";
 
 interface CreateContentWorkflowProps {
   open: boolean;
@@ -183,9 +184,9 @@ export function CreateContentWorkflow({
   onOpenChange,
   initialGap,
 }: CreateContentWorkflowProps) {
-  // Reset state when dialog opens with a new gap
+  // STREAMLINED: Auto-start idea generation when gap is provided
   const [currentStep, setCurrentStep] = useState<WorkflowStep>(
-    initialGap ? "input-validation" : "gap-selection"
+    initialGap ? "idea-generation" : "gap-selection"
   );
   const [selectedGap, setSelectedGap] = useState<Gap | null>(initialGap || null);
 
@@ -213,25 +214,21 @@ export function CreateContentWorkflow({
       
       if (initialGap) {
         setSelectedGap(initialGap);
-        setCurrentStep("input-validation");
+        setCurrentStep("idea-generation"); // STREAMLINED: Skip to idea generation (auto-triggers research)
       } else {
         setSelectedGap(null);
         setCurrentStep("gap-selection");
       }
       // Reset all other state
-      setTrendingData(null);
       setContentIdeas(null);
       setSelectedIdea(null);
       setContentBrief(null);
       setContentDraft(null);
       setError(null);
       setApiWarnings([]);
-      setIsDiscoveringTrends(false);
       setIsGeneratingIdeas(false);
       setIsGeneratingBrief(false);
       setIsGeneratingDraft(false);
-      setIsValidating(false);
-      setValidationResult(null);
       setSelectedSources(new Set<string>());
       setPreviewSource(null);
     }
@@ -244,23 +241,7 @@ export function CreateContentWorkflow({
       prevGapKeyRef.current = null;
     }
   }, [open, initialGap?.icp, initialGap?.stage, initialGap?.painCluster, initialGap?.productLineId]); // Only depend on primitive values
-  const [isDiscoveringTrends, setIsDiscoveringTrends] = useState(false);
-  const [trendingData, setTrendingData] = useState<{
-    topics: string[];
-    insights: string;
-    sources: Array<{ 
-      id?: string;
-      url: string; 
-      title: string; 
-      relevance: string;
-      content?: string | null;
-      excerpt?: string | null;
-      sourceType?: string;
-      isReputable?: boolean;
-      publisher?: string | null;
-      publishedDate?: string | null;
-    }>;
-  } | null>(null);
+  // STREAMLINED: Removed trendingData state - now handled automatically during idea generation
   const [isGeneratingIdeas, setIsGeneratingIdeas] = useState(false);
   const [contentIdeas, setContentIdeas] = useState<ContentIdeasResponse | null>(null);
   const [selectedIdea, setSelectedIdea] = useState<ContentIdea | null>(null);
@@ -342,158 +323,24 @@ export function CreateContentWorkflow({
     }
   }, [initialGap]);
 
+  // STREAMLINED: Skip validation step - go directly to idea generation
   const handleGapSelect = (gap: Gap) => {
     setSelectedGap(gap);
     setError(null);
-    setCurrentStep("input-validation");
-  };
-
-  // Validate context before searching
-  const handleValidateContext = async () => {
-    if (!selectedGap) return;
-
-    setIsValidating(true);
-    setError(null);
-
-    try {
-      const response = await fetch("/api/content/validate-context", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ gap: selectedGap }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to validate context");
-      }
-
-      const result = await response.json();
-      setValidationResult(result);
-
-      if (result.canProceed) {
-        // Auto-proceed to trending discovery if validation passes
-        setCurrentStep("trending-discovery");
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to validate context");
-    } finally {
-      setIsValidating(false);
-    }
-  };
-
-  // Handle source selection toggle (supports both URL and ID)
-  const handleSourceToggle = (identifier: string) => {
-    setSelectedSources((prev) => {
-      const next = new Set(prev);
-      // Support both URL-based (legacy) and ID-based (new) selection
-      // Check if identifier exists in the set (could be URL or ID)
-      const exists = Array.from(next).some(id => id === identifier || id.includes(identifier) || identifier.includes(id));
-      if (exists) {
-        // Remove all matching identifiers
-        Array.from(next).forEach(id => {
-          if (id === identifier || id.includes(identifier) || identifier.includes(id)) {
-            next.delete(id);
-          }
-        });
-      } else {
-        next.add(identifier);
-      }
-      return next;
-    });
-  };
-
-  // Handle proceeding from source selection
-  const handleProceedFromSourceSelection = () => {
-    if (selectedSources.size === 0) {
-      setError("Please select at least one source to proceed");
-      return;
-    }
+    // Auto-trigger idea generation with research included
     setCurrentStep("idea-generation");
   };
 
-  const handleDiscoverTrendingTopics = async () => {
-    if (!selectedGap) return;
+  // STREAMLINED: Removed separate trending discovery and source selection steps
+  // Research and source selection now happen automatically during idea generation
 
-    setIsDiscoveringTrends(true);
-    setError(null);
-
-    try {
-      const gapWithProductLine = {
-        ...selectedGap,
-        productLineId: selectedProductLineId,
-        icpTargets: selectedICPTargets.length > 0 ? selectedICPTargets : [selectedGap.icp],
-      };
-      // Use "trendingOnly" mode to get only trending topics and sources, not ideas
-      const response = await fetch("/api/content/generate-ideas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          gap: gapWithProductLine,
-          includeTrendingTopics: true,
-          mode: "trendingOnly", // Only return trending topics and sources
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to discover trending topics");
-      }
-
-      const data: ContentIdeasResponse = await response.json();
-      
-      // Ensure we have the required data structure
-      if (!data) {
-        throw new Error("No data returned from trending topics discovery");
-      }
-      
-      setTrendingData({
-        topics: data.trendingTopics || [],
-        insights: data.trendingInsights || data.trendingContext || "",
-        sources: (data.trendingSources || data.sources || []).map((s: any) => ({
-          id: s.id,
-          url: s.url || "",
-          title: (s.title && typeof s.title === 'string' && s.title.trim()) ? s.title.trim() : "Untitled Source",
-          content: s.content || s.excerpt || "",
-          relevance: s.relevance || "medium",
-          sourceType: s.sourceType || "other",
-          isReputable: s.isReputable || false,
-          excerpt: s.excerpt || undefined,
-          publisher: s.publisher || undefined,
-          publishedDate: s.publishedDate || undefined,
-        })).filter((s: any) => s.url), // Filter out sources without URLs
-      });
-      
-      // Collect API warnings for admin display
-      if (isAdmin && (data as any)._apiWarnings) {
-        setApiWarnings((data as any)._apiWarnings);
-      }
-      
-      // Auto-select all reputable sources by default
-      const sourcesToSelect = data.trendingSources || data.sources || [];
-      const defaultSelected = new Set<string>(
-        sourcesToSelect
-          .filter((s: any) => s.isReputable)
-          .map((s: any) => (s.id || s.url) as string) // Use source ID if available, fallback to URL
-      );
-      setSelectedSources(defaultSelected);
-      
-      // Only move to source selection if we have sources
-      if (sourcesToSelect.length > 0) {
-        setCurrentStep("source-selection");
-      } else {
-        // If no sources found, show error but allow skip
-        setError("No sources found. You can skip trending discovery and generate ideas directly.");
-        setCurrentStep("idea-generation");
-      }
-    } catch (err) {
-      console.error("Error in handleDiscoverTrendingTopics:", err);
-      setError(err instanceof Error ? err.message : "Failed to discover trending topics");
-      // Continue to idea generation even if trending topics fail
-      setCurrentStep("idea-generation");
-    } finally {
-      setIsDiscoveringTrends(false);
+  // STREAMLINED: Auto-trigger idea generation when gap is selected (research included automatically)
+  useEffect(() => {
+    if (currentStep === "idea-generation" && selectedGap && !contentIdeas && !isGeneratingIdeas) {
+      handleGenerateIdeas();
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStep, selectedGap]);
 
   const handleGenerateIdeas = async () => {
     if (!selectedGap) return;
@@ -508,28 +355,14 @@ export function CreateContentWorkflow({
         icpTargets: selectedICPTargets.length > 0 ? selectedICPTargets : [selectedGap.icp],
       };
       
-      // Get selected source IDs (prefer IDs over URLs for new format)
-      const selectedSourceIds = Array.from(selectedSources);
-      
-      // CRITICAL: Also pass the full selected source objects to ensure they're available for draft generation
-      // This ensures sources are preserved through the workflow
-      const selectedSourceObjects = trendingData?.sources?.filter((s: any) => {
-        const sourceId = s.id || `src-${s.url}`;
-        return selectedSources.has(sourceId) || selectedSources.has(s.url);
-      }) || [];
-      
-      console.log(`[Content Workflow] Generating ideas with ${selectedSourceIds.length} selected source IDs`);
-      console.log(`[Content Workflow] - Selected source objects: ${selectedSourceObjects.length}`);
-      
+      // STREAMLINED: Always include research automatically (no separate step needed)
       const response = await fetch("/api/content/generate-ideas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           gap: gapWithProductLine,
-          includeTrendingTopics: !!trendingData,
-          mode: "ideas", // Generate ideas only, using selected sources if available
-          selectedSourceIds: selectedSourceIds.length > 0 ? selectedSourceIds : undefined, // Pass selected source IDs
-          selectedSources: selectedSourceObjects.length > 0 ? selectedSourceObjects : undefined, // Pass full source objects for preservation
+          includeTrendingTopics: true, // Always true - research is automatic
+          // Removed mode parameter - research is always included
         }),
       });
 
@@ -540,27 +373,9 @@ export function CreateContentWorkflow({
 
       const data: ContentIdeasResponse = await response.json();
       
-      // CRITICAL: Preserve sources from trending discovery if API didn't return them
-      // This ensures sources are available for draft generation
-      if (!data.trendingSources || data.trendingSources.length === 0) {
-        // Use sources from trendingData if available (from initial discovery)
-        if (trendingData?.sources && trendingData.sources.length > 0) {
-          data.trendingSources = trendingData.sources.map((s: any) => ({
-            id: s.id,
-            url: s.url,
-            title: s.title || "Untitled Source",
-            content: s.content || s.excerpt || "",
-            relevance: s.relevance || "medium",
-            sourceType: s.sourceType || "other",
-            isReputable: s.isReputable || false,
-            publisher: s.publisher || null,
-            publishedDate: s.publishedDate || null,
-            excerpt: s.excerpt || null,
-          }));
-          console.log(`[Content Workflow] Preserved ${data.trendingSources.length} sources from trending discovery into contentIdeas`);
-        }
-      } else {
+      // STREAMLINED: Sources are automatically included in the API response
         // Ensure trendingSources has all necessary fields for draft generation
+      if (data.trendingSources && data.trendingSources.length > 0) {
         data.trendingSources = data.trendingSources.map((s: any) => ({
           ...s,
           content: s.content || s.excerpt || "",
@@ -600,7 +415,7 @@ export function CreateContentWorkflow({
         body: JSON.stringify({
           selectedIdea: idea,
           gap: gapWithProductLine,
-          trendingTopics: trendingData?.topics,
+          trendingTopics: contentIdeas?.trendingTopics,
         }),
       });
 
@@ -633,47 +448,10 @@ export function CreateContentWorkflow({
     setError(null);
 
     // CRITICAL: Get sources from multiple possible locations
-    // 1. Try contentIdeas.trendingSources (from idea generation - should have selected sources)
-    // 2. Fallback to trendingData.sources (from initial discovery)
-    // 3. Use selected sources that match either location
-    const allAvailableSources = (contentIdeas?.trendingSources || trendingData?.sources || []) as Array<{
-      id?: string;
-      url: string;
-      title: string;
-      content?: string;
-      relevance?: string;
-      sourceType?: string;
-      isReputable?: boolean;
-      publisher?: string | null;
-      publishedDate?: string | null;
-      excerpt?: string | null;
-    }>;
+    // STREAMLINED: Use all sources from ideas response automatically (AI has already selected the best ones)
+    const sourcesToSend = contentIdeas?.trendingSources || contentIdeas?.sources || [];
     
-    console.log(`[Content Workflow] All available sources count: ${allAvailableSources.length}`);
-    console.log(`[Content Workflow] - From contentIdeas.trendingSources: ${contentIdeas?.trendingSources?.length || 0}`);
-    console.log(`[Content Workflow] - From trendingData.sources: ${trendingData?.sources?.length || 0}`);
-    console.log(`[Content Workflow] - Selected source identifiers: ${Array.from(selectedSources).join(", ")}`);
-    
-    // Only use SELECTED sources (user's choice)
-    // Support both URL-based (legacy) and ID-based (new) selection
-    const sourcesToSend = allAvailableSources.filter((s: any) => {
-      const sourceId = s.id || `src-${s.url}`;
-      const matchesId = selectedSources.has(sourceId);
-      const matchesUrl = selectedSources.has(s.url);
-      return matchesId || matchesUrl;
-    });
-    
-    console.log(`[Content Workflow] Generating draft with ${sourcesToSend.length} selected sources (from ${allAvailableSources.length} total available sources)`);
-    console.log(`[Content Workflow] - Selected sources: ${sourcesToSend.map(s => s.id || s.url).join(", ")}`);
-    
-    // If no sources selected, allow draft generation to proceed with server-side sourcing
-    // This prevents the skip path from dead-ending
-    if (sourcesToSend.length === 0) {
-      console.warn(`[Content Workflow] WARNING: No sources selected - proceeding with server-side sourcing`);
-      console.warn(`[Content Workflow] - Available source IDs: ${allAvailableSources.map(s => s.id || s.url).join(", ")}`);
-      console.warn(`[Content Workflow] - Selected identifiers: ${Array.from(selectedSources).join(", ")}`);
-      // Don't return error, let the server handle sourcing
-    }
+    console.log(`[Content Workflow] Generating draft with ${sourcesToSend.length} sources (auto-selected by AI during idea generation)`);
 
     try {
       const gapWithProductLine = {
@@ -830,65 +608,32 @@ ${ideasText}
     }
   };
 
+  // STREAMLINED: Reset to streamlined workflow steps
   const handleReset = () => {
-    setCurrentStep(initialGap ? "trending-discovery" : "gap-selection");
+    setCurrentStep(initialGap ? "idea-generation" : "gap-selection");
     setSelectedGap(initialGap || null);
-    setTrendingData(null);
     setContentIdeas(null);
     setSelectedIdea(null);
     setContentBrief(null);
     setContentDraft(null);
     setError(null);
-    setIsDiscoveringTrends(false);
     setIsGeneratingIdeas(false);
     setIsGeneratingBrief(false);
     setIsGeneratingDraft(false);
   };
 
-  // Canonical steps array - single source of truth
-  const getWorkflowSteps = (): WorkflowStep[] => {
-    if (initialGap) {
-      // Skip gap-selection if initialGap is provided
-      return [
-        "input-validation",
-        "trending-discovery",
-        "source-selection",
-        "idea-generation",
-        "idea-selection",
-        "brief-review",
-        "draft-generation",
-        "draft-review",
-        "complete",
-      ];
-    }
-    return [
-      "gap-selection",
-      "input-validation",
-      "trending-discovery",
-      "source-selection",
-      "idea-generation",
-      "idea-selection",
-      "brief-review",
-      "draft-generation",
-      "draft-review",
-      "complete",
-    ];
-  };
-
+  // STREAMLINED: Progress tracking for 5-step workflow
   const getStepNumber = (step: WorkflowStep): number => {
-    const steps = getWorkflowSteps();
+    const steps: WorkflowStep[] = ["gap-selection", "idea-generation", "idea-selection", "brief-review", "draft-review", "complete"];
     return steps.indexOf(step) + 1;
   };
 
   const getTotalSteps = (): number => {
-    return getWorkflowSteps().length;
+    return 5; // STREAMLINED: 5 steps instead of 10
   };
   
   const getStepLabels = (): string[] => {
-    if (initialGap) {
-      return ["Validate", "Search", "Sources", "Ideas", "Select", "Brief", "Draft", "Review", "Complete"];
-    }
-    return ["Gap", "Validate", "Search", "Sources", "Ideas", "Select", "Brief", "Draft", "Review", "Complete"];
+    return ["Gap", "Ideas", "Select", "Brief", "Draft"]; // STREAMLINED: 5 steps
   };
 
   return (
@@ -904,16 +649,16 @@ ${ideasText}
           </DialogDescription>
         </DialogHeader>
 
-        {/* Progress Indicator */}
+        {/* STREAMLINED: Progress Indicator for 5-step workflow */}
         <div className="flex items-center gap-2 mb-6">
-          {getWorkflowSteps().map((step, index) => {
+          {getStepLabels().map((label, index) => {
             const stepNumber = index + 1;
-            const stepLabels = getStepLabels();
+            const steps: WorkflowStep[] = ["gap-selection", "idea-generation", "idea-selection", "brief-review", "draft-review"];
             const isActive = getStepNumber(currentStep) >= stepNumber;
             const isCurrent = getStepNumber(currentStep) === stepNumber;
 
             return (
-              <div key={step} className="flex items-center flex-1">
+              <div key={index} className="flex items-center flex-1">
                 <div className="flex flex-col items-center flex-1">
                   <div
                     className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors ${
@@ -929,7 +674,7 @@ ${ideasText}
                     )}
                   </div>
                   <span className="text-xs mt-1 text-center text-muted-foreground">
-                    {stepLabels[index]}
+                    {label}
                   </span>
                 </div>
                 {stepNumber < getTotalSteps() && (
@@ -973,75 +718,9 @@ ${ideasText}
             />
           )}
 
-          {currentStep === "input-validation" && selectedGap && (
-            <InputValidationStep
-              gap={selectedGap}
-              isValidating={isValidating}
-              validationResult={validationResult}
-              onValidate={handleValidateContext}
-              onProceed={() => setCurrentStep("trending-discovery")}
-            />
-          )}
+          {/* STREAMLINED: Removed input-validation step - validation happens inline during gap selection */}
 
-          {currentStep === "source-selection" && (() => {
-            const availableSources = trendingData?.sources || contentIdeas?.trendingSources || [];
-            
-            if (!availableSources || availableSources.length === 0) {
-              return (
-                <div className="space-y-4">
-                  <Alert>
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertTitle>No Sources Available</AlertTitle>
-                    <AlertDescription>
-                      No valid sources were found. You can proceed to generate ideas without selecting sources.
-                    </AlertDescription>
-                  </Alert>
-                  <Button onClick={() => setCurrentStep("idea-generation")} className="w-full">
-                    Proceed to Generate Ideas
-                  </Button>
-                </div>
-              );
-            }
-            
-            const validSources = availableSources
-              .filter((s: any) => s && s.url && typeof s.url === 'string')
-              .map((s: any) => ({
-                id: s.id || `src-${s.url}`,
-                url: s.url || "",
-                title: (s.title && typeof s.title === 'string' && s.title.trim()) ? s.title.trim() : "Untitled Source",
-                content: s.content || s.excerpt || "",
-                relevance: s.relevance || "medium",
-                sourceType: s.sourceType || "other",
-                isReputable: s.isReputable || false,
-              }));
-            
-            if (validSources.length === 0) {
-              return (
-                <div className="space-y-4">
-                  <Alert>
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertTitle>No Valid Sources</AlertTitle>
-                    <AlertDescription>
-                      All sources were filtered out. You can proceed to generate ideas without selecting sources.
-                    </AlertDescription>
-                  </Alert>
-                  <Button onClick={() => setCurrentStep("idea-generation")} className="w-full">
-                    Proceed to Generate Ideas
-                  </Button>
-                </div>
-              );
-            }
-            
-            return (
-              <SourceSelectionStep
-                sources={validSources}
-                selectedSources={selectedSources}
-                onSourceToggle={handleSourceToggle}
-                onPreview={(source) => setPreviewSource(source)}
-                onProceed={handleProceedFromSourceSelection}
-              />
-            );
-          })()}
+          {/* STREAMLINED: Removed source-selection step - AI auto-selects best sources during idea generation */}
 
           {previewSource && (
             <Dialog open={!!previewSource} onOpenChange={() => setPreviewSource(null)}>
@@ -1072,86 +751,7 @@ ${ideasText}
             </Dialog>
           )}
 
-          {currentStep === "trending-discovery" && selectedGap ? (
-            <>
-              <TrendingDiscoveryStep
-                gap={selectedGap}
-                isDiscovering={isDiscoveringTrends}
-                trendingData={trendingData}
-                onDiscover={handleDiscoverTrendingTopics}
-                onSkip={async () => {
-                  // When skipping trending discovery, generate ideas immediately
-                  // and allow draft generation to use server-side sourcing if no sources are selected
-                  setCurrentStep("idea-generation");
-                  setIsGeneratingIdeas(true);
-                  setError(null);
-                  try {
-                    if (!selectedGap) return;
-                    const gapWithProductLine = {
-                      ...selectedGap,
-                      productLineId: selectedProductLineId,
-                      icpTargets: selectedICPTargets.length > 0 ? selectedICPTargets : [selectedGap.icp],
-                    };
-                    const response = await fetch("/api/content/generate-ideas", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        gap: gapWithProductLine,
-                        includeTrendingTopics: false,
-                        mode: "ideas", // Generate ideas only, no trending topics
-                      }),
-                    });
-                    if (!response.ok) {
-                      const errorData = await response.json();
-                      throw new Error(errorData.error || "Failed to generate content ideas");
-                    }
-                    const data: ContentIdeasResponse = await response.json();
-                    setContentIdeas(data);
-                    
-                    // If sources are available, auto-select top N reputable ones for skip path
-                    if (data.trendingSources && data.trendingSources.length > 0) {
-                      const reputableSources = data.trendingSources
-                        .filter((s: any) => s.isReputable)
-                        .slice(0, 3); // Select top 3 reputable sources
-                      
-                      if (reputableSources.length > 0) {
-                        const autoSelected = new Set(
-                          reputableSources.map((s: any) => s.url)
-                        );
-                        setSelectedSources(autoSelected);
-                      } else {
-                        // If no reputable sources, select top 3 by relevance
-                        const topSources = data.trendingSources
-                          .filter((s: any) => s.relevance === "high" || s.relevance === "medium")
-                          .slice(0, 3)
-                          .map((s: any) => s.url);
-                        setSelectedSources(new Set(topSources));
-                      }
-                    }
-                    
-                    setCurrentStep("idea-selection");
-                  } catch (err) {
-                    setError(err instanceof Error ? err.message : "Failed to generate content ideas");
-                  } finally {
-                    setIsGeneratingIdeas(false);
-                  }
-                }}
-                productLines={productLines}
-                selectedProductLineId={selectedProductLineId}
-                onProductLineChange={setSelectedProductLineId}
-                icpOptions={icpOptions}
-                isLoadingIcp={isLoadingIcp}
-                selectedICPTargets={selectedICPTargets}
-                onICPTargetsChange={setSelectedICPTargets}
-              />
-            </>
-          ) : currentStep === "trending-discovery" ? (
-            <div className="space-y-4 text-center py-8">
-              <p className="text-sm text-muted-foreground">
-                No gap selected. Please select a gap first.
-              </p>
-            </div>
-          ) : null}
+          {/* STREAMLINED: Removed trending-discovery step - research is now automatic */}
 
           {currentStep === "idea-generation" && selectedGap && (
             <IdeaGenerationStep
@@ -1167,7 +767,7 @@ ${ideasText}
             <IdeaSelectionStep
               ideas={contentIdeas.ideas}
               trendingTopics={contentIdeas.trendingTopics}
-              trendingSources={contentIdeas.trendingSources || trendingData?.sources || []}
+              trendingSources={contentIdeas.trendingSources || []}
               selectionGuidance={contentIdeas.selectionGuidance}
               onSelectIdea={handleSelectIdea}
               isGeneratingBrief={isGeneratingBrief}
@@ -1183,26 +783,23 @@ ${ideasText}
               isAdmin={isAdmin}
               apiWarnings={apiWarnings}
               onGenerateDraft={() => {
-                setCurrentStep("draft-generation");
+                // STREAMLINED: Combine draft generation + review - show loading state in draft-review
+                setCurrentStep("draft-review");
                 handleGenerateDraft();
               }}
               isGeneratingDraft={isGeneratingDraft}
             />
           )}
 
-          {currentStep === "draft-generation" && (
-            <DraftGenerationStep
-              isGenerating={isGeneratingDraft}
-            />
-          )}
-
-          {currentStep === "draft-review" && contentDraft && selectedIdea && (
+          {/* STREAMLINED: Combined draft-generation + draft-review - show loading state in draft-review */}
+          {currentStep === "draft-review" && (
             <DraftReviewStep
               draft={contentDraft}
               idea={selectedIdea}
-              onCopy={() => handleCopyToClipboard(contentDraft.content)}
-              onExportPDF={() => handleExportPDF(contentDraft.content, contentDraft.title)}
-              onExportDOCX={() => handleExportDOCX(contentDraft.content, contentDraft.title)}
+              isGenerating={isGeneratingDraft}
+              onCopy={() => handleCopyToClipboard(contentDraft?.content || "")}
+              onExportPDF={() => handleExportPDF(contentDraft?.content || "", contentDraft?.title || "")}
+              onExportDOCX={() => handleExportDOCX(contentDraft?.content || "", contentDraft?.title || "")}
               onComplete={() => {
                 setCurrentStep("complete");
               }}
@@ -1228,25 +825,18 @@ ${ideasText}
             <Button
               variant="outline"
               onClick={() => {
+                // STREAMLINED: Simplified navigation - removed steps
                 if (currentStep === "idea-selection") {
                   setCurrentStep("idea-generation");
                 } else if (currentStep === "brief-review") {
                   setCurrentStep("idea-selection");
-                } else if (currentStep === "draft-generation") {
-                  setCurrentStep("brief-review");
                 } else if (currentStep === "draft-review") {
-                  setCurrentStep("draft-generation");
+                  setCurrentStep("brief-review");
                 } else if (currentStep === "idea-generation") {
-                  setCurrentStep("source-selection");
-                } else if (currentStep === "source-selection") {
-                  setCurrentStep("trending-discovery");
-                } else if (currentStep === "trending-discovery") {
-                  setCurrentStep("input-validation");
-                } else if (currentStep === "input-validation") {
-                  setCurrentStep(initialGap ? "input-validation" : "gap-selection");
+                  setCurrentStep("gap-selection");
                 }
               }}
-              disabled={currentStep === "gap-selection" || (currentStep === "input-validation" && initialGap !== null)}
+              disabled={currentStep === "gap-selection"}
             >
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back
@@ -2435,18 +2025,35 @@ function DraftGenerationStep({
 function DraftReviewStep({
   draft,
   idea,
+  isGenerating,
   onCopy,
   onExportPDF,
   onExportDOCX,
   onComplete,
 }: {
-  draft: ContentDraft;
-  idea: ContentIdea;
+  draft: ContentDraft | null;
+  idea: ContentIdea | null;
+  isGenerating?: boolean;
   onCopy: () => void;
   onExportPDF: () => void;
   onExportDOCX: () => void;
   onComplete: () => void;
 }) {
+  // STREAMLINED: Show loading state when generating draft
+  if (isGenerating || !draft || !idea) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 space-y-4">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        <div className="text-center space-y-2">
+          <p className="font-semibold">Generating publication-ready draft...</p>
+          <p className="text-sm text-muted-foreground">
+            AI is writing content with citations and fact-checking
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   // Handle recommendation responses (non-blog-post content types)
   if (draft.isRecommendation) {
     const handleCopyRecommendations = async () => {
