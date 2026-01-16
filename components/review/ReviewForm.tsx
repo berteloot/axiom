@@ -480,12 +480,32 @@ export function ReviewForm({
         let sourceUrl: string | null = null;
         
         if (snippets) {
+          // Handle object (not array) - for single_import and blog_import
           if (typeof snippets === 'object' && !Array.isArray(snippets)) {
             sourceUrl = (snippets as any)?.sourceUrl || null;
-          } else if (typeof snippets === 'string') {
+          } 
+          // Handle array - check first element for sourceUrl
+          else if (Array.isArray(snippets) && snippets.length > 0) {
+            const firstSnippet = snippets[0];
+            if (typeof firstSnippet === 'object' && firstSnippet !== null) {
+              sourceUrl = (firstSnippet as any)?.sourceUrl || null;
+            }
+          }
+          // Handle string - parse JSON
+          else if (typeof snippets === 'string') {
             try {
               const parsed = JSON.parse(snippets);
-              sourceUrl = parsed?.sourceUrl || null;
+              // If parsed is an object with sourceUrl
+              if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                sourceUrl = parsed?.sourceUrl || null;
+              }
+              // If parsed is an array, check first element
+              else if (Array.isArray(parsed) && parsed.length > 0) {
+                const firstItem = parsed[0];
+                if (firstItem && typeof firstItem === 'object') {
+                  sourceUrl = (firstItem as any)?.sourceUrl || null;
+                }
+              }
             } catch {
               // Ignore parse errors
             }
