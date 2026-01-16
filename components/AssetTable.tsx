@@ -32,7 +32,7 @@ import {
 import { Asset, AssetStatus } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
 import { LinkedInPostGenerator } from "@/components/LinkedInPostGenerator";
-import { Linkedin, FileText, Image, FileSpreadsheet, File, Video, Music, X, BookOpen, Eye, RotateCw, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { Linkedin, FileText, Image, FileSpreadsheet, File, Video, Music, X, BookOpen, Eye, RotateCw, ArrowUpDown, ArrowUp, ArrowDown, Copy } from "lucide-react";
 import React, { useState, useMemo, useEffect } from "react";
 import { VideoCompressionGuide } from "@/components/VideoCompressionGuide";
 import {
@@ -315,6 +315,38 @@ export function AssetTable({
     setCurrentPage(1);
   }, [titleSortOrder]);
 
+  // Detect duplicates based on normalized title (case-insensitive)
+  const duplicateMap = useMemo(() => {
+    const titleGroups = new Map<string, Asset[]>();
+    
+    // Group assets by normalized title (lowercase, trimmed)
+    assets.forEach((asset) => {
+      if (!asset || !asset.title) return;
+      const normalizedTitle = asset.title.toLowerCase().trim();
+      if (!titleGroups.has(normalizedTitle)) {
+        titleGroups.set(normalizedTitle, []);
+      }
+      titleGroups.get(normalizedTitle)!.push(asset);
+    });
+    
+    // Create a map of asset ID to duplicate info
+    const dupMap = new Map<string, { count: number; duplicates: Asset[] }>();
+    
+    titleGroups.forEach((group, normalizedTitle) => {
+      if (group.length > 1) {
+        // Multiple assets with the same title - mark all as duplicates
+        group.forEach((asset) => {
+          dupMap.set(asset.id, {
+            count: group.length,
+            duplicates: group.filter(a => a.id !== asset.id),
+          });
+        });
+      }
+    });
+    
+    return dupMap;
+  }, [assets]);
+
   // Selectable assets on current page only - use useMemo to ensure it's stable
   const selectableAssetIdsOnPage = useMemo(() => {
     return paginatedAssets
@@ -494,9 +526,50 @@ export function AssetTable({
                             aria-label={`Color: ${asset.dominantColor}`}
                           />
                         )}
-                        <span className="text-sm line-clamp-2 leading-tight" title={asset.title || "Untitled"}>
-                          {asset.title || "Untitled"}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                          <span className="text-sm line-clamp-2 leading-tight" title={asset.title || "Untitled"}>
+                            {asset.title || "Untitled"}
+                          </span>
+                          {duplicateMap.has(asset.id) && (() => {
+                            const dupInfo = duplicateMap.get(asset.id)!;
+                            return (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Badge
+                                      variant="outline"
+                                      className="text-[10px] px-1.5 py-0 bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-700 shrink-0 cursor-help"
+                                    >
+                                      <Copy className="h-2.5 w-2.5 mr-0.5" />
+                                      {dupInfo.count}
+                                    </Badge>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="max-w-xs">
+                                    <div className="space-y-2">
+                                      <p className="font-semibold text-sm">
+                                        Duplicate Title Detected
+                                      </p>
+                                      <p className="text-xs">
+                                        {dupInfo.count} asset{dupInfo.count !== 1 ? "s" : ""} with the same title:
+                                      </p>
+                                      <div className="space-y-1">
+                                        {dupInfo.duplicates.map((dup) => (
+                                          <div key={dup.id} className="text-xs text-muted-foreground flex items-center gap-1">
+                                            <span>•</span>
+                                            <span className="truncate">{dup.title}</span>
+                                            <Badge variant="outline" className="text-[9px] px-1 py-0 ml-1 shrink-0">
+                                              {dup.status}
+                                            </Badge>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            );
+                          })()}
+                        </div>
                       </div>
                     </TableCell>
                   <TableCell className="w-16 px-2">

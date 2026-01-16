@@ -36,7 +36,7 @@ import {
   AlertCircle,
   Calendar,
 } from "lucide-react";
-import { ALL_JOB_TITLES } from "@/lib/icp-targets";
+import { ALL_JOB_TITLES } from "@/lib/job-titles";
 import { ASSET_TYPE_VALUES } from "@/lib/constants/asset-types";
 import { parseJsonResponse } from "@/lib/utils";
 

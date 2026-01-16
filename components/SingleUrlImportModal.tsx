@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -30,7 +30,7 @@ import {
   ExternalLink,
   AlertCircle,
 } from "lucide-react";
-import { ALL_JOB_TITLES } from "@/lib/icp-targets";
+import { ALL_JOB_TITLES } from "@/lib/job-titles";
 import { parseJsonResponse } from "@/lib/utils";
 
 interface SingleUrlImportModalProps {
@@ -51,6 +51,28 @@ export function SingleUrlImportModal({
   const [isImporting, setIsImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<{ assetId: string; title: string; status: string } | null>(null);
+  
+  // ICP options from unified API
+  const [icpOptions, setIcpOptions] = useState<string[]>(ALL_JOB_TITLES);
+  const [isLoadingIcp, setIsLoadingIcp] = useState(true);
+
+  // Fetch ICP targets from unified API
+  useEffect(() => {
+    if (open) {
+      setIsLoadingIcp(true);
+      fetch("/api/icp-targets")
+        .then((res) => res.json())
+        .then((data) => {
+          setIcpOptions(data.icpTargets || ALL_JOB_TITLES);
+        })
+        .catch((err) => {
+          console.error("Error fetching ICP targets:", err);
+        })
+        .finally(() => {
+          setIsLoadingIcp(false);
+        });
+    }
+  }, [open]);
 
   const handleImport = async () => {
     if (!url.trim()) {
@@ -199,11 +221,11 @@ export function SingleUrlImportModal({
           <div className="space-y-2">
             <Label htmlFor="icpTargets">ICP Targets</Label>
             <MultiSelectCombobox
-              options={ALL_JOB_TITLES}
+              options={icpOptions}
               selectedValues={selectedIcpTargets}
               onSelectionChange={setSelectedIcpTargets}
-              placeholder="Select ICP targets..."
-              disabled={isImporting}
+              placeholder={isLoadingIcp ? "Loading job titles..." : "Select ICP targets..."}
+              disabled={isImporting || isLoadingIcp}
             />
           </div>
 

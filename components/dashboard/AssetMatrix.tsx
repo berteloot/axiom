@@ -26,6 +26,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { MatrixViewToggle, MatrixViewLevel } from "@/components/dashboard/MatrixViewToggle";
+import { useMatrixData } from "@/lib/hooks/useMatrixData";
 
 interface AssetMatrixProps {
   assets: Asset[];
@@ -60,6 +62,7 @@ function getCellColor(count: number): string {
 
 export function AssetMatrix({ assets }: AssetMatrixProps) {
   const [viewBy, setViewBy] = useState<ViewBy>("icp");
+  const [matrixViewLevel, setMatrixViewLevel] = useState<MatrixViewLevel>("title");
   const [selectedProductLineId, setSelectedProductLineId] = useState<string | "all">("all");
   const [productLines, setProductLines] = useState<ProductLine[]>([]);
   const [selectedCell, setSelectedCell] = useState<{
@@ -109,8 +112,20 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
     );
   }, [assets, selectedProductLineId]);
 
+  // Use hierarchical matrix data when viewing by ICP with hierarchical view
+  const hierarchicalMatrixData = useMatrixData(
+    viewBy === "icp" ? filteredAssets : [],
+    matrixViewLevel
+  );
+
   // Extract unique row keys based on view mode
   const rowKeys = useMemo(() => {
+    if (viewBy === "icp" && matrixViewLevel !== "title") {
+      // Use hierarchical view data
+      return hierarchicalMatrixData.map(row => row.label);
+    }
+    
+    // Original logic for title view or pain cluster view
     const keys = new Set<string>();
     filteredAssets.forEach((asset) => {
       if (viewBy === "icp") {
@@ -120,10 +135,27 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
       }
     });
     return Array.from(keys).sort();
-  }, [filteredAssets, viewBy]);
+  }, [filteredAssets, viewBy, matrixViewLevel, hierarchicalMatrixData]);
 
   // Build matrix data structure
   const matrixData = useMemo(() => {
+    // If using hierarchical view for ICP, use the hierarchical data
+    if (viewBy === "icp" && matrixViewLevel !== "title") {
+      const data: Record<string, Record<FunnelStage, Asset[]>> = {};
+      
+      hierarchicalMatrixData.forEach((row) => {
+        data[row.label] = {
+          TOFU_AWARENESS: row.tofu.assets,
+          MOFU_CONSIDERATION: row.mofu.assets,
+          BOFU_DECISION: row.bofu.assets,
+          RETENTION: row.retention.assets,
+        };
+      });
+      
+      return data;
+    }
+    
+    // Original logic for title view or pain cluster view
     const data: Record<string, Record<FunnelStage, Asset[]>> = {};
 
     rowKeys.forEach((rowKey) => {
@@ -145,7 +177,7 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
     });
 
     return data;
-  }, [filteredAssets, rowKeys, viewBy]);
+  }, [filteredAssets, rowKeys, viewBy, matrixViewLevel, hierarchicalMatrixData]);
 
   // Calculate totals per stage (column totals)
   const stageTotals = useMemo(() => {
@@ -383,52 +415,62 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2">
       <Card>
-        <CardHeader>
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <CardTitle>Strategy Matrix</CardTitle>
-              <div className="flex items-center gap-2">
+        <CardHeader className="pb-3">
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <CardTitle className="text-lg">Strategy Matrix</CardTitle>
+              <div className="flex items-center gap-2 flex-wrap">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={handleExport}
-                  className="gap-2"
+                  className="gap-2 h-8"
                 >
-                  <Download className="h-4 w-4" />
+                  <Download className="h-3.5 w-3.5" />
                   Export
                 </Button>
-                <span className="text-sm text-muted-foreground">View by:</span>
-                <div className="inline-flex rounded-md border border-input bg-background">
-                  <Button
-                    variant={viewBy === "icp" ? "default" : "ghost"}
-                    size="sm"
-                    onClick={() => setViewBy("icp")}
-                    className="rounded-r-none"
-                  >
-                    ICP
-                  </Button>
-                  <Button
-                    variant={viewBy === "painCluster" ? "default" : "ghost"}
-                    size="sm"
-                    onClick={() => setViewBy("painCluster")}
-                    className="rounded-l-none border-l"
-                  >
-                    Pain Cluster
-                  </Button>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-muted-foreground">View by:</span>
+                    <div className="inline-flex rounded-md border border-input bg-background">
+                      <Button
+                        variant={viewBy === "icp" ? "default" : "ghost"}
+                        size="sm"
+                        onClick={() => setViewBy("icp")}
+                        className="rounded-r-none h-8 px-3 text-xs"
+                      >
+                        ICP
+                      </Button>
+                      <Button
+                        variant={viewBy === "painCluster" ? "default" : "ghost"}
+                        size="sm"
+                        onClick={() => setViewBy("painCluster")}
+                        className="rounded-l-none border-l h-8 px-3 text-xs"
+                      >
+                        Pain Cluster
+                      </Button>
+                    </div>
+                  </div>
+                  {viewBy === "icp" && (
+                    <MatrixViewToggle
+                      value={matrixViewLevel}
+                      onChange={setMatrixViewLevel}
+                    />
+                  )}
                 </div>
               </div>
             </div>
             {/* Search, Sort, and Product Line Filter */}
             <div className="flex items-center gap-2 flex-wrap">
               <div className="relative flex-1 max-w-xs">
-                <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
                   placeholder={`Search ${viewBy === "icp" ? "ICP targets" : "pain clusters"}...`}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-8"
+                  className="pl-7 h-8 text-sm"
                 />
               </div>
               {productLines.length > 0 && (
@@ -436,8 +478,8 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
                   value={selectedProductLineId}
                   onValueChange={(value) => setSelectedProductLineId(value)}
                 >
-                  <SelectTrigger className="w-[200px]">
-                    <Filter className="h-4 w-4 mr-2" />
+                  <SelectTrigger className="w-[180px] h-8 text-xs">
+                    <Filter className="h-3.5 w-3.5 mr-1.5" />
                     <SelectValue placeholder="All Product Lines" />
                   </SelectTrigger>
                   <SelectContent>
@@ -458,48 +500,48 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
                   else if (sortBy === "total") setSortBy("name");
                   else setSortBy(null);
                 }}
-                className="gap-2"
+                className="gap-1.5 h-8 text-xs"
               >
-                <ArrowUpDown className="h-4 w-4" />
-                {sortBy === null ? "Sort" : sortBy === "total" ? "Sort: Total" : "Sort: Name"}
+                <ArrowUpDown className="h-3.5 w-3.5" />
+                {sortBy === null ? "Sort" : sortBy === "total" ? "Total" : "Name"}
               </Button>
             </div>
-            {/* Color legend */}
-            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+            {/* Color legend - more compact */}
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
               <span className="font-medium">Legend:</span>
               <div className="flex items-center gap-1">
-                <div className="w-4 h-4 rounded border border-red-200 bg-red-50"></div>
-                <span>0 assets (gap)</span>
+                <div className="w-3 h-3 rounded border border-red-200 bg-red-50"></div>
+                <span>0 (gap)</span>
               </div>
               <div className="flex items-center gap-1">
-                <div className="w-4 h-4 rounded border border-yellow-200 bg-yellow-50"></div>
-                <span>1-2 assets (low)</span>
+                <div className="w-3 h-3 rounded border border-yellow-200 bg-yellow-50"></div>
+                <span>1-2 (low)</span>
               </div>
               <div className="flex items-center gap-1">
-                <div className="w-4 h-4 rounded border border-emerald-200 bg-emerald-50"></div>
-                <span>3+ assets (good)</span>
+                <div className="w-3 h-3 rounded border border-emerald-200 bg-emerald-50"></div>
+                <span>3+ (good)</span>
               </div>
             </div>
           </div>
         </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
+        <CardContent className="p-3">
+          <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-320px)]">
             <div className="inline-block min-w-full">
-              <table className="w-full border-collapse">
-                <thead>
+              <table className="w-full border-collapse text-sm">
+                <thead className="sticky top-0 z-20">
                   <tr>
-                    <th className="border border-border p-3 text-left font-semibold bg-muted/50 sticky left-0 z-10">
+                    <th className="border border-border p-1.5 text-left font-semibold bg-muted/50 sticky left-0 z-10 text-xs min-w-[120px] max-w-[180px]">
                       {viewBy === "icp" ? "ICP Target" : "Pain Cluster"}
                     </th>
                     {STAGES.map((stage) => (
                       <th
                         key={stage}
-                        className="border border-border p-3 text-center font-semibold bg-muted/50 cursor-pointer hover:bg-muted transition-colors"
+                        className="border border-border p-1.5 text-center font-semibold bg-muted/50 cursor-pointer hover:bg-muted transition-colors text-xs"
                         onClick={() => handleStageClick(stage)}
                       >
-                        <div className="flex flex-col items-center gap-1">
+                        <div className="flex flex-col items-center gap-0.5">
                           <span>{STAGE_DISPLAY[stage]}</span>
-                          <span className="text-xs font-normal text-muted-foreground">
+                          <span className="text-[10px] font-normal text-muted-foreground">
                             {stagePercentages[stage]}%
                           </span>
                         </div>
@@ -508,13 +550,13 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
                   </tr>
                   {/* Summary row showing totals per stage */}
                   <tr className="bg-muted/30">
-                    <td className="border border-border p-2 text-left font-semibold text-sm sticky left-0 z-10 bg-muted/30">
-                      <span className="text-muted-foreground">Total Assets</span>
+                    <td className="border border-border p-1 text-left font-semibold text-xs sticky left-0 z-10 bg-muted/30">
+                      <span className="text-muted-foreground">Total</span>
                     </td>
                     {STAGES.map((stage) => (
                       <td
                         key={stage}
-                        className="border border-border p-2 text-center font-semibold text-sm"
+                        className="border border-border p-1 text-center font-semibold text-xs"
                       >
                         <TooltipProvider>
                           <Tooltip>
@@ -539,7 +581,7 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
                     <tr>
                       <td
                         colSpan={STAGES.length + 1}
-                        className="border border-border p-8 text-center text-muted-foreground"
+                        className="border border-border p-6 text-center text-muted-foreground text-sm"
                       >
                         No data available. Upload assets to see the matrix.
                       </td>
@@ -548,10 +590,10 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
                     <>
                       {filteredAndSortedRowKeys.map((rowKey) => (
                         <tr key={rowKey}>
-                          <td className="border border-border p-3 font-medium bg-muted/30 sticky left-0 z-10">
-                            <div className="flex items-center justify-between gap-2">
-                              <span>{rowKey}</span>
-                              <span className="text-xs text-muted-foreground font-normal">
+                          <td className="border border-border p-1.5 font-medium bg-muted/30 sticky left-0 z-10 text-xs">
+                            <div className="flex items-center justify-between gap-1.5 min-w-[120px] max-w-[180px]">
+                              <span className="truncate">{rowKey}</span>
+                              <span className="text-[10px] text-muted-foreground font-normal shrink-0">
                                 ({rowTotals[rowKey]})
                               </span>
                             </div>
@@ -596,40 +638,35 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
                             return (
                               <td
                                 key={stage}
-                                className={`border border-border p-4 text-center cursor-pointer transition-colors ${colorClasses}`}
+                                className={`border border-border p-1.5 text-center cursor-pointer transition-colors ${colorClasses}`}
                                 onClick={() => handleCellClick(rowKey, stage)}
                               >
                                 <TooltipProvider>
                                   <Tooltip>
                                     <TooltipTrigger asChild>
-                                      <div className="space-y-1">
-                                        <div className="font-semibold text-lg">
+                                      <div className="flex flex-col items-center justify-center min-h-[40px]">
+                                        <div className="font-semibold text-base leading-tight">
                                           {count}
                                         </div>
-                                        {productLineBreakdown && Object.keys(productLineBreakdown).length > 0 && (
-                                          <div className="text-xs text-muted-foreground">
-                                            {Object.entries(productLineBreakdown)
-                                              .slice(0, 2)
-                                              .map(([name, num]) => `${num} ${name}`)
-                                              .join(", ")}
-                                            {Object.keys(productLineBreakdown).length > 2 && "..."}
-                                          </div>
-                                        )}
-                                        {avgScore !== null && (
-                                          <div className="text-xs font-medium">
-                                            Avg: {avgScore}/100
-                                          </div>
-                                        )}
-                                        {lowQualityCount > 0 && (
-                                          <div className="text-xs text-red-600 font-medium">
-                                            {lowQualityCount} low quality
+                                        {(avgScore !== null || lowQualityCount > 0) && (
+                                          <div className="text-[10px] mt-0.5 space-y-0.5">
+                                            {avgScore !== null && (
+                                              <div className="font-medium text-[10px]">
+                                                {avgScore}★
+                                              </div>
+                                            )}
+                                            {lowQualityCount > 0 && (
+                                              <div className="text-red-600 font-medium text-[10px]">
+                                                ⚠{lowQualityCount}
+                                              </div>
+                                            )}
                                           </div>
                                         )}
                                       </div>
                                     </TooltipTrigger>
                                     <TooltipContent className="max-w-xs">
                                       <div className="space-y-1">
-                                        <p className="font-semibold">
+                                        <p className="font-semibold text-sm">
                                           {count} asset{count !== 1 ? "s" : ""} in this cell
                                         </p>
                                         {productLineBreakdown && Object.keys(productLineBreakdown).length > 0 && (
@@ -666,13 +703,13 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
                       ))}
                       {/* Summary row at bottom showing grand total */}
                       <tr className="bg-muted/40 border-t-2 border-border">
-                        <td className="border border-border p-3 font-semibold bg-muted/40 sticky left-0 z-10">
+                        <td className="border border-border p-1.5 font-semibold bg-muted/40 sticky left-0 z-10 text-xs">
                           <span className="text-muted-foreground">Grand Total</span>
                         </td>
                         {STAGES.map((stage) => (
                           <td
                             key={stage}
-                            className="border border-border p-3 text-center font-semibold bg-muted/40"
+                            className="border border-border p-1.5 text-center font-semibold bg-muted/40 text-xs"
                           >
                             {stageTotals[stage]}
                           </td>
