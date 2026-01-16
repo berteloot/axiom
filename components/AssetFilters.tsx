@@ -114,8 +114,12 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
     const users = new Map<string, string>(); // id -> name
 
     assets.forEach((asset) => {
-      asset.icpTargets.forEach((icp) => icpTargets.add(icp));
-      asset.painClusters.forEach((cluster) => painClusters.add(cluster));
+      if (asset.icpTargets && asset.icpTargets.length > 0) {
+        asset.icpTargets.forEach((icp) => icpTargets.add(icp));
+      }
+      if (asset.painClusters && asset.painClusters.length > 0) {
+        asset.painClusters.forEach((cluster) => painClusters.add(cluster));
+      }
       if (asset.productLines && asset.productLines.length > 0) {
         asset.productLines.forEach((pl) => {
           productLines.set(pl.id, pl.name);
@@ -643,7 +647,7 @@ export function applyAssetFilters(assets: Asset[], filters: AssetFiltersState): 
   // ICP Targets filter
   if (filters.icpTargets.length > 0) {
     filtered = filtered.filter((asset) =>
-      asset.icpTargets.some((icp) => filters.icpTargets.includes(icp))
+      asset.icpTargets && asset.icpTargets.length > 0 && asset.icpTargets.some((icp) => filters.icpTargets.includes(icp))
     );
   }
 
@@ -657,7 +661,7 @@ export function applyAssetFilters(assets: Asset[], filters: AssetFiltersState): 
   // Pain Clusters filter
   if (filters.painClusters.length > 0) {
     filtered = filtered.filter((asset) =>
-      asset.painClusters.some((cluster) => filters.painClusters.includes(cluster))
+      asset.painClusters && asset.painClusters.length > 0 && asset.painClusters.some((cluster) => filters.painClusters.includes(cluster))
     );
   }
 

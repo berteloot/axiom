@@ -54,7 +54,10 @@ import {
 
 // Helper to get file type icon
 // All icons use consistent size (w-5 h-5 = 20px) for better visibility
-const getFileTypeIcon = (fileType: string) => {
+const getFileTypeIcon = (fileType: string | null | undefined) => {
+  if (!fileType) {
+    return <File className="w-5 h-5 text-gray-500 flex-shrink-0" />;
+  }
   if (fileType.startsWith("image/")) {
     return <Image className="w-5 h-5 text-purple-500 flex-shrink-0" />;
   }
@@ -429,7 +432,7 @@ export function AssetTable({
                           checked={isSelected}
                           onCheckedChange={(checked) => handleSelectAsset(asset.id, checked as boolean)}
                           disabled={!isSelectable}
-                          aria-label={`Select ${asset.title}`}
+                          aria-label={`Select ${asset.title || "Untitled"}`}
                         />
                       </TableCell>
                     )}
@@ -446,8 +449,8 @@ export function AssetTable({
                             aria-label={`Color: ${asset.dominantColor}`}
                           />
                         )}
-                        <span className="text-sm line-clamp-2 leading-tight" title={asset.title}>
-                          {asset.title}
+                        <span className="text-sm line-clamp-2 leading-tight" title={asset.title || "Untitled"}>
+                          {asset.title || "Untitled"}
                         </span>
                       </div>
                     </TableCell>
@@ -460,7 +463,7 @@ export function AssetTable({
                             onInUseChange(asset.id, checked === true);
                           }
                         }}
-                        aria-label={`Mark ${asset.title} as ${asset.inUse ? "not in use" : "in use"}`}
+                        aria-label={`Mark ${asset.title || "Untitled"} as ${asset.inUse ? "not in use" : "in use"}`}
                       />
                     </div>
                   </TableCell>
@@ -471,7 +474,7 @@ export function AssetTable({
                       </Badge>
                     ) : (
                       <span className="text-muted-foreground text-[10px]">
-                        {asset.fileType.split("/").pop()?.toUpperCase() || "FILE"}
+                        {asset.fileType?.split("/").pop()?.toUpperCase() || "FILE"}
                       </span>
                     )}
                   </TableCell>
@@ -502,7 +505,7 @@ export function AssetTable({
                     )}
                   </TableCell>
                   <TableCell className="w-24 px-2">
-                    {asset.icpTargets.length > 0 ? (
+                    {asset.icpTargets && asset.icpTargets.length > 0 ? (
                       asset.icpTargets.length === 1 ? (
                         <Badge
                           variant="outline"
@@ -617,7 +620,7 @@ export function AssetTable({
                           </Tooltip>
                         </TooltipProvider>
                       )}
-                      {asset.status === "PROCESSING" && asset.fileType.startsWith("video/") && (
+                      {asset.status === "PROCESSING" && asset.fileType?.startsWith("video/") && (
                         <>
                           <TooltipProvider>
                             <Tooltip>
@@ -655,7 +658,7 @@ export function AssetTable({
                           </TooltipProvider>
                         </>
                       )}
-                      {asset.status === "PROCESSING" && !asset.fileType.startsWith("video/") && (
+                      {asset.status === "PROCESSING" && asset.fileType && !asset.fileType.startsWith("video/") && (
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
