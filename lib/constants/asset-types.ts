@@ -43,6 +43,7 @@ export const ASSET_TYPES_GROUPED: AssetTypeGroup[] = [
       "Battlecard",
       "Pricing Sheet",
       "Proposal",
+      "Playbook",
     ],
   },
   {
@@ -176,6 +177,7 @@ const CONTENT_TYPE_MAP: Record<string, string> = {
   "onepager": "One-Pager",
   "solution-brief": "Solution Brief",
   "solutionbrief": "Solution Brief",
+  "playbook": "Playbook",
 };
 
 /**
@@ -447,6 +449,7 @@ export function detectAssetTypeFromUrl(url: string): string | null {
       { pattern: /battlecard/i, type: "Battlecard" },
       { pattern: /pricing/i, type: "Pricing Sheet" },
       { pattern: /proposal/i, type: "Proposal" },
+      { pattern: /playbook/i, type: "Playbook" },
       
       // Blog & Articles
       { pattern: /blog|post|article/i, type: "Blog Post" },
