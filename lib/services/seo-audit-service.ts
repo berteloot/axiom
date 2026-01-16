@@ -4,7 +4,8 @@ import {
   type SeoAuditContext, 
   type PageAnalysis, 
   type DataQualityInput, 
-  type SearchQueryData 
+  type SearchQueryData,
+  type AIReadinessChecks
 } from "@/lib/ai/seo-audit";
 import { testBrandConsistency } from "@/lib/ai/brand-consistency";
 import { prisma } from "@/lib/prisma";
@@ -233,6 +234,263 @@ async function fetchHtml(url: string): Promise<string> {
     }
     throw new Error("Failed to fetch HTML: Unknown error");
   }
+}
+
+/**
+ * Check if llms.txt file exists at domain root
+ */
+async function checkLlmsTxt(url: string): Promise<{
+  exists: boolean;
+  url: string;
+  contentPreview?: string;
+  error?: string;
+}> {
+  try {
+    // Extract domain root from URL
+    const normalizedUrl = normalizeUrl(url);
+    const urlObj = new URL(normalizedUrl);
+    const domainRoot = `${urlObj.protocol}//${urlObj.host}`;
+    const llmsTxtUrl = `${domainRoot}/llms.txt`;
+
+    try {
+      const response = await fetch(llmsTxtUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; SEOAuditBot/1.0)",
+        },
+        signal: AbortSignal.timeout(5000), // 5 seconds - don't block audit if slow
+      });
+
+      if (response.ok) {
+        const content = await response.text();
+        return {
+          exists: true,
+          url: llmsTxtUrl,
+          contentPreview: content.substring(0, 500),
+        };
+      } else {
+        return {
+          exists: false,
+          url: llmsTxtUrl,
+        };
+      }
+    } catch (fetchError) {
+      // If fetch fails (404, timeout, etc.), file doesn't exist
+      return {
+        exists: false,
+        url: llmsTxtUrl,
+        error: fetchError instanceof Error ? fetchError.message : "Unknown error",
+      };
+    }
+  } catch (error) {
+    return {
+      exists: false,
+      url: "",
+      error: error instanceof Error ? error.message : "Failed to check llms.txt",
+    };
+  }
+}
+
+/**
+ * Detect Q&A content patterns in headings
+ */
+function detectQAContent(
+  headings: Array<{ level: number; text: string }>,
+  bodyText: string
+): {
+  hasQAPatterns: boolean;
+  detectedQuestions: string[];
+} {
+  const questionStarters = [
+    /^(what|how|why|when|where|who|which|can|do|does|is|are|should|would|could)\s/i,
+  ];
+  const detectedQuestions: string[] = [];
+
+  // Check H2 and H3 headings for question patterns
+  for (const heading of headings) {
+    if (heading.level === 2 || heading.level === 3) {
+      const text = heading.text.trim();
+      
+      // Check if it starts with question word and/or ends with "?"
+      const startsWithQuestion = questionStarters.some(pattern => pattern.test(text));
+      const endsWithQuestionMark = text.endsWith("?");
+
+      if (startsWithQuestion || endsWithQuestionMark) {
+        detectedQuestions.push(text);
+      }
+    }
+  }
+
+  return {
+    hasQAPatterns: detectedQuestions.length > 0,
+    detectedQuestions,
+  };
+}
+
+/**
+ * Check if FAQPage schema exists in schema blocks
+ */
+function hasFAQSchema(schemaJsonLd: Array<Record<string, any>>): boolean {
+  for (const schema of schemaJsonLd) {
+    const type = schema["@type"];
+    if (type === "FAQPage") {
+      return true;
+    }
+    
+    // Check for Question type in mainEntity
+    if (type === "ItemList" && Array.isArray(schema.mainEntity)) {
+      const hasQuestions = schema.mainEntity.some(
+        (item: any) => item["@type"] === "Question"
+      );
+      if (hasQuestions) {
+        return true;
+      }
+    }
+    
+    // Check if mainEntity is a Question or FAQPage
+    if (schema.mainEntity && schema.mainEntity["@type"] === "Question") {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Detect comparison content without tables
+ */
+function detectComparisonContent(
+  title: string | null,
+  headings: Array<{ level: number; text: string }>,
+  bodyText: string,
+  html: string
+): {
+  isComparisonContent: boolean;
+  comparisonIndicators: string[];
+  hasComparisonTable: boolean;
+} {
+  const comparisonPatterns = [
+    /\bvs\.?\b/i,
+    /\bversus\b/i,
+    /\bcompared to\b/i,
+    /\bcomparison\b/i,
+    /\bdifference between\b/i,
+    /\bdifferences\b/i,
+    /\bpros and cons\b/i,
+    /\bwhich is better\b/i,
+    /\bor\s+\w+\s+or\b/i, // "X or Y" pattern
+  ];
+
+  const comparisonIndicators: string[] = [];
+  const combinedText = `${title || ""} ${headings.map(h => h.text).join(" ")} ${bodyText}`.toLowerCase();
+
+  // Check for comparison patterns
+  for (const pattern of comparisonPatterns) {
+    if (pattern.test(combinedText)) {
+      const matches = combinedText.match(pattern);
+      if (matches) {
+        comparisonIndicators.push(...matches);
+      }
+    }
+  }
+
+  // Check for tables in HTML (excluding likely nav/layout tables)
+  const $ = cheerio.load(html);
+  let hasComparisonTable = false;
+  let tableCount = 0;
+
+  $("table").each((_, el) => {
+    const $table = $(el);
+    const rows = $table.find("tr").length;
+    const cells = $table.find("td, th").length;
+    
+    // Consider it a comparison table if it has at least 2 rows and multiple columns
+    if (rows >= 2 && cells >= 4) {
+      tableCount++;
+      hasComparisonTable = true;
+    }
+  });
+
+  return {
+    isComparisonContent: comparisonIndicators.length > 0,
+    comparisonIndicators: [...new Set(comparisonIndicators)], // Remove duplicates
+    hasComparisonTable,
+  };
+}
+
+/**
+ * Analyze definition patterns in content
+ */
+function analyzeDefinitionPatterns(
+  title: string | null,
+  headings: Array<{ level: number; text: string }>,
+  jinaContent: string
+): {
+  hasDefinitions: boolean;
+  definitionCount: number;
+  suggestedTermsToDefine: string[];
+} {
+  const definitionPatterns = [
+    /\b(\w+)\s+is\s+(?:a|an)\s+/gi, // "X is a/an..."
+    /\b(\w+)\s+refers to\b/gi, // "X refers to..."
+    /\b(\w+)\s+is defined as\b/gi, // "X is defined as..."
+    /\b(\w+)\s+means\b/gi, // "X means..."
+    /what is\s+(\w+)\?/gi, // "What is X?" followed by answer
+  ];
+
+  const first500Words = jinaContent.split(/\s+/).slice(0, 500).join(" ");
+  let definitionCount = 0;
+  const definedTerms = new Set<string>();
+
+  // Find definitions in first 500 words
+  for (const pattern of definitionPatterns) {
+    let match;
+    while ((match = pattern.exec(first500Words)) !== null) {
+      definitionCount++;
+      if (match[1]) {
+        // Extract the term being defined (group 1)
+        definedTerms.add(match[1].toLowerCase());
+      }
+    }
+  }
+
+  // Extract key terms from title/H1 that should be defined
+  const suggestedTermsToDefine: string[] = [];
+  const h1Text = headings.find(h => h.level === 1)?.text || title || "";
+  
+  if (h1Text) {
+    // Extract important terms (capitalized words, key phrases)
+    const terms = h1Text
+      .split(/\s+/)
+      .filter(word => {
+        // Skip common stop words
+        const stopWords = new Set(["the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "vs", "versus"]);
+        const cleanWord = word.replace(/[^\w]/g, "").toLowerCase();
+        return cleanWord.length > 2 && !stopWords.has(cleanWord);
+      })
+      .map(word => word.replace(/[^\w]/g, "").toLowerCase())
+      .filter((word, index, arr) => arr.indexOf(word) === index) // Remove duplicates
+      .slice(0, 5); // Limit to top 5 terms
+
+    // Check if these terms have definitions
+    for (const term of terms) {
+      const termInText = first500Words.toLowerCase();
+      // Check if term appears near definition patterns
+      const hasDefinition = definitionPatterns.some(pattern => {
+        const patternStr = pattern.toString();
+        return patternStr.includes(term) || termInText.includes(`${term} is`) || termInText.includes(`what is ${term}`);
+      });
+
+      if (!hasDefinition && !definedTerms.has(term)) {
+        suggestedTermsToDefine.push(term);
+      }
+    }
+  }
+
+  return {
+    hasDefinitions: definitionCount > 0,
+    definitionCount,
+    suggestedTermsToDefine: suggestedTermsToDefine.slice(0, 5), // Limit to 5 suggestions
+  };
 }
 
 /**
@@ -775,7 +1033,46 @@ export async function auditSeoPage(
       domData = createEmptyDomData();
     }
 
-    // Step 4: Fetch search queries (if enabled)
+    // Step 4: Perform AI readiness checks
+    let aiReadinessChecks: import("@/lib/ai/seo-audit").AIReadinessChecks | undefined;
+    try {
+      // 4a: Check for llms.txt
+      const llmsTxtCheck = await checkLlmsTxt(url);
+      console.log(`[SEO Audit] llms.txt check: ${llmsTxtCheck.exists ? "Found" : "Not found"} at ${llmsTxtCheck.url}`);
+
+      // 4b: Detect Q&A content and check for FAQ schema
+      const qaContent = detectQAContent(domData.headings, html || jinaContent);
+      const hasFAQ = hasFAQSchema(domData.schemaJsonLd);
+      console.log(`[SEO Audit] Q&A content: ${qaContent.hasQAPatterns ? `Found ${qaContent.detectedQuestions.length} questions` : "None"}, FAQ schema: ${hasFAQ ? "Present" : "Missing"}`);
+
+      // 4c: Detect comparison content without tables
+      const comparisonCheck = detectComparisonContent(domData.title, domData.headings, html || jinaContent, html);
+      console.log(`[SEO Audit] Comparison content: ${comparisonCheck.isComparisonContent ? "Detected" : "None"}, Table: ${comparisonCheck.hasComparisonTable ? "Present" : "Missing"}`);
+
+      // 4d: Analyze definition patterns
+      const definitionCheck = analyzeDefinitionPatterns(domData.title, domData.headings, jinaContent);
+      console.log(`[SEO Audit] Definitions: ${definitionCheck.definitionCount} found, ${definitionCheck.suggestedTermsToDefine.length} terms need definitions`);
+
+      aiReadinessChecks = {
+        llmsTxt: llmsTxtCheck,
+        faqSchema: {
+          hasQAContent: qaContent.hasQAPatterns,
+          questionsDetected: qaContent.detectedQuestions,
+          hasFAQSchema: hasFAQ,
+        },
+        comparisonTables: {
+          isComparisonContent: comparisonCheck.isComparisonContent,
+          indicators: comparisonCheck.comparisonIndicators,
+          hasTable: comparisonCheck.hasComparisonTable,
+        },
+        definitions: definitionCheck,
+      };
+    } catch (error) {
+      console.error("[SEO Audit] Error performing AI readiness checks:", error);
+      // Continue without AI readiness checks - not a critical failure
+    }
+
+    // Step 5: Fetch search queries (if enabled)
     let searchQueries: import("@/lib/ai/seo-audit").SearchQueryData[] = [];
     if (options.includeSearchQueries !== false) { // Default to true
       try {
@@ -807,7 +1104,7 @@ export async function auditSeoPage(
       }
     }
 
-    // Step 5: Generate audit with AI
+    // Step 6: Generate audit with AI
     const analysis: PageAnalysis = {
       jinaContent,
       html,
@@ -816,7 +1113,7 @@ export async function auditSeoPage(
 
     let auditResult: Awaited<ReturnType<typeof generateSeoAudit>>;
     try {
-      auditResult = await generateSeoAudit(url, analysis, context, dataQuality, searchQueries);
+      auditResult = await generateSeoAudit(url, analysis, context, dataQuality, searchQueries, aiReadinessChecks);
     } catch (error) {
       errors.push({
         stage: "analyze",
@@ -836,7 +1133,8 @@ export async function auditSeoPage(
         
         if (!accountIdForBrandCheck) {
           // Fallback: Try to find account from URL domain match
-          accountIdForBrandCheck = await findAccountByUrl(url);
+          const foundAccountId = await findAccountByUrl(url);
+          accountIdForBrandCheck = foundAccountId || undefined;
         }
         
         if (accountIdForBrandCheck) {

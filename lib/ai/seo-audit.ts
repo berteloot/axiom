@@ -241,6 +241,19 @@ const SEO_AUDIT_SYSTEM_PROMPT = `You are an expert SEO and AI extraction special
 - Boilerplate ratio: main content vs repeated template noise (rough heuristic)
 - Extraction hazards: broken numbering, duplicated headings, huge unchunked paragraphs, excessive CTA repetition
 
+**AI READINESS CHECKS (CRITICAL FOR AI EXTRACTABILITY):**
+The AI READINESS CHECKS section in the input contains automated checks for:
+1. llms.txt file: Presence of llms.txt at domain root helps AI systems discover key content
+2. FAQ Schema for Q&A content: If Q&A patterns are detected but no FAQPage schema exists, recommend adding schema
+3. Comparison tables: If comparison content is detected but no table is present, recommend using tables for better AI extraction
+4. Definition patterns: If key terms from title/H1 lack definitions in first 500 words, recommend adding clear definitions
+
+When AI READINESS CHECKS are provided:
+- If llms.txt is missing: Add a P1 recommendation to create llms.txt at domain root
+- If Q&A content exists but no FAQPage schema: Add a P1 recommendation with code example for FAQPage schema
+- If comparison content lacks tables: Add a P2 recommendation to convert prose comparisons to tables
+- If key terms need definitions: Add a P2 recommendation to define terms clearly in first 500 words
+
 **STRUCTURED DATA MARKUP (CRITICAL FOR RICH RESULTS & LLM PROCESSING):**
 Structured data (Schema.org JSON-LD) can make your content eligible for rich results in Google Search and may help LLMs understand your content structure and relationships more accurately.
 
@@ -429,6 +442,34 @@ export interface SearchQueryData {
 }
 
 /**
+ * AI readiness checks for SEO audit
+ * These checks help evaluate how well the page is optimized for AI extraction
+ */
+export interface AIReadinessChecks {
+  llmsTxt: {
+    exists: boolean;
+    url: string;
+    contentPreview?: string;
+    error?: string;
+  };
+  faqSchema: {
+    hasQAContent: boolean;
+    questionsDetected: string[];
+    hasFAQSchema: boolean;
+  };
+  comparisonTables: {
+    isComparisonContent: boolean;
+    indicators: string[];
+    hasTable: boolean;
+  };
+  definitions: {
+    hasDefinitions: boolean;
+    definitionCount: number;
+    suggestedTermsToDefine: string[];
+  };
+}
+
+/**
  * Generate SEO audit recommendations using AI
  */
 export async function generateSeoAudit(
@@ -436,7 +477,8 @@ export async function generateSeoAudit(
   analysis: PageAnalysis,
   context?: SeoAuditContext,
   dataQuality?: DataQualityInput,
-  searchQueries?: SearchQueryData[]
+  searchQueries?: SearchQueryData[],
+  aiReadinessChecks?: AIReadinessChecks
 ): Promise<SeoAuditResult> {
   // Truncate content to control costs (max 100k chars for LLM)
   const maxContentLength = 100000;
@@ -586,6 +628,39 @@ SEARCH DATA: Not available (DataForSEO not configured or no queries found)
 `;
   }
 
+  // Build AI readiness checks section if available
+  let aiReadinessSection = "";
+  if (aiReadinessChecks) {
+    const checks = aiReadinessChecks;
+    aiReadinessSection = `
+AI READINESS CHECKS:
+
+1. LLMs.txt File:
+   - Exists: ${checks.llmsTxt.exists ? "Yes" : "No"}
+   - URL: ${checks.llmsTxt.url}
+   ${checks.llmsTxt.exists && checks.llmsTxt.contentPreview ? `- Content Preview: ${checks.llmsTxt.contentPreview.substring(0, 200)}...` : ""}
+   ${!checks.llmsTxt.exists ? "- RECOMMENDATION: Add llms.txt file at domain root to help AI systems discover your key content" : ""}
+
+2. FAQ Schema for Q&A Content:
+   - Has Q&A patterns: ${checks.faqSchema.hasQAContent ? "Yes" : "No"}
+   - Questions detected: ${checks.faqSchema.questionsDetected.length > 0 ? checks.faqSchema.questionsDetected.slice(0, 5).join(", ") : "None"}
+   - Has FAQPage schema: ${checks.faqSchema.hasFAQSchema ? "Yes" : "No"}
+   ${checks.faqSchema.hasQAContent && !checks.faqSchema.hasFAQSchema ? `- RECOMMENDATION: This page has ${checks.faqSchema.questionsDetected.length} question-style heading(s) but no FAQPage schema. Adding FAQPage schema helps AI systems extract your answers more accurately.` : ""}
+
+3. Comparison Tables:
+   - Is comparison content: ${checks.comparisonTables.isComparisonContent ? "Yes" : "No"}
+   - Comparison indicators: ${checks.comparisonTables.indicators.length > 0 ? checks.comparisonTables.indicators.slice(0, 3).join(", ") : "None"}
+   - Has comparison table: ${checks.comparisonTables.hasTable ? "Yes" : "No"}
+   ${checks.comparisonTables.isComparisonContent && !checks.comparisonTables.hasTable ? "- RECOMMENDATION: This page compares content but doesn't use a comparison table. AI systems extract tabular data more accurately than prose comparisons." : ""}
+
+4. Definition Patterns:
+   - Has definitions: ${checks.definitions.hasDefinitions ? "Yes" : "No"}
+   - Definition count: ${checks.definitions.definitionCount}
+   - Terms that need definitions: ${checks.definitions.suggestedTermsToDefine.length > 0 ? checks.definitions.suggestedTermsToDefine.join(", ") : "None (all key terms are defined)"}
+   ${checks.definitions.suggestedTermsToDefine.length > 0 ? `- RECOMMENDATION: Define these key terms clearly for AI citation: ${checks.definitions.suggestedTermsToDefine.slice(0, 3).join(", ")}. Consider adding: "[Term] is..." or "What is [Term]?" with a direct answer.` : ""}
+`;
+  }
+
   const userContent = `Audit this webpage for SEO structure and AI extractability:
 
 URL: ${url}
@@ -593,6 +668,7 @@ ${contextPrompt}
 
 ${domAnalysis}
 ${searchQueriesSection}
+${aiReadinessSection}
 
 FIRST 250 WORDS (Critical for Answer Block Analysis):
 Word count in excerpt: ${first250WordCount}
