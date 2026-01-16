@@ -117,17 +117,26 @@ function addAssetToRow(row: MatrixRow, asset: Asset) {
   row.count++;
   
   // Map FunnelStage to row property
+  // Deduplicate assets - only add if not already in the array (by asset ID)
   if (asset.funnelStage === 'TOFU_AWARENESS') {
     row.tofu.count++;
-    row.tofu.assets.push(asset);
+    if (!row.tofu.assets.find(a => a.id === asset.id)) {
+      row.tofu.assets.push(asset);
+    }
   } else if (asset.funnelStage === 'MOFU_CONSIDERATION') {
     row.mofu.count++;
-    row.mofu.assets.push(asset);
+    if (!row.mofu.assets.find(a => a.id === asset.id)) {
+      row.mofu.assets.push(asset);
+    }
   } else if (asset.funnelStage === 'BOFU_DECISION') {
     row.bofu.count++;
-    row.bofu.assets.push(asset);
+    if (!row.bofu.assets.find(a => a.id === asset.id)) {
+      row.bofu.assets.push(asset);
+    }
   } else if (asset.funnelStage === 'RETENTION') {
     row.retention.count++;
-    row.retention.assets.push(asset);
+    if (!row.retention.assets.find(a => a.id === asset.id)) {
+      row.retention.assets.push(asset);
+    }
   }
 }

@@ -530,13 +530,13 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
               <table className="w-full border-collapse text-sm">
                 <thead className="sticky top-0 z-20">
                   <tr>
-                    <th className="border border-border p-1.5 text-left font-semibold bg-muted/50 sticky left-0 z-10 text-xs min-w-[120px] max-w-[180px]">
+                    <th className="border border-border p-1.5 text-left font-semibold bg-muted sticky left-0 z-10 text-xs min-w-[200px]">
                       {viewBy === "icp" ? "ICP Target" : "Pain Cluster"}
                     </th>
                     {STAGES.map((stage) => (
                       <th
                         key={stage}
-                        className="border border-border p-1.5 text-center font-semibold bg-muted/50 cursor-pointer hover:bg-muted transition-colors text-xs"
+                        className="border border-border p-1.5 text-center font-semibold bg-muted cursor-pointer hover:bg-muted/80 transition-colors text-xs"
                         onClick={() => handleStageClick(stage)}
                       >
                         <div className="flex flex-col items-center gap-0.5">
@@ -550,7 +550,7 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
                   </tr>
                   {/* Summary row showing totals per stage */}
                   <tr className="bg-muted/30">
-                    <td className="border border-border p-1 text-left font-semibold text-xs sticky left-0 z-10 bg-muted/30">
+                    <td className="border border-border p-1 text-left font-semibold text-xs sticky left-0 z-10 bg-muted/30 min-w-[200px]">
                       <span className="text-muted-foreground">Total</span>
                     </td>
                     {STAGES.map((stage) => (
@@ -590,8 +590,8 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
                     <>
                       {filteredAndSortedRowKeys.map((rowKey) => (
                         <tr key={rowKey}>
-                          <td className="border border-border p-1.5 font-medium bg-muted/30 sticky left-0 z-10 text-xs">
-                            <div className="flex items-center justify-between gap-1.5 min-w-[120px] max-w-[180px]">
+                          <td className="border border-border p-1.5 font-medium bg-muted/30 sticky left-0 z-10 text-xs min-w-[200px]">
+                            <div className="flex items-center justify-between gap-1.5">
                               <span className="truncate">{rowKey}</span>
                               <span className="text-[10px] text-muted-foreground font-normal shrink-0">
                                 ({rowTotals[rowKey]})
@@ -703,7 +703,7 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
                       ))}
                       {/* Summary row at bottom showing grand total */}
                       <tr className="bg-muted/40 border-t-2 border-border">
-                        <td className="border border-border p-1.5 font-semibold bg-muted/40 sticky left-0 z-10 text-xs">
+                        <td className="border border-border p-1.5 font-semibold bg-muted/40 sticky left-0 z-10 text-xs min-w-[200px]">
                           <span className="text-muted-foreground">Grand Total</span>
                         </td>
                         {STAGES.map((stage) => (
