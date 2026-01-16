@@ -480,9 +480,15 @@ export function ReviewForm({
         let sourceUrl: string | null = null;
         
         if (snippets) {
-          // Handle object (not array) - for single_import and blog_import
+          // Handle object (not array) - for single_import, blog_import, and merged structure with aiSnippets
           if (typeof snippets === 'object' && !Array.isArray(snippets)) {
+            // Check for sourceUrl at top level (works for both old and new merged structure)
             sourceUrl = (snippets as any)?.sourceUrl || null;
+            
+            // Also check if it's in a nested structure (legacy format)
+            if (!sourceUrl && (snippets as any)?.metadata?.sourceUrl) {
+              sourceUrl = (snippets as any).metadata.sourceUrl;
+            }
           } 
           // Handle array - check first element for sourceUrl
           else if (Array.isArray(snippets) && snippets.length > 0) {
@@ -495,9 +501,9 @@ export function ReviewForm({
           else if (typeof snippets === 'string') {
             try {
               const parsed = JSON.parse(snippets);
-              // If parsed is an object with sourceUrl
+              // If parsed is an object with sourceUrl (handles both old and new structure)
               if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-                sourceUrl = parsed?.sourceUrl || null;
+                sourceUrl = parsed?.sourceUrl || parsed?.metadata?.sourceUrl || null;
               }
               // If parsed is an array, check first element
               else if (Array.isArray(parsed) && parsed.length > 0) {
@@ -515,6 +521,17 @@ export function ReviewForm({
         // Remove trailing period if present
         if (sourceUrl && sourceUrl.endsWith('.')) {
           sourceUrl = sourceUrl.slice(0, -1);
+        }
+        
+        // Validate that sourceUrl is a valid URL format
+        if (sourceUrl) {
+          try {
+            // Basic URL validation
+            new URL(sourceUrl);
+          } catch {
+            // If it's not a valid URL, don't display it
+            sourceUrl = null;
+          }
         }
         
         if (sourceUrl) {
