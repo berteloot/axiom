@@ -34,7 +34,10 @@ import {
   Calendar,
   UserX,
   Clock,
-  Zap
+  Zap,
+  Building2,
+  Search,
+  TrendingUp
 } from "lucide-react";
 import {
   Table,
@@ -105,6 +108,24 @@ export default function AdminSettings() {
     userCreatedAt: string;
   }
 
+  interface AllUser {
+    id: string;
+    email: string;
+    name: string | null;
+    emailVerified: string;
+    accountType: string | null;
+    createdAt: string;
+    accountCount: number;
+    assetCount: number;
+    accounts: Array<{
+      accountId: string;
+      accountName: string;
+      accountSlug: string;
+      role: "OWNER" | "ADMIN" | "MEMBER";
+      joinedAt: string;
+    }>;
+  }
+
   interface AccountInfo {
     id: string;
     name: string;
@@ -131,8 +152,10 @@ export default function AdminSettings() {
   }
 
   const [allAccounts, setAllAccounts] = useState<AllAccount[]>([]);
+  const [allUsers, setAllUsers] = useState<AllUser[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const [accountsLoading, setAccountsLoading] = useState(false);
+  const [allUsersLoading, setAllUsersLoading] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
   const [accountInfo, setAccountInfo] = useState<AccountInfo | null>(null);
   const [usersLoading, setUsersLoading] = useState(false);
@@ -143,6 +166,8 @@ export default function AdminSettings() {
   const [editingUserRole, setEditingUserRole] = useState<"OWNER" | "ADMIN" | "MEMBER">("MEMBER");
   const [showRoleEditDialog, setShowRoleEditDialog] = useState(false);
   const [extendTrialDays, setExtendTrialDays] = useState<number>(14);
+  const [searchAccountsQuery, setSearchAccountsQuery] = useState<string>("");
+  const [searchUsersQuery, setSearchUsersQuery] = useState<string>("");
 
   // Access control: Only berteloot@gmail.com can access this page
   useEffect(() => {
@@ -238,9 +263,29 @@ export default function AdminSettings() {
     }
   };
 
+  // Load all users in the system
+  const loadAllUsers = async () => {
+    setAllUsersLoading(true);
+    try {
+      const response = await fetch(`/api/admin/users`);
+      if (response.ok) {
+        const data = await response.json();
+        setAllUsers(data.users || []);
+      } else {
+        setErrorMessage("Failed to load users");
+      }
+    } catch (error) {
+      // Error logged silently - user sees error message via UI
+      setErrorMessage("Failed to load users");
+    } finally {
+      setAllUsersLoading(false);
+    }
+  };
+
   // Load all accounts on mount
   useEffect(() => {
     loadAllAccounts();
+    loadAllUsers();
   }, []);
 
   // Load users when selected account changes
@@ -334,6 +379,7 @@ export default function AdminSettings() {
         setRevokeUserName("");
         await loadUsers(selectedAccountId);
         await loadAllAccounts();
+        await loadAllUsers();
       } else {
         const data = await response.json();
         setErrorMessage(data.error || "Failed to revoke access");
@@ -369,6 +415,7 @@ export default function AdminSettings() {
         setEditingUser(null);
         await loadUsers(selectedAccountId);
         await loadAllAccounts();
+        await loadAllUsers();
       } else {
         const data = await response.json();
         setErrorMessage(data.error || "Failed to update user role");
@@ -548,15 +595,334 @@ export default function AdminSettings() {
         </Alert>
       )}
 
-      <Tabs defaultValue="general" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-6">
-          <TabsTrigger value="general">General</TabsTrigger>
-          <TabsTrigger value="security">Security</TabsTrigger>
-          <TabsTrigger value="users">Users</TabsTrigger>
+      <Tabs defaultValue="overview" className="space-y-6">
+        <TabsList className="grid w-full grid-cols-7">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="accounts">All Accounts</TabsTrigger>
+          <TabsTrigger value="users">All Users</TabsTrigger>
+          <TabsTrigger value="account-management">Account Management</TabsTrigger>
           <TabsTrigger value="billing">Billing</TabsTrigger>
           <TabsTrigger value="integrations">Integrations</TabsTrigger>
           <TabsTrigger value="data">Data</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="overview" className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Total Accounts</CardDescription>
+                <CardTitle className="text-3xl font-bold">{allAccounts.length}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center text-sm text-muted-foreground">
+                  <Building2 className="h-4 w-4 mr-1" />
+                  Organizations in system
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Total Users</CardDescription>
+                <CardTitle className="text-3xl font-bold">{allUsers.length}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center text-sm text-muted-foreground">
+                  <Users className="h-4 w-4 mr-1" />
+                  Registered users
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Active Subscriptions</CardDescription>
+                <CardTitle className="text-3xl font-bold">
+                  {allAccounts.filter(a => a.subscriptionStatus === "ACTIVE").length}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center text-sm text-muted-foreground">
+                  <TrendingUp className="h-4 w-4 mr-1" />
+                  Paid accounts
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Trial Accounts</CardDescription>
+                <CardTitle className="text-3xl font-bold">
+                  {allAccounts.filter(a => a.subscriptionStatus === "TRIAL").length}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center text-sm text-muted-foreground">
+                  <Clock className="h-4 w-4 mr-1" />
+                  In trial period
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Recent Activity</CardTitle>
+              <CardDescription>Latest accounts and users created</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div>
+                  <h4 className="font-medium mb-2">Recent Accounts</h4>
+                  <div className="space-y-2">
+                    {allAccounts.slice(0, 5).map((account) => (
+                      <div key={account.id} className="flex items-center justify-between p-2 border rounded">
+                        <div>
+                          <p className="font-medium">{account.name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {account.userCount} users • {account.assetCount} assets
+                          </p>
+                        </div>
+                        <Badge variant={account.subscriptionStatus === "ACTIVE" ? "default" : "secondary"}>
+                          {account.subscriptionStatus}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="accounts" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Building2 className="h-5 w-5" />
+                All Accounts
+              </CardTitle>
+              <CardDescription>
+                View and manage all accounts in the system
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search accounts by name or slug..."
+                    value={searchAccountsQuery}
+                    onChange={(e) => setSearchAccountsQuery(e.target.value)}
+                    className="pl-8"
+                  />
+                </div>
+              </div>
+
+              {accountsLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-8 w-8 animate-spin" />
+                </div>
+              ) : allAccounts.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  No accounts found
+                </div>
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Account Name</TableHead>
+                        <TableHead>Slug</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Users</TableHead>
+                        <TableHead>Assets</TableHead>
+                        <TableHead>Owners</TableHead>
+                        <TableHead>Created</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {allAccounts
+                        .filter((account) => {
+                          if (!searchAccountsQuery) return true;
+                          const query = searchAccountsQuery.toLowerCase();
+                          return (
+                            account.name.toLowerCase().includes(query) ||
+                            account.slug.toLowerCase().includes(query)
+                          );
+                        })
+                        .map((account) => (
+                          <TableRow key={account.id}>
+                            <TableCell className="font-medium">{account.name}</TableCell>
+                            <TableCell>
+                              <code className="text-xs bg-muted px-1 py-0.5 rounded">{account.slug}</code>
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                variant={
+                                  account.subscriptionStatus === "ACTIVE"
+                                    ? "default"
+                                    : account.subscriptionStatus === "TRIAL"
+                                    ? "secondary"
+                                    : "destructive"
+                                }
+                              >
+                                {account.subscriptionStatus}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>{account.userCount}</TableCell>
+                            <TableCell>{account.assetCount}</TableCell>
+                            <TableCell>
+                              <div className="flex flex-col gap-1">
+                                {account.owners.slice(0, 2).map((owner) => (
+                                  <span key={owner.id} className="text-sm">
+                                    {owner.name || owner.email}
+                                  </span>
+                                ))}
+                                {account.owners.length > 2 && (
+                                  <span className="text-xs text-muted-foreground">
+                                    +{account.owners.length - 2} more
+                                  </span>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              {new Date(account.createdAt).toLocaleDateString()}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedAccountId(account.id);
+                                  // Switch to account management tab
+                                  const tabsList = document.querySelector('[role="tablist"]');
+                                  const accountManagementTab = Array.from(tabsList?.querySelectorAll('button') || [])
+                                    .find(btn => btn.getAttribute('data-state') !== 'active' && btn.textContent?.includes('Account Management'));
+                                  accountManagementTab?.click();
+                                }}
+                              >
+                                Manage
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="users" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                All Users
+              </CardTitle>
+              <CardDescription>
+                View all users in the system and their account associations
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search users by email or name..."
+                    value={searchUsersQuery}
+                    onChange={(e) => setSearchUsersQuery(e.target.value)}
+                    className="pl-8"
+                  />
+                </div>
+              </div>
+
+              {allUsersLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-8 w-8 animate-spin" />
+                </div>
+              ) : allUsers.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  No users found
+                </div>
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Account Type</TableHead>
+                        <TableHead>Accounts</TableHead>
+                        <TableHead>Assets</TableHead>
+                        <TableHead>Created</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {allUsers
+                        .filter((user) => {
+                          if (!searchUsersQuery) return true;
+                          const query = searchUsersQuery.toLowerCase();
+                          return (
+                            user.email.toLowerCase().includes(query) ||
+                            (user.name && user.name.toLowerCase().includes(query))
+                          );
+                        })
+                        .map((user) => (
+                          <TableRow key={user.id}>
+                            <TableCell className="font-medium">
+                              {user.name || "—"}
+                            </TableCell>
+                            <TableCell>{user.email}</TableCell>
+                            <TableCell>
+                              <Badge
+                                variant={user.emailVerified === "VERIFIED" ? "default" : "secondary"}
+                              >
+                                {user.emailVerified === "VERIFIED" ? "Verified" : "Unverified"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {user.accountType || (
+                                <span className="text-muted-foreground">Legacy</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <div className="space-y-1">
+                                {user.accounts.slice(0, 3).map((acc) => (
+                                  <div key={acc.accountId} className="flex items-center gap-2">
+                                    <Badge variant="outline" className="text-xs">
+                                      {acc.role}
+                                    </Badge>
+                                    <span className="text-sm">{acc.accountName}</span>
+                                  </div>
+                                ))}
+                                {user.accounts.length > 3 && (
+                                  <span className="text-xs text-muted-foreground">
+                                    +{user.accounts.length - 3} more
+                                  </span>
+                                )}
+                                {user.accounts.length === 0 && (
+                                  <span className="text-sm text-muted-foreground">No accounts</span>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>{user.assetCount}</TableCell>
+                            <TableCell>
+                              {new Date(user.createdAt).toLocaleDateString()}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="general" className="space-y-6">
           <Card>
@@ -758,15 +1124,15 @@ export default function AdminSettings() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="users" className="space-y-6">
+        <TabsContent value="account-management" className="space-y-6">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Users className="h-5 w-5" />
-                User Management
+                Account User Management
               </CardTitle>
               <CardDescription>
-                View all accounts and manage users and their access rights
+                Select an account to manage its users and their access rights
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -829,46 +1195,46 @@ export default function AdminSettings() {
 
               {selectedAccountId ? (
                 usersLoading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-8 w-8 animate-spin" />
-                  </div>
-                ) : users.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-8 w-8 animate-spin" />
+                </div>
+              ) : users.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
                     No users found in this account
-                  </div>
-                ) : (
-                  <div className="rounded-md border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Name</TableHead>
-                          <TableHead>Email</TableHead>
-                          <TableHead>Role</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Joined</TableHead>
-                          <TableHead className="text-right">Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {users.map((user) => (
-                          <TableRow key={user.id}>
-                            <TableCell className="font-medium">
-                              {user.name || "—"}
-                            </TableCell>
-                            <TableCell>{user.email}</TableCell>
-                            <TableCell>
-                              <Badge variant={user.role === "OWNER" ? "default" : user.role === "ADMIN" ? "secondary" : "outline"}>
-                                {user.role}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant={user.emailVerified === "VERIFIED" ? "default" : "secondary"}>
-                                {user.emailVerified === "VERIFIED" ? "Verified" : "Unverified"}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              {new Date(user.joinedAt).toLocaleDateString()}
-                            </TableCell>
+                </div>
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Role</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Joined</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {users.map((user) => (
+                        <TableRow key={user.id}>
+                          <TableCell className="font-medium">
+                            {user.name || "—"}
+                          </TableCell>
+                          <TableCell>{user.email}</TableCell>
+                          <TableCell>
+                            <Badge variant={user.role === "OWNER" ? "default" : user.role === "ADMIN" ? "secondary" : "outline"}>
+                              {user.role}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={user.emailVerified === "VERIFIED" ? "default" : "secondary"}>
+                              {user.emailVerified === "VERIFIED" ? "Verified" : "Unverified"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {new Date(user.joinedAt).toLocaleDateString()}
+                          </TableCell>
                             <TableCell className="text-right space-x-2">
                               <Button
                                 variant="ghost"
@@ -878,20 +1244,20 @@ export default function AdminSettings() {
                                 <Shield className="h-4 w-4 mr-1" />
                                 Edit Role
                               </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => openRevokeDialog(user)}
-                                className="text-destructive hover:text-destructive"
-                              >
-                                <UserX className="h-4 w-4 mr-1" />
-                                Revoke
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openRevokeDialog(user)}
+                              className="text-destructive hover:text-destructive"
+                            >
+                              <UserX className="h-4 w-4 mr-1" />
+                              Revoke
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                   </div>
                 )
               ) : (

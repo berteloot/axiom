@@ -62,7 +62,10 @@ async function setCorsConfiguration() {
           AllowedOrigins: [
             "http://localhost:3000",
             "http://localhost:3001",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:3001",
             "https://localhost:3000",
+            "https://axiom.nytromarketing.com",
             "https://axiom-ray0.onrender.com",
             // Add additional production domains here if needed
           ],
@@ -137,7 +140,10 @@ async function setCorsConfiguration() {
             AllowedOrigins: [
               "http://localhost:3000",
               "http://localhost:3001",
+              "http://127.0.0.1:3000",
+              "http://127.0.0.1:3001",
               "https://localhost:3000",
+              "https://axiom.nytromarketing.com",
               "https://axiom-ray0.onrender.com",
             ],
             ExposeHeaders: [
