@@ -94,8 +94,8 @@ const BaseAnalysisSchema = z.object({
   
   assetType: z.enum([
     "Whitepaper", "Case_Study", "Blog_Post", "Infographic", 
-    "Webinar_Recording", "Sales_Deck", "Technical_Doc"
-  ]).describe("The format of the asset"),
+    "Webinar_Recording", "Sales_Deck", "Technical_Doc", "Playbook"
+  ]).describe("The format of the asset. IMPORTANT: If the title or content contains 'playbook', classify as 'Playbook'. Playbooks are sales enablement documents that provide structured guidance, frameworks, or methodologies for sales teams."),
 
   funnelStage: z.enum([
     "TOFU_AWARENESS", 
@@ -215,7 +215,14 @@ STRATEGY GUIDELINES:
    **ASSET TYPE HEURISTICS (Use as tie-breakers):**
    - **Sales Deck** → Strong indicator of MOFU or BOFU.
    - **Whitepaper** → Strong indicator of MOFU.
+   - **Playbook** → Strong indicator of MOFU (sales enablement, structured guidance).
    - **Infographic** → Strong indicator of TOFU.
+   
+   **ASSET TYPE DETECTION PRIORITY:**
+   - 🔴 CRITICAL: If the title contains "playbook" (case-insensitive), classify as "Playbook" - do NOT classify as "Whitepaper".
+   - If the content repeatedly mentions "playbook" or provides structured sales guidance/frameworks, classify as "Playbook".
+   - Playbooks are sales enablement documents that provide structured guidance, frameworks, methodologies, or step-by-step processes for sales teams.
+   - Do NOT confuse Playbooks with Whitepapers - Playbooks are more tactical and action-oriented.
 
 4. **Outreach**: Write the hook as if you are a rep sending a personal note to a prospect.
 
@@ -259,7 +266,8 @@ export async function analyzeAsset(
   text: string | null,
   fileType: string,
   s3Url?: string,
-  accountId?: string
+  accountId?: string,
+  title?: string | null
 ): Promise<AnalysisResult> {
   try {
     // 1. Fetch Brand Context and Product Lines (new multi-product architecture)
@@ -435,8 +443,19 @@ INSTRUCTIONS:
       // We only truncate if it's massive (>100k chars) to save cost, not because we have to.
       const safeText = text.length > 300000 ? text.slice(0, 300000) + "..." : text;
       
+      // Check if title or content contains "playbook" (case-insensitive) for asset type detection
+      const titleContainsPlaybook = title ? /playbook/i.test(title) : false;
+      const contentContainsPlaybook = /playbook/i.test(safeText);
+      const containsPlaybook = titleContainsPlaybook || contentContainsPlaybook;
+      
+      const playbookInstruction = containsPlaybook 
+        ? `\n\n🔴 ASSET TYPE PRIORITY: ${titleContainsPlaybook ? "The TITLE" : "The content"} contains 'playbook' - you MUST classify this as 'Playbook' asset type, NOT 'Whitepaper'. Playbooks are sales enablement documents with structured guidance, frameworks, or methodologies.`
+        : "";
+
+      const titleContext = title ? `\n\nAsset Title: "${title}"` : "";
+
       userContent = [
-        { type: "text", text: `🔴 CRITICAL: Analyze THIS SPECIFIC ASSET'S CONTENT below. Each asset is unique - do not default to generic values. Base your analysis on the actual content provided.
+        { type: "text", text: `🔴 CRITICAL: Analyze THIS SPECIFIC ASSET'S CONTENT below. Each asset is unique - do not default to generic values. Base your analysis on the actual content provided.${titleContext}${playbookInstruction}
 
 Analyze this content:
 ${safeText}

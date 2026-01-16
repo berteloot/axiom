@@ -21,11 +21,12 @@ export async function processAssetAsync(
   console.log(`[PROCESSOR] File type: ${fileType}, S3 URL: ${s3Url.substring(0, 50)}...`);
   
   try {
-    // Get asset to retrieve accountId and existing extractedText
+    // Get asset to retrieve accountId, title, and existing extractedText
     const asset = await prisma.asset.findUnique({
       where: { id: assetId },
       select: { 
         accountId: true,
+        title: true,
         extractedText: true,
       },
     });
@@ -131,8 +132,8 @@ export async function processAssetAsync(
       }
     }
 
-    // Analyze with AI (pass accountId for CompanyProfile scoping)
-    const analysis = await analyzeAsset(extractedText, fileType, s3Url, asset.accountId);
+    // Analyze with AI (pass accountId for CompanyProfile scoping, and title for better asset type detection)
+    const analysis = await analyzeAsset(extractedText, fileType, s3Url, asset.accountId, asset.title);
 
     // Standardize ICP targets from AI analysis
     const standardizedIcpTargets = standardizeICPTargets(analysis.icpTargets);

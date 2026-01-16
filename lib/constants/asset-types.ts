@@ -98,6 +98,7 @@ export const LEGACY_TO_NEW_ASSET_TYPE: Record<string, string> = {
   Webinar_Recording: "Webinar Recording",
   Sales_Deck: "Sales Deck",
   Technical_Doc: "Technical Documentation",
+  Playbook: "Playbook",
 };
 
 /**
