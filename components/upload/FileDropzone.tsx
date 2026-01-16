@@ -89,6 +89,12 @@ export function FileDropzone({ onDrop, disabled }: FileDropzoneProps) {
     maxSize: maxFileSizeBytes,
   });
 
+  const dropzoneClassName = [
+    "border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors duration-200",
+    isDragActive ? "border-primary bg-primary/5" : "border-border hover:border-primary/50",
+    disabled ? "opacity-50 cursor-not-allowed" : "",
+  ].filter(Boolean).join(" ");
+
   return (
     <div className="space-y-4">
       {rejectionError && (
@@ -99,9 +105,7 @@ export function FileDropzone({ onDrop, disabled }: FileDropzoneProps) {
       )}
       <div
         {...getRootProps()}
-        className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors duration-200 ${
-          isDragActive ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
-        } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
+        className={dropzoneClassName}
       >
         <input {...getInputProps()} />
         <div className="flex flex-col items-center gap-4">
@@ -155,6 +159,7 @@ export function FileDropzone({ onDrop, disabled }: FileDropzoneProps) {
         <div className="text-xs text-muted-foreground/70 mt-1 space-y-0.5">
           <p>💡 Images (infographics, charts, slides) are analyzed using GPT-4o vision</p>
           <p>🎬 Videos &amp; audio are transcribed and analyzed (max 25MB)</p>
+        </div>
         </div>
       </div>
     </div>
