@@ -618,38 +618,57 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
 
 // Helper function to filter and sort assets
 export function applyAssetFilters(assets: Asset[], filters: AssetFiltersState): Asset[] {
-  let filtered = [...assets];
+  // Filter out any invalid assets first (must have id)
+  let filtered = assets.filter((asset) => asset && asset.id);
+  
+  // If no valid assets, return empty array
+  if (filtered.length === 0) {
+    return [];
+  }
 
   // Text search (includes title, content, uploaded by name, custom name override, and upload date)
   if (filters.search) {
-    const searchLower = filters.search.toLowerCase();
-    filtered = filtered.filter((asset) => {
-      const titleMatch = asset.title?.toLowerCase().includes(searchLower) ?? false;
-      const userMatch = asset.uploadedBy?.name?.toLowerCase().includes(searchLower) ?? false;
-      const customNameMatch = (asset as any).uploadedByNameOverride?.toLowerCase().includes(searchLower) ?? false;
-      
-      // Search in extracted text content
-      const contentMatch = asset.extractedText?.toLowerCase().includes(searchLower) ?? false;
-      
-      // Check if search matches date format or date string (with error handling)
-      let dateMatch = false;
-      try {
-        if (asset.createdAt) {
-          const uploadDate = new Date(asset.createdAt);
-          if (!isNaN(uploadDate.getTime())) {
-            dateMatch = 
-              uploadDate.toLocaleDateString().toLowerCase().includes(searchLower) ||
-              uploadDate.toISOString().toLowerCase().includes(searchLower) ||
-              uploadDate.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }).toLowerCase().includes(searchLower);
+    // Trim search term to remove leading/trailing spaces
+    const searchTerm = filters.search.trim();
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase();
+      filtered = filtered.filter((asset) => {
+        // Skip invalid assets
+        if (!asset || !asset.id) return false;
+        
+        try {
+          const titleMatch = asset.title?.toLowerCase().includes(searchLower) ?? false;
+          const userMatch = asset.uploadedBy?.name?.toLowerCase().includes(searchLower) ?? false;
+          const customNameMatch = (asset as any).uploadedByNameOverride?.toLowerCase().includes(searchLower) ?? false;
+          
+          // Search in extracted text content (handle null/undefined safely)
+          const contentMatch = asset.extractedText?.toLowerCase().includes(searchLower) ?? false;
+          
+          // Check if search matches date format or date string (with error handling)
+          let dateMatch = false;
+          try {
+            if (asset.createdAt) {
+              const uploadDate = new Date(asset.createdAt);
+              if (!isNaN(uploadDate.getTime())) {
+                dateMatch = 
+                  uploadDate.toLocaleDateString().toLowerCase().includes(searchLower) ||
+                  uploadDate.toISOString().toLowerCase().includes(searchLower) ||
+                  uploadDate.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }).toLowerCase().includes(searchLower);
+              }
+            }
+          } catch (error) {
+            // Silently ignore date parsing errors
+            console.warn("Error parsing date for search:", error);
           }
+          
+          return titleMatch || userMatch || customNameMatch || contentMatch || dateMatch;
+        } catch (error) {
+          // If any error occurs during filtering, exclude this asset
+          console.warn("Error filtering asset:", asset.id, error);
+          return false;
         }
-      } catch (error) {
-        // Silently ignore date parsing errors
-        console.warn("Error parsing date for search:", error);
-      }
-      
-      return titleMatch || userMatch || customNameMatch || contentMatch || dateMatch;
-    });
+      });
+    }
   }
 
   // Funnel Stage filter
@@ -735,12 +754,17 @@ export function applyAssetFilters(assets: Asset[], filters: AssetFiltersState): 
     });
   }
 
-  // Sorting
-  filtered.sort((a, b) => {
-    let aValue: any;
-    let bValue: any;
+  // Sorting (with error handling)
+  try {
+    filtered.sort((a, b) => {
+      // Safety check: skip invalid assets
+      if (!a || !a.id || !b || !b.id) return 0;
+      
+      let aValue: any;
+      let bValue: any;
 
-    switch (filters.sortBy) {
+      try {
+        switch (filters.sortBy) {
       case "title":
         aValue = a.title.toLowerCase();
         bValue = b.title.toLowerCase();
@@ -781,18 +805,28 @@ export function applyAssetFilters(assets: Asset[], filters: AssetFiltersState): 
         aValue = a.contentQualityScore ?? 0;
         bValue = b.contentQualityScore ?? 0;
         break;
-      default:
+        default:
+          return 0;
+        }
+
+        if (aValue < bValue) {
+          return filters.sortDirection === "asc" ? -1 : 1;
+        }
+        if (aValue > bValue) {
+          return filters.sortDirection === "asc" ? 1 : -1;
+        }
         return 0;
-    }
+      } catch (error) {
+        // If sorting fails for these assets, maintain original order
+        console.warn("Error sorting assets:", error);
+        return 0;
+      }
+    });
+  } catch (error) {
+    // If sorting completely fails, return unsorted but still filtered results
+    console.warn("Error during asset sorting:", error);
+  }
 
-    if (aValue < bValue) {
-      return filters.sortDirection === "asc" ? -1 : 1;
-    }
-    if (aValue > bValue) {
-      return filters.sortDirection === "asc" ? 1 : -1;
-    }
-    return 0;
-  });
-
-  return filtered;
+  // Final safety check: ensure all returned assets are valid (have id)
+  return filtered.filter((asset) => asset && asset.id);
 }
