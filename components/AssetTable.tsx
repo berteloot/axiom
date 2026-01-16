@@ -168,6 +168,16 @@ export function AssetTable({
   const [itemsPerPage, setItemsPerPage] = useState<number>(25);
   const [titleSortOrder, setTitleSortOrder] = useState<'asc' | 'desc' | null>(null);
 
+  // Validate assets array
+  if (!Array.isArray(assets)) {
+    console.error("Assets is not an array:", assets);
+    return (
+      <div className="text-center py-12 text-muted-foreground">
+        Invalid assets data. Please refresh the page.
+      </div>
+    );
+  }
+
   if (assets.length === 0) {
     return (
       <div className="text-center py-12 text-muted-foreground">
@@ -226,32 +236,60 @@ export function AssetTable({
     });
   };
 
-  // Sorting logic
+  // Sorting logic with validation
   const sortedAssets = useMemo(() => {
-    if (!titleSortOrder) {
-      return assets;
-    }
-    
-    const sorted = [...assets].sort((a, b) => {
-      const titleA = a.title.toLowerCase();
-      const titleB = b.title.toLowerCase();
+    try {
+      // Filter out invalid assets first
+      const validAssets = assets.filter((asset) => asset && asset.id && typeof asset === "object");
       
-      if (titleSortOrder === 'asc') {
-        return titleA.localeCompare(titleB);
-      } else {
-        return titleB.localeCompare(titleA);
+      if (!titleSortOrder) {
+        return validAssets;
       }
-    });
-    
-    return sorted;
+      
+      const sorted = [...validAssets].sort((a, b) => {
+        try {
+          const titleA = (a.title && typeof a.title === "string") ? a.title.toLowerCase() : "";
+          const titleB = (b.title && typeof b.title === "string") ? b.title.toLowerCase() : "";
+          
+          if (titleSortOrder === 'asc') {
+            return titleA.localeCompare(titleB);
+          } else {
+            return titleB.localeCompare(titleA);
+          }
+        } catch (error) {
+          console.warn("Error sorting assets:", error);
+          return 0;
+        }
+      });
+      
+      return sorted;
+    } catch (error) {
+      console.error("Error in sorting logic:", error);
+      // Return original assets if sorting fails
+      return assets.filter((asset) => asset && asset.id);
+    }
   }, [assets, titleSortOrder]);
 
-  // Pagination logic
+  // Pagination logic with validation
   const totalPages = Math.ceil(sortedAssets.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
   const paginatedAssets = useMemo(() => {
-    return sortedAssets.slice(startIndex, endIndex);
+    try {
+      // Validate and filter out any invalid assets before pagination
+      const validAssets = sortedAssets.filter((asset) => {
+        // Must have id and be a valid object
+        if (!asset || typeof asset !== "object" || !asset.id) {
+          return false;
+        }
+        // Ensure critical properties exist (even if null/undefined)
+        return true;
+      });
+      return validAssets.slice(startIndex, endIndex);
+    } catch (error) {
+      console.error("Error in pagination:", error);
+      return [];
+    }
   }, [sortedAssets, startIndex, endIndex]);
 
   // Handle title sort toggle
@@ -420,12 +458,19 @@ export function AssetTable({
             </TableRow>
           </TableHeader>
             <TableBody>
-              {paginatedAssets.map((asset) => {
-                const isSelectable = asset.status === "APPROVED" || asset.status === "PROCESSED" || asset.status === "ERROR";
-                const isSelected = selectedAssetIds.includes(asset.id);
-                
-                return (
-                  <TableRow key={asset.id}>
+              {paginatedAssets.map((asset, index) => {
+                // Validate asset before rendering - skip invalid assets
+                if (!asset || !asset.id || typeof asset !== "object") {
+                  console.warn("Skipping invalid asset in table:", asset);
+                  return null;
+                }
+
+                try {
+                  const isSelectable = asset.status === "APPROVED" || asset.status === "PROCESSED" || asset.status === "ERROR";
+                  const isSelected = selectedAssetIds.includes(asset.id);
+                  
+                  return (
+                    <TableRow key={asset.id || `asset-${index}`}>
                     {onSelectionChange && (
                       <TableCell className="w-12 px-2">
                         <Checkbox
@@ -479,7 +524,7 @@ export function AssetTable({
                     )}
                   </TableCell>
                   <TableCell className="w-24 px-2">
-                    {asset.productLines && asset.productLines.length > 0 ? (
+                    {asset.productLines && Array.isArray(asset.productLines) && asset.productLines.length > 0 && asset.productLines[0] ? (
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -487,15 +532,17 @@ export function AssetTable({
                               variant="secondary" 
                               className="text-[10px] px-1.5 py-0 truncate max-w-full cursor-help"
                             >
-                              {asset.productLines[0].name}
+                              {asset.productLines[0]?.name || "Unknown"}
                               {asset.productLines.length > 1 && ` +${asset.productLines.length - 1}`}
                             </Badge>
                           </TooltipTrigger>
                           <TooltipContent>
                             <div className="text-xs space-y-1">
-                              {asset.productLines.map(pl => (
-                                <div key={pl.id}>{pl.name}</div>
-                              ))}
+                              {asset.productLines
+                                .filter(pl => pl && pl.id && pl.name)
+                                .map(pl => (
+                                  <div key={pl.id}>{pl.name}</div>
+                                ))}
                             </div>
                           </TooltipContent>
                         </Tooltip>
@@ -505,14 +552,14 @@ export function AssetTable({
                     )}
                   </TableCell>
                   <TableCell className="w-24 px-2">
-                    {asset.icpTargets && asset.icpTargets.length > 0 ? (
+                    {asset.icpTargets && Array.isArray(asset.icpTargets) && asset.icpTargets.length > 0 ? (
                       asset.icpTargets.length === 1 ? (
                         <Badge
                           variant="outline"
                           className="text-[10px] px-1.5 py-0 truncate max-w-full"
-                          title={asset.icpTargets[0]}
+                          title={asset.icpTargets[0] || ""}
                         >
-                          {asset.icpTargets[0]}
+                          {asset.icpTargets[0] || "—"}
                         </Badge>
                       ) : (
                         <Popover>
@@ -523,7 +570,7 @@ export function AssetTable({
                               aria-label={`View ICP targets (${asset.icpTargets.length})`}
                               title={`View all ${asset.icpTargets.length} ICP targets`}
                             >
-                              {asset.icpTargets[0]} +{asset.icpTargets.length - 1}
+                              {asset.icpTargets[0] || "—"} +{asset.icpTargets.length - 1}
                             </button>
                           </PopoverTrigger>
                           <PopoverContent
@@ -535,11 +582,13 @@ export function AssetTable({
                                 ICP Targets ({asset.icpTargets.length})
                               </div>
                               <div className="flex flex-wrap gap-1.5">
-                                {asset.icpTargets.map((target, idx) => (
-                                  <Badge key={idx} variant="outline" className="text-xs">
-                                    {target}
-                                  </Badge>
-                                ))}
+                                {asset.icpTargets
+                                  .filter(target => target && typeof target === "string")
+                                  .map((target, idx) => (
+                                    <Badge key={idx} variant="outline" className="text-xs">
+                                      {target}
+                                    </Badge>
+                                  ))}
                               </div>
                             </div>
                           </PopoverContent>
@@ -716,7 +765,18 @@ export function AssetTable({
                     </div>
                   </TableCell>
                 </TableRow>
-              );
+                );
+                } catch (error) {
+                  // If rendering this asset fails, log and return a placeholder row
+                  console.error("Error rendering asset row:", asset.id, error);
+                  return (
+                    <TableRow key={asset.id || `error-${index}`}>
+                      <TableCell colSpan={10} className="text-center text-muted-foreground text-sm">
+                        Error loading asset: {asset.id || "Unknown"}
+                      </TableCell>
+                    </TableRow>
+                  );
+                }
               })}
             </TableBody>
           </Table>
