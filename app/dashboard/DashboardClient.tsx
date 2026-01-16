@@ -18,11 +18,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Package,
   TrendingUp,
+  TrendingDown,
+  Minus,
   Target,
   AlertTriangle,
   Upload,
   FileText,
-  ExternalLink
+  ExternalLink,
+  Users,
+  Sparkles,
+  ChevronRight
 } from "lucide-react";
 import { CriticalGapsModal, CriticalGap } from "@/components/dashboard/CriticalGapsModal";
 import { SaveSearchButton } from "@/components/smart-collections";
@@ -112,6 +117,94 @@ function parseFiltersFromUrl(searchParams: URLSearchParams): Partial<AssetFilter
   }
   
   return filters;
+}
+
+// Helper components for enhanced metrics cards
+function TrendBadge({ current, previous, suffix = "" }: { current: number; previous: number; suffix?: string }) {
+  const diff = current - previous;
+  const percentage = previous > 0 ? Math.round((diff / previous) * 100) : 0;
+  
+  if (diff > 0) {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+        <TrendingUp size={12} />
+        +{percentage}%{suffix}
+      </span>
+    );
+  } else if (diff < 0) {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
+        <TrendingDown size={12} />
+        {percentage}%{suffix}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+      <Minus size={12} />
+      No change
+    </span>
+  );
+}
+
+function CircularProgress({ value, target, size = 64, strokeWidth = 6 }: { value: number; target: number; size?: number; strokeWidth?: number }) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = radius * 2 * Math.PI;
+  const progress = Math.min(value / target, 1);
+  const offset = circumference - progress * circumference;
+  
+  const getColor = () => {
+    if (value >= target) return { stroke: '#10b981', bg: '#d1fae5' };
+    if (value >= target * 0.6) return { stroke: '#f59e0b', bg: '#fef3c7' };
+    return { stroke: '#ef4444', bg: '#fee2e2' };
+  };
+  
+  const colors = getColor();
+  
+  return (
+    <div className="relative" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="#e5e7eb"
+          strokeWidth={strokeWidth}
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke={colors.stroke}
+          strokeWidth={strokeWidth}
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          className="transition-all duration-500"
+        />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className="text-lg font-bold text-gray-900">{value}%</span>
+      </div>
+    </div>
+  );
+}
+
+function MiniBarChart({ data }: { data: number[] }) {
+  const max = Math.max(...data, 1); // Avoid division by zero
+  return (
+    <div className="flex items-end gap-0.5 h-8">
+      {data.map((value, i) => (
+        <div
+          key={i}
+          className="w-1.5 bg-orange-400 rounded-t transition-all hover:bg-orange-500"
+          style={{ height: `${(value / max) * 100}%` }}
+        />
+      ))}
+    </div>
+  );
 }
 
 export default function DashboardClient() {
@@ -531,7 +624,14 @@ export default function DashboardClient() {
 
   // Calculate KPIs (use all assets, not filtered)
   const kpis = useMemo(() => {
+    const now = new Date();
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    
+    // Calculate total assets and trend (compare to 7 days ago)
     const totalAssets = assets.length;
+    const previousTotalAssets = assets.filter(
+      (asset) => new Date(asset.createdAt) < sevenDaysAgo
+    ).length;
     
     // Calculate matrix coverage
     const icpTargets = new Set<string>();
@@ -555,15 +655,60 @@ export default function DashboardClient() {
       ? Math.round((filledCells / totalCells) * 100)
       : 0;
     
-    // Find top performing ICP
+    // Calculate previous coverage score (7 days ago)
+    const previousAssets = assets.filter(
+      (asset) => new Date(asset.createdAt) < sevenDaysAgo
+    );
+    const previousIcpTargets = new Set<string>();
+    previousAssets.forEach((asset) => {
+      asset.icpTargets.forEach((icp) => previousIcpTargets.add(icp));
+    });
+    const previousTotalCells = previousIcpTargets.size * STAGES.length;
+    let previousFilledCells = 0;
+    previousIcpTargets.forEach((icp) => {
+      STAGES.forEach((stage) => {
+        const hasAssets = previousAssets.some(
+          (asset) => asset.icpTargets.includes(icp) && asset.funnelStage === stage
+        );
+        if (hasAssets) previousFilledCells++;
+      });
+    });
+    const previousCoverageScore = previousTotalCells > 0 
+      ? Math.round((previousFilledCells / previousTotalCells) * 100)
+      : coverageScore; // Fallback to current if no previous data
+    
+    // Find top performing ICP with breakdown by stage
     const icpCounts: Record<string, number> = {};
+    const icpStageBreakdown: Record<string, Record<FunnelStage, number>> = {};
     assets.forEach((asset) => {
       asset.icpTargets.forEach((icp) => {
         icpCounts[icp] = (icpCounts[icp] || 0) + 1;
+        if (!icpStageBreakdown[icp]) {
+          icpStageBreakdown[icp] = {
+            TOFU_AWARENESS: 0,
+            MOFU_CONSIDERATION: 0,
+            BOFU_DECISION: 0,
+            RETENTION: 0,
+          };
+        }
+        icpStageBreakdown[icp][asset.funnelStage]++;
       });
     });
     
-    const topIcp = Object.entries(icpCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || "N/A";
+    const topIcpEntry = Object.entries(icpCounts).sort((a, b) => b[1] - a[1])[0];
+    const topIcp = topIcpEntry?.[0] || "N/A";
+    const topIcpAssetCount = topIcpEntry?.[1] || 0;
+    const topIcpBreakdown = topIcp !== "N/A" ? icpStageBreakdown[topIcp] : null;
+    
+    // Generate sparkline data for Total Assets (weekly progression)
+    const weeklyData: number[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+      const count = assets.filter(
+        (asset) => new Date(asset.createdAt) <= date
+      ).length;
+      weeklyData.push(count);
+    }
     
     // Enhanced Critical Gaps Analysis
     const criticalGapsList: CriticalGap[] = [];
@@ -623,7 +768,6 @@ export default function DashboardClient() {
 
     // 3. Expiring content
     const expiringGaps: CriticalGap["details"] = [];
-    const now = new Date();
     const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
     
     const expiringAssets = assets.filter((asset) => {
@@ -681,13 +825,33 @@ export default function DashboardClient() {
 
     // Total critical gaps count (sum of all gap types)
     const totalCriticalGaps = criticalGapsList.reduce((sum, gap) => sum + gap.count, 0);
+    
+    // Determine priority for critical gaps card
+    const priority = totalCriticalGaps > 10 ? "high" : totalCriticalGaps > 5 ? "medium" : "low";
+    
+    // Get top 3 gaps for preview (from coverage gaps)
+    const topGaps = coverageGaps
+      .filter((gap) => gap.location)
+      .slice(0, 3)
+      .map((gap) => {
+        const [icp, stage] = gap.location!.split(" - ");
+        return { icp, stage: stage as FunnelStage };
+      });
 
     return {
       totalAssets,
+      previousTotalAssets,
       coverageScore,
+      previousCoverageScore,
       topIcp,
+      topIcpAssetCount,
+      topIcpBreakdown,
       criticalGaps: totalCriticalGaps,
       criticalGapsList,
+      priority,
+      topGaps,
+      weeklyData,
+      coverageTarget: 70, // Default target for coverage score
     };
   }, [assets]);
 
@@ -735,60 +899,186 @@ export default function DashboardClient() {
           </div>
         </div>
 
-        {/* KPI Cards */}
+        {/* Enhanced KPI Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 sm:mb-8">
-          <Card>
+          {/* Total Assets Card */}
+          <Card className="relative bg-white rounded-xl border border-gray-200 hover:shadow-lg hover:border-gray-300 transition-all duration-200">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Assets</CardTitle>
-              <Package className="h-4 w-4 text-brand-blue" />
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-blue-50 rounded-lg">
+                  <FileText size={18} className="text-blue-600" />
+                </div>
+                <CardTitle className="text-sm font-medium text-gray-500">Total Assets</CardTitle>
+              </div>
+              <MiniBarChart data={kpis.weeklyData || []} />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-brand-dark-blue">{kpis.totalAssets}</div>
-              <p className="text-xs text-muted-foreground">
-                Assets in library
-              </p>
+              <div className="flex items-baseline gap-3">
+                <span className="text-3xl font-bold text-gray-900">{kpis.totalAssets}</span>
+                <TrendBadge current={kpis.totalAssets} previous={kpis.previousTotalAssets} />
+              </div>
+              <p className="text-xs text-gray-400 mt-1">In library</p>
             </CardContent>
           </Card>
 
-          <Card>
+          {/* Coverage Score Card */}
+          <Card className="relative bg-white rounded-xl border border-gray-200 hover:shadow-lg hover:border-gray-300 transition-all duration-200">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Coverage Score</CardTitle>
-              <TrendingUp className="h-4 w-4 text-brand-cyan" />
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-amber-50 rounded-lg">
+                  <Target size={18} className="text-amber-600" />
+                </div>
+                <CardTitle className="text-sm font-medium text-gray-500">Coverage Score</CardTitle>
+              </div>
+              <CircularProgress value={kpis.coverageScore} target={kpis.coverageTarget} />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-brand-dark-blue">{kpis.coverageScore}%</div>
-              <p className="text-xs text-muted-foreground">
-                Matrix cells filled
-              </p>
+              <div className="flex items-baseline gap-3">
+                <span className="text-3xl font-bold text-gray-900">{kpis.coverageScore}%</span>
+                <TrendBadge current={kpis.coverageScore} previous={kpis.previousCoverageScore} suffix=" pts" />
+              </div>
+              <p className="text-xs text-gray-400 mt-1">Target: {kpis.coverageTarget}%</p>
+              
+              {/* Progress bar */}
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <div className="flex justify-between text-xs text-gray-500 mb-1.5">
+                  <span>Progress to target</span>
+                  <span>{Math.round((kpis.coverageScore / kpis.coverageTarget) * 100)}%</span>
+                </div>
+                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-gradient-to-r from-amber-400 to-amber-500 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min((kpis.coverageScore / kpis.coverageTarget) * 100, 100)}%` }}
+                  />
+                </div>
+              </div>
             </CardContent>
           </Card>
 
-          <Card>
+          {/* Top Performing ICP Card */}
+          <Card className="relative bg-gradient-to-br from-emerald-50 to-white border border-emerald-200 rounded-xl hover:shadow-lg hover:border-emerald-300 transition-all duration-200">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Top Performing ICP</CardTitle>
-              <Target className="h-4 w-4 text-brand-blue" />
+              <div className="flex items-center gap-2 flex-1">
+                <div className="p-2 bg-emerald-100 rounded-lg">
+                  <Users size={18} className="text-emerald-600" />
+                </div>
+                <CardTitle className="text-sm font-medium text-emerald-700">Top Performing ICP</CardTitle>
+              </div>
+              <div className="flex flex-col items-end gap-2">
+                <Sparkles size={24} className="text-emerald-400" />
+                <span className="text-xs font-medium text-emerald-600 bg-emerald-100 px-2 py-1 rounded-full">
+                  Best coverage
+                </span>
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold truncate text-brand-dark-blue">{kpis.topIcp}</div>
-              <p className="text-xs text-muted-foreground">
-                Most assets
-              </p>
+              <div className="mt-3">
+                <h3 className="text-xl font-bold text-gray-900 leading-tight">{kpis.topIcp}</h3>
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-2xl font-bold text-emerald-600">{kpis.topIcpAssetCount}</span>
+                  <span className="text-sm text-gray-500">assets mapped</span>
+                </div>
+              </div>
+              
+              {/* Funnel breakdown */}
+              {kpis.topIcpBreakdown && (
+                <div className="mt-4 pt-4 border-t border-emerald-200/50">
+                  <div className="flex gap-2">
+                    {[
+                      { label: 'TOFU', value: kpis.topIcpBreakdown.TOFU_AWARENESS, color: 'bg-emerald-200' },
+                      { label: 'MOFU', value: kpis.topIcpBreakdown.MOFU_CONSIDERATION, color: 'bg-emerald-300' },
+                      { label: 'BOFU', value: kpis.topIcpBreakdown.BOFU_DECISION, color: 'bg-emerald-400' },
+                    ].map((stage) => (
+                      <div key={stage.label} className="flex-1 text-center">
+                        <div className={`h-1.5 ${stage.color} rounded-full mb-1`} />
+                        <span className="text-xs text-gray-500">{stage.label}</span>
+                        <p className="text-sm font-semibold text-gray-700">{stage.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
+          {/* Critical Gaps Card */}
           <Card 
-            className="cursor-pointer hover:bg-muted/50 transition-colors"
+            className={`relative rounded-xl border hover:shadow-lg transition-all duration-200 cursor-pointer ${
+              kpis.priority === 'high' 
+                ? 'bg-red-50 border-red-200 hover:border-red-300' 
+                : kpis.priority === 'medium'
+                ? 'bg-amber-50 border-amber-200 hover:border-amber-300'
+                : 'bg-gray-50 border-gray-200 hover:border-gray-300'
+            }`}
             onClick={() => setIsCriticalGapsModalOpen(true)}
           >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Critical Gaps</CardTitle>
-              <AlertTriangle className="h-4 w-4 text-brand-orange" />
+              <div className="flex items-center gap-2">
+                <div className={`p-2 rounded-lg ${
+                  kpis.priority === 'high' 
+                    ? 'bg-red-100' 
+                    : kpis.priority === 'medium'
+                    ? 'bg-amber-100'
+                    : 'bg-gray-100'
+                }`}>
+                  <AlertTriangle 
+                    size={18} 
+                    className={
+                      kpis.priority === 'high' 
+                        ? 'text-red-500' 
+                        : kpis.priority === 'medium'
+                        ? 'text-amber-500'
+                        : 'text-gray-500'
+                    } 
+                  />
+                </div>
+                <CardTitle className="text-sm font-medium text-gray-500">Critical Gaps</CardTitle>
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-brand-dark-blue">{kpis.criticalGaps}</div>
-              <p className="text-xs text-muted-foreground">
-                Click to view details
-              </p>
+              <div className="flex items-baseline gap-3">
+                <span className="text-3xl font-bold text-gray-900">{kpis.criticalGaps}</span>
+                <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                  kpis.priority === 'high' 
+                    ? 'bg-red-100 text-red-700' 
+                    : kpis.priority === 'medium'
+                    ? 'bg-amber-100 text-amber-700'
+                    : 'bg-gray-100 text-gray-700'
+                }`}>
+                  {kpis.priority === 'high' ? 'Needs attention' : kpis.priority === 'medium' ? 'Moderate' : 'On track'}
+                </span>
+              </div>
+              <p className="text-xs text-gray-400 mt-1">Cells with 0 assets</p>
+              
+              {/* Top gaps preview */}
+              {kpis.topGaps && kpis.topGaps.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-red-200/50">
+                  <p className="text-xs font-medium text-gray-500 mb-2">Priority gaps:</p>
+                  <div className="space-y-1.5">
+                    {kpis.topGaps.map((gap, i) => (
+                      <div key={i} className="flex items-center justify-between text-sm">
+                        <span className="text-gray-700 truncate">{gap.icp}</span>
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded ${
+                          gap.stage === 'BOFU_DECISION' ? 'bg-red-100 text-red-600' :
+                          gap.stage === 'MOFU_CONSIDERATION' ? 'bg-amber-100 text-amber-600' :
+                          'bg-blue-100 text-blue-600'
+                        }`}>
+                          {STAGE_DISPLAY[gap.stage]}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <button 
+                    className="flex items-center gap-1 text-xs font-medium text-red-600 hover:text-red-700 mt-3"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsCriticalGapsModalOpen(true);
+                    }}
+                  >
+                    View all gaps <ChevronRight size={14} />
+                  </button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
