@@ -21,13 +21,14 @@ export async function processAssetAsync(
   console.log(`[PROCESSOR] File type: ${fileType}, S3 URL: ${s3Url.substring(0, 50)}...`);
   
   try {
-    // Get asset to retrieve accountId, title, and existing extractedText
+    // Get asset to retrieve accountId, title, existing extractedText, and atomicSnippets
     const asset = await prisma.asset.findUnique({
       where: { id: assetId },
       select: { 
         accountId: true,
         title: true,
         extractedText: true,
+        atomicSnippets: true,
       },
     });
 
@@ -141,6 +142,68 @@ export async function processAssetAsync(
     // Normalize asset type from AI analysis (convert legacy format to new taxonomy)
     const normalizedAssetType = normalizeAssetType(analysis.assetType);
 
+    // Preserve sourceUrl from existing atomicSnippets if it exists (for URL imports)
+    let finalAtomicSnippets: any = analysis.atomicSnippets;
+    if (asset.atomicSnippets) {
+      const existingSnippets = asset.atomicSnippets as any;
+      let sourceUrl: string | null = null;
+      let importMetadata: any = null;
+      
+      // Extract sourceUrl and import metadata from existing atomicSnippets
+      if (typeof existingSnippets === 'object' && !Array.isArray(existingSnippets)) {
+        sourceUrl = existingSnippets?.sourceUrl || null;
+        // Preserve other import metadata (type, importedAt, publishedDate, etc.)
+        if (existingSnippets?.type === "single_import" || existingSnippets?.type === "blog_import") {
+          importMetadata = {
+            type: existingSnippets.type,
+            sourceUrl: existingSnippets.sourceUrl,
+            importedAt: existingSnippets.importedAt,
+            ...(existingSnippets.publishedDate ? { publishedDate: existingSnippets.publishedDate } : {}),
+            ...(existingSnippets.error ? { error: existingSnippets.error } : {}),
+          };
+        }
+      } else if (Array.isArray(existingSnippets) && existingSnippets.length > 0) {
+        // Check first element for sourceUrl
+        const firstItem = existingSnippets[0];
+        if (firstItem && typeof firstItem === 'object' && firstItem.sourceUrl) {
+          sourceUrl = firstItem.sourceUrl;
+        }
+      } else if (typeof existingSnippets === 'string') {
+        try {
+          const parsed = JSON.parse(existingSnippets);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            sourceUrl = parsed?.sourceUrl || null;
+            if (parsed?.type === "single_import" || parsed?.type === "blog_import") {
+              importMetadata = {
+                type: parsed.type,
+                sourceUrl: parsed.sourceUrl,
+                importedAt: parsed.importedAt,
+                ...(parsed.publishedDate ? { publishedDate: parsed.publishedDate } : {}),
+                ...(parsed.error ? { error: parsed.error } : {}),
+              };
+            }
+          }
+        } catch {
+          // Ignore parse errors
+        }
+      }
+      
+      // If we have a sourceUrl, merge it with AI-generated snippets
+      if (sourceUrl && importMetadata) {
+        // Merge: keep import metadata and add AI snippets
+        finalAtomicSnippets = {
+          ...importMetadata,
+          aiSnippets: Array.isArray(analysis.atomicSnippets) ? analysis.atomicSnippets : [],
+        };
+      } else if (sourceUrl) {
+        // If we only have sourceUrl but no full metadata, preserve it
+        finalAtomicSnippets = {
+          sourceUrl: sourceUrl,
+          aiSnippets: Array.isArray(analysis.atomicSnippets) ? analysis.atomicSnippets : [],
+        };
+      }
+    }
+
     // Update asset with analysis results and traceability fields
     // Note: expiryDate is not prefilled - user must set it manually if needed
     await prisma.asset.update({
@@ -151,7 +214,7 @@ export async function processAssetAsync(
         icpTargets: standardizedIcpTargets,
         painClusters: analysis.painClusters,
         outreachTip: analysis.outreachTip,
-        atomicSnippets: analysis.atomicSnippets as any, // Prisma Json type
+        atomicSnippets: finalAtomicSnippets as any, // Prisma Json type - includes preserved sourceUrl
         contentQualityScore: analysis.contentQualityScore,
         // expiryDate is not set - user must set it manually
         dominantColor: dominantColor, // Store extracted dominant color
