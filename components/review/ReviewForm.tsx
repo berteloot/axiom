@@ -42,6 +42,7 @@ interface ReviewFormProps {
     uploadedById?: string | null;
     uploadedByNameOverride?: string | null;
     users?: Array<{ id: string; email: string; name: string | null }>;
+    s3Url: string;
   };
   customCreatedAt: Date | null;
   lastReviewedAt: Date | null;
@@ -194,6 +195,31 @@ export function ReviewForm({
           value={formData.title}
           onChange={(e) => onFormDataChange({ title: e.target.value })}
         />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="s3Url">Asset URL</Label>
+        <div className="flex items-center gap-2">
+          <Input
+            id="s3Url"
+            value={formData.s3Url}
+            onChange={(e) => onFormDataChange({ s3Url: e.target.value })}
+            placeholder="https://..."
+            className="flex-1"
+          />
+          <a
+            href={formData.s3Url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex-shrink-0"
+            title="Open URL in new tab"
+          >
+            <ExternalLink className="h-4 w-4 text-muted-foreground hover:text-primary" />
+          </a>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          The URL where this asset is stored (e.g., S3 URL or file location)
+        </p>
       </div>
 
       <div className="space-y-2">

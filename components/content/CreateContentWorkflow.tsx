@@ -170,8 +170,8 @@ interface ContentDraft {
   message?: string;
 }
 
-// STREAMLINED: Reduced from 10 steps to 5 steps
-type WorkflowStep = "gap-selection" | "idea-generation" | "idea-selection" | "brief-review" | "draft-review" | "complete";
+// STREAMLINED: 4-step workflow - brief is the final deliverable (no draft generation)
+type WorkflowStep = "gap-selection" | "idea-generation" | "idea-selection" | "brief-review" | "complete";
 
 interface CreateContentWorkflowProps {
   open: boolean;
@@ -223,12 +223,10 @@ export function CreateContentWorkflow({
       setContentIdeas(null);
       setSelectedIdea(null);
       setContentBrief(null);
-      setContentDraft(null);
       setError(null);
       setApiWarnings([]);
       setIsGeneratingIdeas(false);
       setIsGeneratingBrief(false);
-      setIsGeneratingDraft(false);
       setSelectedSources(new Set<string>());
       setPreviewSource(null);
     }
@@ -247,8 +245,6 @@ export function CreateContentWorkflow({
   const [selectedIdea, setSelectedIdea] = useState<ContentIdea | null>(null);
   const [isGeneratingBrief, setIsGeneratingBrief] = useState(false);
   const [contentBrief, setContentBrief] = useState<ContentBrief | null>(null);
-  const [isGeneratingDraft, setIsGeneratingDraft] = useState(false);
-  const [contentDraft, setContentDraft] = useState<ContentDraft | null>(null);
   const [error, setError] = useState<string | null>(null);
   
   // Get current account for admin check
@@ -441,54 +437,7 @@ export function CreateContentWorkflow({
     }
   };
 
-  const handleGenerateDraft = async () => {
-    if (!contentBrief || !selectedIdea || !selectedGap) return;
-
-    setIsGeneratingDraft(true);
-    setError(null);
-
-    // CRITICAL: Get sources from multiple possible locations
-    // STREAMLINED: Use all sources from ideas response automatically (AI has already selected the best ones)
-    const sourcesToSend = contentIdeas?.trendingSources || contentIdeas?.sources || [];
-    
-    console.log(`[Content Workflow] Generating draft with ${sourcesToSend.length} sources (auto-selected by AI during idea generation)`);
-
-    try {
-      const gapWithProductLine = {
-        ...selectedGap,
-        productLineId: selectedProductLineId,
-        icpTargets: selectedICPTargets.length > 0 ? selectedICPTargets : [selectedGap.icp],
-      };
-      const response = await fetch("/api/content/generate-draft", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          brief: contentBrief,
-          idea: selectedIdea,
-          gap: gapWithProductLine,
-          trendingSources: sourcesToSend,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to generate content draft");
-      }
-
-      const draft: ContentDraft = await response.json();
-      setContentDraft(draft);
-      setCurrentStep("draft-review");
-      
-      // If it's a recommendation (not a full draft), log it
-      if (draft.isRecommendation) {
-        console.log(`[Content Workflow] Received recommendations for ${draft.assetType} instead of full draft`);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to generate content draft");
-    } finally {
-      setIsGeneratingDraft(false);
-    }
-  };
+  // REMOVED: Draft generation step - brief is now the final deliverable
 
   const handleCopyToClipboard = async (text: string): Promise<void> => {
     try {
@@ -496,6 +445,112 @@ export function CreateContentWorkflow({
     } catch (err) {
       throw new Error("Failed to copy to clipboard. Please check browser permissions.");
     }
+  };
+
+  // Export brief in different formats
+  const handleExportBrief = async (
+    brief: ContentBrief,
+    idea: ContentIdea | null,
+    format: "copy" | "pdf" | "docx" = "copy"
+  ) => {
+    if (!idea) return;
+
+    // Format brief as markdown/text
+    const briefText = formatBriefAsMarkdown(brief, idea);
+
+    if (format === "copy") {
+      await handleCopyToClipboard(briefText);
+      return;
+    }
+
+    if (format === "pdf") {
+      handleExportPDF(briefText, `${idea.title} - Content Brief`);
+      return;
+    }
+
+    if (format === "docx") {
+      handleExportDOCX(briefText, `${idea.title} - Content Brief`);
+      return;
+    }
+  };
+
+  // Format brief as markdown for export
+  const formatBriefAsMarkdown = (brief: ContentBrief, idea: ContentIdea): string => {
+    let markdown = `# Content Brief: ${idea.title}\n\n`;
+    markdown += `**Asset Type:** ${idea.assetType.replace(/_/g, " ")}\n\n`;
+    markdown += `---\n\n`;
+
+    // SEO Strategy
+    markdown += `## SEO Strategy\n\n`;
+    markdown += `**Primary Keyword:** ${brief.seoStrategy.primaryKeyword}\n\n`;
+    if (brief.seoStrategy.secondaryKeywords.length > 0) {
+      markdown += `**Secondary Keywords:** ${brief.seoStrategy.secondaryKeywords.join(", ")}\n\n`;
+    }
+    markdown += `**Search Intent:** ${brief.seoStrategy.targetSearchIntent}\n\n`;
+    markdown += `**Implementation Notes:**\n${brief.seoStrategy.implementationNotes}\n\n`;
+    markdown += `---\n\n`;
+
+    // Strategic Positioning
+    markdown += `## Strategic Positioning\n\n`;
+    markdown += `**Why This Matters:**\n${brief.strategicPositioning.whyThisMatters}\n\n`;
+    markdown += `**Pain Cluster Address:**\n${brief.strategicPositioning.painClusterAddress}\n\n`;
+    if (brief.strategicPositioning.trendingTopicsIntegration) {
+      markdown += `**Trending Topics Integration:**\n${brief.strategicPositioning.trendingTopicsIntegration}\n\n`;
+    }
+    markdown += `**Differentiation:**\n${brief.strategicPositioning.differentiation}\n\n`;
+    markdown += `---\n\n`;
+
+    // Content Structure
+    markdown += `## Content Structure\n\n`;
+    markdown += `**Estimated Word Count:** ${brief.contentStructure.totalEstimatedWords} words\n\n`;
+    brief.contentStructure.recommendedSections.forEach((section, idx) => {
+      markdown += `### ${idx + 1}. ${section.title}\n\n`;
+      if (section.keyMessages.length > 0) {
+        markdown += `**Key Messages:**\n`;
+        section.keyMessages.forEach(msg => {
+          markdown += `- ${msg}\n`;
+        });
+        markdown += `\n`;
+      }
+    });
+    markdown += `---\n\n`;
+
+    // Tone and Style
+    markdown += `## Tone and Style\n\n`;
+    markdown += `**Brand Voice Guidance:**\n${brief.toneAndStyle.brandVoiceGuidance}\n\n`;
+    markdown += `**ICP-Specific Tone:**\n${brief.toneAndStyle.icpSpecificTone}\n\n`;
+    if (brief.toneAndStyle.whatToAvoid.length > 0) {
+      markdown += `**What to Avoid:**\n`;
+      brief.toneAndStyle.whatToAvoid.forEach(item => {
+        markdown += `- ${item}\n`;
+      });
+      markdown += `\n`;
+    }
+    markdown += `---\n\n`;
+
+    // Success Metrics
+    markdown += `## Success Metrics\n\n`;
+    markdown += `**What Makes This Successful:**\n${brief.successMetrics.whatMakesThisSuccessful}\n\n`;
+    markdown += `**How to Use in Sales:**\n${brief.successMetrics.howToUseInSales}\n\n`;
+    if (brief.successMetrics.engagementIndicators.length > 0) {
+      markdown += `**Engagement Indicators:**\n`;
+      brief.successMetrics.engagementIndicators.forEach(indicator => {
+        markdown += `- ${indicator}\n`;
+      });
+      markdown += `\n`;
+    }
+    markdown += `---\n\n`;
+
+    // Content Gaps
+    if (brief.contentGapsToAddress.length > 0) {
+      markdown += `## Content Gaps to Address\n\n`;
+      brief.contentGapsToAddress.forEach(gap => {
+        markdown += `- ${gap}\n`;
+      });
+      markdown += `\n`;
+    }
+
+    return markdown;
   };
 
   // Escape HTML entities to prevent injection
@@ -608,32 +663,30 @@ ${ideasText}
     }
   };
 
-  // STREAMLINED: Reset to streamlined workflow steps
+  // STREAMLINED: Reset to 4-step workflow (brief is final deliverable)
   const handleReset = () => {
     setCurrentStep(initialGap ? "idea-generation" : "gap-selection");
     setSelectedGap(initialGap || null);
     setContentIdeas(null);
     setSelectedIdea(null);
     setContentBrief(null);
-    setContentDraft(null);
     setError(null);
     setIsGeneratingIdeas(false);
     setIsGeneratingBrief(false);
-    setIsGeneratingDraft(false);
   };
 
-  // STREAMLINED: Progress tracking for 5-step workflow
+  // STREAMLINED: Progress tracking for 4-step workflow (brief is final deliverable)
   const getStepNumber = (step: WorkflowStep): number => {
-    const steps: WorkflowStep[] = ["gap-selection", "idea-generation", "idea-selection", "brief-review", "draft-review", "complete"];
+    const steps: WorkflowStep[] = ["gap-selection", "idea-generation", "idea-selection", "brief-review", "complete"];
     return steps.indexOf(step) + 1;
   };
 
   const getTotalSteps = (): number => {
-    return 5; // STREAMLINED: 5 steps instead of 10
+    return 4; // Brief is the final deliverable - no draft generation
   };
   
   const getStepLabels = (): string[] => {
-    return ["Gap", "Ideas", "Select", "Brief", "Draft"]; // STREAMLINED: 5 steps
+    return ["Gap", "Ideas", "Select", "Brief"]; // 4-step workflow ending at brief
   };
 
   return (
@@ -653,7 +706,7 @@ ${ideasText}
         <div className="flex items-center gap-2 mb-6">
           {getStepLabels().map((label, index) => {
             const stepNumber = index + 1;
-            const steps: WorkflowStep[] = ["gap-selection", "idea-generation", "idea-selection", "brief-review", "draft-review"];
+            const steps: WorkflowStep[] = ["gap-selection", "idea-generation", "idea-selection", "brief-review"];
             const isActive = getStepNumber(currentStep) >= stepNumber;
             const isCurrent = getStepNumber(currentStep) === stepNumber;
 
@@ -780,29 +833,12 @@ ${ideasText}
             <BriefReviewStep
               brief={contentBrief}
               idea={selectedIdea}
+              gap={selectedGap}
               isAdmin={isAdmin}
               apiWarnings={apiWarnings}
-              onGenerateDraft={() => {
-                // STREAMLINED: Combine draft generation + review - show loading state in draft-review
-                setCurrentStep("draft-review");
-                handleGenerateDraft();
-              }}
-              isGeneratingDraft={isGeneratingDraft}
-            />
-          )}
-
-          {/* STREAMLINED: Combined draft-generation + draft-review - show loading state in draft-review */}
-          {currentStep === "draft-review" && (
-            <DraftReviewStep
-              draft={contentDraft}
-              idea={selectedIdea}
-              isGenerating={isGeneratingDraft}
-              onCopy={() => handleCopyToClipboard(contentDraft?.content || "")}
-              onExportPDF={() => handleExportPDF(contentDraft?.content || "", contentDraft?.title || "")}
-              onExportDOCX={() => handleExportDOCX(contentDraft?.content || "", contentDraft?.title || "")}
-              onComplete={() => {
-                setCurrentStep("complete");
-              }}
+              sources={contentIdeas?.trendingSources || []}
+              onComplete={() => setCurrentStep("complete")}
+              onExportBrief={(format) => handleExportBrief(contentBrief!, selectedIdea!, format)}
             />
           )}
 
@@ -811,7 +847,7 @@ ${ideasText}
               onReset={handleReset} 
               onClose={() => onOpenChange(false)}
               onExportIdeas={contentIdeas ? handleExportAllIdeas : undefined}
-              draft={contentDraft}
+              brief={contentBrief}
               idea={selectedIdea}
               gap={selectedGap}
               trendingSources={contentIdeas?.trendingSources}
@@ -825,13 +861,11 @@ ${ideasText}
             <Button
               variant="outline"
               onClick={() => {
-                // STREAMLINED: Simplified navigation - removed steps
-                if (currentStep === "idea-selection") {
-                  setCurrentStep("idea-generation");
-                } else if (currentStep === "brief-review") {
+                // STREAMLINED: 4-step workflow navigation (brief is final step)
+                if (currentStep === "brief-review") {
                   setCurrentStep("idea-selection");
-                } else if (currentStep === "draft-review") {
-                  setCurrentStep("brief-review");
+                } else if (currentStep === "idea-selection") {
+                  setCurrentStep("idea-generation");
                 } else if (currentStep === "idea-generation") {
                   setCurrentStep("gap-selection");
                 }
@@ -1780,39 +1814,29 @@ function IdeaSelectionStep({
 function BriefReviewStep({
   brief,
   idea,
-  onGenerateDraft,
-  isGeneratingDraft,
+  gap,
   isAdmin,
   apiWarnings,
+  sources,
+  onComplete,
+  onExportBrief,
 }: {
   brief: ContentBrief;
   idea: ContentIdea;
-  onGenerateDraft: () => void;
-  isGeneratingDraft: boolean;
+  gap: Gap | null;
   isAdmin: boolean;
   apiWarnings: Array<{ type: string; message: string; api: string }>;
+  sources: Array<{ url: string; title: string; sourceType?: string; isReputable?: boolean }>;
+  onComplete: () => void;
+  onExportBrief: (format: "copy" | "pdf" | "docx") => void;
 }) {
   return (
     <div className="space-y-4">
       <div>
         <h3 className="text-lg font-semibold mb-2">Content Brief</h3>
         <p className="text-sm text-muted-foreground mb-2">
-          Review the strategic brief with section-by-section guidance. This ensures the content aligns with your strategy.
+          Review the strategic brief with section-by-section guidance, content outline, and keyword optimization recommendations. This brief provides everything needed to produce publication-ready content aligned with your strategy.
         </p>
-        <div className="text-xs text-muted-foreground mb-4 space-y-2">
-          {(() => {
-            const capability = getProductionCapability(idea.assetType);
-            return capability.capability === "full" ? (
-              <p className="break-words">
-                <strong>Next step:</strong> Click &quot;Generate Draft&quot; to create the complete, publication-ready content with source citations.
-              </p>
-            ) : (
-              <p className="break-words">
-                <strong>Next step:</strong> Click &quot;Generate Draft&quot; to receive strategic recommendations and an outline for this {idea.assetType.replace("_", " ")}. Full content production requires team collaboration and real data.
-              </p>
-            );
-          })()}
-        </div>
       </div>
 
       {/* Admin-only API Warnings */}
@@ -1984,287 +2008,84 @@ function BriefReviewStep({
         </CardContent>
       </Card>
 
-      <Button 
-        onClick={onGenerateDraft} 
-        className="w-full" 
-        size="lg"
-        disabled={isGeneratingDraft}
-      >
-        {isGeneratingDraft ? (
-          <>
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            Generating Draft...
-          </>
-        ) : (
-          <>
-            Generate Draft
-            <ArrowRight className="h-4 w-4 ml-2" />
-          </>
-        )}
-      </Button>
-    </div>
-  );
-}
-
-function DraftGenerationStep({
-  isGenerating,
-}: {
-  isGenerating: boolean;
-}) {
-  return (
-    <div className="space-y-4 text-center py-8">
-      <Loader2 className="h-12 w-12 mx-auto animate-spin text-primary mb-4" />
-      <h3 className="text-lg font-semibold">Generating Content Draft</h3>
-      <p className="text-sm text-muted-foreground max-w-md mx-auto">
-        Creating your complete, publication-ready content with source citations and fact-checking notes...
-      </p>
-    </div>
-  );
-}
-
-function DraftReviewStep({
-  draft,
-  idea,
-  isGenerating,
-  onCopy,
-  onExportPDF,
-  onExportDOCX,
-  onComplete,
-}: {
-  draft: ContentDraft | null;
-  idea: ContentIdea | null;
-  isGenerating?: boolean;
-  onCopy: () => void;
-  onExportPDF: () => void;
-  onExportDOCX: () => void;
-  onComplete: () => void;
-}) {
-  // STREAMLINED: Show loading state when generating draft
-  if (isGenerating || !draft || !idea) {
-    return (
-      <div className="flex flex-col items-center justify-center py-12 space-y-4">
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <div className="text-center space-y-2">
-          <p className="font-semibold">Generating publication-ready draft...</p>
-          <p className="text-sm text-muted-foreground">
-            AI is writing content with citations and fact-checking
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // Handle recommendation responses (non-blog-post content types)
-  if (draft.isRecommendation) {
-    const handleCopyRecommendations = async () => {
-      try {
-        await navigator.clipboard.writeText(draft.recommendations || "");
-        // You could add a toast notification here
-      } catch (err) {
-        console.error("Failed to copy recommendations:", err);
-      }
-    };
-
-    return (
-      <div className="space-y-4">
-        <div>
-          <h3 className="text-lg font-semibold mb-2">Strategic Recommendations</h3>
-          <p className="text-sm text-muted-foreground mb-4">
-            {draft.message || `For ${draft.assetType?.replace(/_/g, " ") || "this content type"}, we provide strategic recommendations and guidance rather than fully generated content.`}
-          </p>
-        </div>
-
+      {/* Sources Reference */}
+      {sources.length > 0 && (
         <Card>
           <CardHeader>
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex-1 min-w-0">
-                <CardTitle className="text-base break-words">{draft.title}</CardTitle>
-                <CardDescription className="mt-1 break-words">
-                  {draft.assetType?.replace(/_/g, " ") || idea.assetType.replace("_", " ")} • Recommendations & Guidance
+            <CardTitle className="text-base">Research Sources</CardTitle>
+            <CardDescription>
+              {sources.length} source{sources.length > 1 ? "s" : ""} identified for content creation
                 </CardDescription>
-              </div>
-              <div className="flex gap-2 flex-shrink-0">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleCopyRecommendations}
-                  title="Copy recommendations to clipboard"
-                >
-                  <Copy className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
           </CardHeader>
           <CardContent>
-            <div className="prose prose-sm max-w-none">
-              <div className="whitespace-pre-wrap text-sm leading-relaxed break-words">
-                {draft.recommendations || "No recommendations available."}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800">
-          <CardHeader>
-            <CardTitle className="text-sm font-semibold">Next Steps</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Use these recommendations along with your content brief to plan and produce this {draft.assetType?.replace(/_/g, " ") || "content"} with your team. 
-              The brief contains the strategic positioning, structure, and SEO strategy you'll need.
-            </p>
-          </CardContent>
-        </Card>
-
-        <div className="flex justify-end gap-2 pt-4">
-          <Button onClick={onComplete} variant="default">
-            Complete
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  // Regular blog post draft
-  return (
-    <div className="space-y-4">
-      <div>
-        <h3 className="text-lg font-semibold mb-2">Content Draft Ready</h3>
-        <p className="text-sm text-muted-foreground mb-4">
-          Your publication-ready content is complete. Review, copy, or export it.
-        </p>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex-1 min-w-0">
-              <CardTitle className="text-base break-words">{draft.title}</CardTitle>
-              <CardDescription className="mt-1 break-words">
-                {idea.assetType.replace("_", " ")} • {draft.wordCount} words • ~{draft.estimatedReadTime} min read
-              </CardDescription>
-            </div>
-              <div className="flex gap-2 flex-shrink-0">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={onCopy}
-                  title="Copy to clipboard"
-                >
-                  <Copy className="h-4 w-4" />
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={onExportPDF}
-                  title="Export as PDF"
-                >
-                  <FileDown className="h-4 w-4" />
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={onExportDOCX}
-                  title="Export as document"
-                >
-                  <Download className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="border rounded-lg p-4 bg-muted/30 max-h-[400px] overflow-y-auto overflow-x-hidden">
-            <pre className="whitespace-pre-wrap text-sm font-sans break-words">{draft.content}</pre>
-          </div>
-
-          {draft.sources.length > 0 && (
-            <div className="border-t pt-4 mt-4">
-              <h4 className="text-base font-semibold mb-3 flex items-center gap-2">
-              <FileText className="h-4 w-4" />
-              Sources & References
-            </h4>
-              <p className="text-xs text-muted-foreground mb-3">
-                All sources used in this content. Click to view the original articles.
-              </p>
-              <div className="space-y-3">
-                {draft.sources.map((source, idx) => (
-                  <div key={idx} className="flex items-start gap-3 p-3 border rounded-lg hover:bg-muted/30 transition-colors">
-                    <Badge variant="secondary" className="text-xs shrink-0">
-                      {source.sourceType}
-                    </Badge>
-                    <div className="flex-1 min-w-0">
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {sources.slice(0, 5).map((source, idx) => (
+                <div key={idx} className="flex items-start gap-2 p-2 border rounded text-sm">
+                  <ExternalLink className="h-3 w-3 mt-1 flex-shrink-0 text-muted-foreground" />
                       <a
                         href={source.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-sm font-medium text-primary hover:underline flex items-center gap-1 mb-1"
+                    className="text-primary hover:underline break-words flex-1"
                       >
                         {source.title}
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
-                      <a
-                        href={source.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-muted-foreground hover:text-primary truncate block"
-                      >
-                        {source.url}
-                      </a>
-                      {source.citation && (
-                        <p className="text-xs text-muted-foreground mt-1 italic">
-                          {source.citation}
-                        </p>
-                      )}
-                    </div>
+                  </a>
                   </div>
                 ))}
-              </div>
+              {sources.length > 5 && (
+                <p className="text-xs text-muted-foreground pt-2">
+                  +{sources.length - 5} more source{sources.length - 5 > 1 ? "s" : ""}
+                </p>
+              )}
             </div>
-          )}
-
-          {draft.factCheckNotes.length > 0 && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-              <h4 className="text-sm font-semibold mb-2 text-yellow-800">
-                ⚠️ Fact-Check Required
-              </h4>
-              <ul className="text-sm space-y-1 list-disc list-inside text-yellow-700">
-                {draft.factCheckNotes.map((note, idx) => (
-                  <li key={idx}>{note}</li>
-                ))}
-              </ul>
-            </div>
-          )}
         </CardContent>
       </Card>
+      )}
 
+      {/* Export and Complete Actions */}
       <div className="flex gap-2">
-        <Button onClick={onCopy} variant="outline" className="flex-1">
-          <Copy className="h-4 w-4 mr-2" />
-          Copy Text
-        </Button>
-        <Button onClick={onExportPDF} variant="outline" className="flex-1">
-          <FileDown className="h-4 w-4 mr-2" />
-          Export PDF
-        </Button>
-        <Button onClick={onExportDOCX} variant="outline" className="flex-1">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" className="flex-1">
           <Download className="h-4 w-4 mr-2" />
-          Export Doc
+              Export Brief
         </Button>
-      </div>
-
-      <Button onClick={onComplete} className="w-full" size="lg">
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => onExportBrief("copy")}>
+              <Copy className="h-4 w-4 mr-2" />
+              Copy to Clipboard
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onExportBrief("pdf")}>
+              <FileText className="h-4 w-4 mr-2" />
+              Export as PDF
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onExportBrief("docx")}>
+              <Download className="h-4 w-4 mr-2" />
+              Export as Document
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      <Button 
+          onClick={onComplete} 
+          className="flex-1" 
+        size="lg"
+        >
         Complete
         <CheckCircle2 className="h-4 w-4 ml-2" />
       </Button>
     </div>
+    </div>
   );
 }
+
+// REMOVED: DraftGenerationStep and DraftReviewStep - brief is now the final deliverable
 
 function CompleteStep({
   onReset,
   onClose,
   onExportIdeas,
-  draft,
+  brief,
   idea,
   gap,
   trendingSources,
@@ -2272,7 +2093,7 @@ function CompleteStep({
   onReset: () => void;
   onClose: () => void;
   onExportIdeas?: (format?: "copy" | "pdf" | "docx") => void;
-  draft?: ContentDraft | null;
+  brief?: ContentBrief | null;
   idea?: ContentIdea | null;
   gap?: Gap | null;
   trendingSources?: Array<{
@@ -2283,150 +2104,38 @@ function CompleteStep({
     isReputable?: boolean;
   }>;
 }) {
-  const router = useRouter();
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-
-  const handleSaveToLibrary = async () => {
-    if (!draft || !idea || !gap) {
-      setSaveError("Missing content data. Please try creating the content again.");
-      return;
-    }
-
-    setIsSaving(true);
-    setSaveError(null);
-
-    try {
-      // Merge draft sources with reputable trending sources
-      // Prioritize reputable sources from research
-      const reputableTrendingSources = (trendingSources || [])
-        .filter(s => s.isReputable && s.url)
-        .map(s => ({
-          url: s.url,
-          title: s.title,
-          sourceType: s.sourceType || "research",
-          citation: `Research source: ${s.title}`,
-        }));
-
-      // Combine with draft sources, avoiding duplicates
-      const draftSourceUrls = new Set((draft.sources || []).map(s => s.url));
-      const additionalSources = reputableTrendingSources.filter(
-        s => !draftSourceUrls.has(s.url)
-      );
-
-      const allSources = [...(draft.sources || []), ...additionalSources];
-
-      const response = await fetch("/api/assets/from-content", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: draft.title,
-          content: draft.content,
-          assetType: idea.assetType,
-          funnelStage: gap.stage,
-          icpTargets: gap.icpTargets && gap.icpTargets.length > 0 ? gap.icpTargets : [gap.icp],
-          painClusters: gap.painCluster ? [gap.painCluster] : [],
-          sources: allSources,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to save to asset library");
-      }
-
-      const result = await response.json();
-      setSaveSuccess(true);
-      console.log("Asset saved successfully:", result);
-      
-      // Set flag to switch to library view on dashboard
-      sessionStorage.setItem('switch-to-library-view', 'true');
-      
-      // Navigate to dashboard after a brief delay to show success message
-      setTimeout(() => {
-        onClose();
-        router.push("/dashboard");
-      }, 1500);
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Failed to save to asset library");
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const canSave = draft && idea && gap && !saveSuccess;
-
   return (
     <div className="space-y-4 text-center py-8">
       <CheckCircle2 className="h-16 w-16 mx-auto text-green-500 mb-4" />
-      <h3 className="text-xl font-semibold">Content Created Successfully!</h3>
+      <h3 className="text-xl font-semibold">Content Brief Ready!</h3>
       <p className="text-sm text-muted-foreground max-w-md mx-auto">
-        Your content draft is ready. You can save it to your asset library, export it, or create another piece of content.
+        Your strategic content brief with outline, keywords, and writing guidelines is complete. Export it, create another brief, or close.
       </p>
 
-      {/* Save to Library Section */}
-      {canSave && (
+      {brief && idea && (
         <Card className="max-w-md mx-auto mt-4">
           <CardContent className="pt-4">
             <div className="text-left space-y-2">
-              <p className="text-sm font-medium">Save to Asset Library</p>
-              <p className="text-xs text-muted-foreground">
-                This will add "{draft?.title}" to your library as:
-              </p>
+              <p className="text-sm font-medium">Brief Summary</p>
               <div className="flex flex-wrap gap-2 mt-2">
-                <Badge variant="secondary">{gap?.icp}</Badge>
-                <Badge variant="outline">{STAGE_DISPLAY[gap?.stage as FunnelStage]}</Badge>
+                <Badge variant="secondary">{gap?.icp || "N/A"}</Badge>
+                <Badge variant="outline">{gap ? STAGE_DISPLAY[gap.stage as FunnelStage] : "N/A"}</Badge>
                 {gap?.painCluster && (
                   <Badge variant="outline">{gap.painCluster}</Badge>
                 )}
               </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                <strong>Primary Keyword:</strong> {brief.seoStrategy.primaryKeyword}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                <strong>Estimated Words:</strong> {brief.contentStructure.totalEstimatedWords}
+              </p>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {saveSuccess && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4 max-w-md mx-auto">
-          <p className="text-sm font-medium text-green-800 flex items-center justify-center gap-2">
-            <CheckCircle2 className="h-4 w-4" />
-            Saved to Asset Library!
-          </p>
-          <p className="text-xs text-green-700 mt-1">
-            The asset has been added with {gap?.icp} as the ICP target and {STAGE_DISPLAY[gap?.stage as FunnelStage]} funnel stage.
-          </p>
-        </div>
-      )}
-
-      {saveError && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 max-w-md mx-auto">
-          <p className="text-sm font-medium text-red-800 flex items-center justify-center gap-2">
-            <AlertCircle className="h-4 w-4" />
-            {saveError}
-          </p>
-        </div>
-      )}
-
       <div className="flex flex-wrap gap-2 justify-center mt-6">
-        {canSave && (
-          <Button 
-            onClick={handleSaveToLibrary} 
-            disabled={isSaving}
-            className="bg-green-600 hover:bg-green-700"
-          >
-            {isSaving ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Saving...
-              </>
-            ) : (
-              <>
-                <CheckCircle2 className="h-4 w-4 mr-2" />
-                Save to Asset Library
-              </>
-            )}
-          </Button>
-        )}
         {onExportIdeas && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

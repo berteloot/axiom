@@ -111,6 +111,7 @@ export const updateAssetSchema = z.object({
   inUse: z.boolean().optional(),
   uploadedById: z.string().nullable().optional(),
   uploadedByNameOverride: z.string().max(255).nullable().optional(),
+  s3Url: z.string().url().optional(), // Allow updating Asset URL
 });
 
 /**

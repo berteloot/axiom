@@ -116,6 +116,7 @@ export async function PATCH(
       inUse,
       uploadedById,
       uploadedByNameOverride,
+      s3Url,
     } = validationResult.data;
 
     // First verify the asset belongs to the current account
@@ -192,6 +193,7 @@ export async function PATCH(
       ...(expiryDate !== undefined && { expiryDate: expiryDate ? new Date(expiryDate) : null }),
       ...(uploadedById !== undefined && { uploadedById: uploadedById || null }),
       ...(uploadedByNameOverride !== undefined && { uploadedByNameOverride: uploadedByNameOverride || null }),
+      ...(s3Url !== undefined && { s3Url }),
     };
 
     // Only include inUse if explicitly provided (gracefully handle if column doesn't exist yet)
