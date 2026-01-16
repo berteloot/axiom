@@ -382,16 +382,27 @@ export const authOptions: NextAuthOptions = {
         removeAccountType(user.email);
       }
 
-      // Set up default trial account for new users
-      const trialEndDate = new Date()
-      trialEndDate.setDate(trialEndDate.getDate() + 14) // 14 days trial
+      // TRIAL PERIOD DISABLED: All @NytroMarketing.com users get ACTIVE accounts
+      // Preserved trial period code below for future re-enablement:
+      // // Set up default trial account for new users
+      // const trialEndDate = new Date()
+      // trialEndDate.setDate(trialEndDate.getDate() + 14) // 14 days trial
+      // const account = await prisma.account.create({
+      //   data: {
+      //     name: accountName,
+      //     slug: `org-${randomBytes(4).toString('hex')}`,
+      //     subscriptionStatus: "TRIAL",
+      //     trialEndsAt: trialEndDate,
+      //   }
+      // })
 
+      // Create ACTIVE account for @NytroMarketing.com users (trial period disabled)
       const account = await prisma.account.create({
         data: {
           name: accountName,
           slug: `org-${randomBytes(4).toString('hex')}`,
-          subscriptionStatus: "TRIAL",
-          trialEndsAt: trialEndDate,
+          subscriptionStatus: "ACTIVE",
+          // trialEndsAt is not set for ACTIVE accounts (preserved for schema compatibility)
         }
       })
 

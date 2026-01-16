@@ -62,10 +62,16 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
         const account = data.account;
 
         // Check subscription status
+        // TRIAL PERIOD DISABLED: All @NytroMarketing.com users have full access
+        // Preserved trial period code below for future re-enablement:
+        // const trialExpired = account.subscriptionStatus === "TRIAL" &&
+        //                     account.trialEndsAt &&
+        //                     new Date(account.trialEndsAt) < now;
+        
         const now = new Date();
-        const trialExpired = account.subscriptionStatus === "TRIAL" &&
-                            account.trialEndsAt &&
-                            new Date(account.trialEndsAt) < now;
+        // Trial period is disabled - always set to false
+        const trialExpired = false;
+        
         const subscriptionExpired = (account.subscriptionStatus === "CANCELLED") ||
                                    (account.subscriptionStatus === "ACTIVE" &&
                                     account.subscriptionEndsAt &&

@@ -30,5 +30,5 @@ export function isAllowedEmailDomain(email: string): boolean {
  * @returns Error message string
  */
 export function getEmailDomainError(): string {
-  return "Access is restricted to @nytromarketing.com email addresses only.";
+  return "Access is restricted to @NytroMarketing.com email addresses only.";
 }

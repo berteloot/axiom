@@ -45,11 +45,14 @@ export function BillingGuard({ children }: BillingGuardProps) {
 
     // Only check account-related redirects if user is authenticated
     if (sessionStatus === "authenticated") {
-      // Redirect to billing if trial or subscription is expired
-      if (isTrialExpired) {
-        router.push("/billing?reason=trial_expired");
-        return;
-      }
+      // TRIAL PERIOD DISABLED: All @NytroMarketing.com users have full access
+      // Preserved trial expiration redirect below for future re-enablement:
+      // if (isTrialExpired) {
+      //   router.push("/billing?reason=trial_expired");
+      //   return;
+      // }
+      
+      // Trial period check is disabled - skip redirect
 
       if (isSubscriptionExpired) {
         router.push("/billing?reason=subscription_expired");
