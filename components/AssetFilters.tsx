@@ -620,9 +620,9 @@ export function applyAssetFilters(assets: Asset[], filters: AssetFiltersState): 
   if (filters.search) {
     const searchLower = filters.search.toLowerCase();
     filtered = filtered.filter((asset) => {
-      const titleMatch = asset.title.toLowerCase().includes(searchLower);
-      const userMatch = asset.uploadedBy?.name?.toLowerCase().includes(searchLower);
-      const customNameMatch = (asset as any).uploadedByNameOverride?.toLowerCase().includes(searchLower);
+      const titleMatch = asset.title?.toLowerCase().includes(searchLower) ?? false;
+      const userMatch = asset.uploadedBy?.name?.toLowerCase().includes(searchLower) ?? false;
+      const customNameMatch = (asset as any).uploadedByNameOverride?.toLowerCase().includes(searchLower) ?? false;
       // Check if search matches date format or date string
       const uploadDate = new Date(asset.createdAt);
       const dateMatch = 
