@@ -32,6 +32,11 @@ export const FUNCTIONAL_AREAS = [
   "Legal & Compliance",
   "Data & Analytics",
   "Design & UX",
+  "Consulting & Advisory",
+  "Administrative & Office",
+  "Learning & Development",
+  "Media & Content",
+  "Healthcare",
   "Other"
 ] as const;
 
@@ -115,16 +120,18 @@ function mapLegacyCategoryToFunction(category: string): FunctionalArea {
     'CUSTOMER_SERVICE': 'Customer Success & Support',
     'IT_OPERATIONS': 'Technology & Engineering',
     'DESIGN_UX': 'Design & UX',
-    'CONSULTING': 'Other',
     'LEGAL_COMPLIANCE': 'Legal & Compliance',
-    'ADMINISTRATIVE': 'Other',
-    'EDUCATION_TRAINING': 'Other',
     'ENGINEERING': 'Technology & Engineering',
-    'MEDIA_CONTENT': 'Other',
     'RESEARCH': 'Data & Analytics',
     'FACILITIES_MAINTENANCE': 'Operations & Supply Chain',
     'SECURITY': 'Technology & Engineering',
-    'HEALTHCARE': 'Other',
+    // Updated mappings (no longer "Other"):
+    'CONSULTING': 'Consulting & Advisory',
+    'ADMINISTRATIVE': 'Administrative & Office',
+    'EDUCATION_TRAINING': 'Learning & Development',
+    'MEDIA_CONTENT': 'Media & Content',
+    'HEALTHCARE': 'Healthcare',
+    // Only truly generic titles should be "Other":
     'OTHER_PROFESSIONAL': 'Other',
   };
   
@@ -536,7 +543,7 @@ function buildJobTitlesDB(): JobTitle[] {
       
       // Manual overrides for specific cases
       if (title === "Chief Medical Officer (CMO)") {
-        jobTitle.function = "Other"; // Healthcare is "Other" per spec
+        // Function is now correctly mapped to "Healthcare" via category mapping
         jobTitle.seniority = "C-Suite";
       } else if (title === "Board Member") {
         jobTitle.seniority = "C-Suite";
