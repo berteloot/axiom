@@ -49,6 +49,9 @@ export function DatePicker({
           onSelect={onSelect}
           initialFocus
           disabled={disabledDates}
+          captionLayout="dropdown"
+          fromYear={1900}
+          toYear={2100}
         />
       </PopoverContent>
     </Popover>
