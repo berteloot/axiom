@@ -11,6 +11,7 @@ export interface Account {
   subscriptionStatus?: "TRIAL" | "ACTIVE" | "CANCELLED" | "EXPIRED";
   trialEndsAt?: string;
   subscriptionEndsAt?: string;
+  maxFileSize?: number; // Max file size in MB
   createdAt: string;
 }
 
@@ -77,7 +78,10 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
                                     account.subscriptionEndsAt &&
                                     new Date(account.subscriptionEndsAt) < now);
 
-        setCurrentAccount(account);
+        setCurrentAccount({
+          ...account,
+          maxFileSize: account.maxFileSize || 100, // Default to 100MB if not provided
+        });
         setIsTrialExpired(trialExpired);
         setIsSubscriptionExpired(subscriptionExpired);
         
@@ -260,7 +264,10 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
           }
           if (cachedCurrent) {
             const { account, trialExpired, subscriptionExpired } = JSON.parse(cachedCurrent);
-            setCurrentAccount(account);
+            setCurrentAccount({
+              ...account,
+              maxFileSize: account.maxFileSize || 100, // Default to 100MB if not provided
+            });
             setIsTrialExpired(trialExpired);
             setIsSubscriptionExpired(subscriptionExpired);
           }

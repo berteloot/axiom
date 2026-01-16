@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { useAccount } from "@/lib/account-context";
 
 interface UploadProgress {
   status: "idle" | "uploading" | "processing" | "success" | "error";
@@ -76,9 +77,20 @@ function inferMimeType(fileName: string, browserType: string): string {
 
 export function useFileUpload(onSuccess?: () => void) {
   const [uploadProgress, setUploadProgress] = useState<UploadProgress>({ status: "idle" });
+  const { currentAccount } = useAccount();
 
   const uploadFile = useCallback(async (file: File) => {
     try {
+      // Validate file size before starting upload
+      const fileSizeMB = file.size / (1024 * 1024);
+      const maxFileSizeMB = currentAccount?.maxFileSize || 100; // Default to 100MB
+      
+      if (fileSizeMB > maxFileSizeMB) {
+        throw new Error(
+          `File size (${fileSizeMB.toFixed(2)}MB) exceeds the maximum allowed size of ${maxFileSizeMB}MB. Please compress the file or contact your administrator.`
+        );
+      }
+
       setUploadProgress({ status: "uploading", message: "Uploading file..." });
 
       const fileSize = file.size;
@@ -114,6 +126,7 @@ export function useFileUpload(onSuccess?: () => void) {
           body: JSON.stringify({
             fileName: file.name,
             fileType: fileType,
+            fileSize: file.size, // Include file size for server-side validation
           }),
           signal: controller.signal,
         });
@@ -212,13 +225,14 @@ export function useFileUpload(onSuccess?: () => void) {
 
       setTimeout(() => setUploadProgress({ status: "idle" }), 2500);
     } catch (err) {
-      console.error(err);
+      console.error("Upload error:", err);
+      const errorMessage = err instanceof Error ? err.message : "Upload failed";
       setUploadProgress({
         status: "error",
-        message: err instanceof Error ? err.message : "Upload failed",
+        message: errorMessage,
       });
     }
-  }, [onSuccess]);
+  }, [onSuccess, currentAccount]);
 
   const uploadText = useCallback(async (textContent: string, textTitle: string) => {
     if (!textContent.trim()) {

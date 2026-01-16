@@ -1,7 +1,10 @@
 "use client";
 
 import { useDropzone } from "react-dropzone";
-import { FileText, Image, FileSpreadsheet, Video } from "lucide-react";
+import { FileText, Image, FileSpreadsheet, Video, AlertCircle } from "lucide-react";
+import { useState } from "react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useAccount } from "@/lib/account-context";
 
 // Accepted file types matching lib/validations.ts
 const ACCEPTED_FILE_TYPES = {
@@ -39,25 +42,72 @@ interface FileDropzoneProps {
 }
 
 export function FileDropzone({ onDrop, disabled }: FileDropzoneProps) {
+  const [rejectionError, setRejectionError] = useState<string | null>(null);
+  const { currentAccount } = useAccount();
+  const maxFileSizeMB = currentAccount?.maxFileSize || 100;
+  const maxFileSizeBytes = maxFileSizeMB * 1024 * 1024; // Convert MB to bytes
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
+    onDrop: (acceptedFiles, fileRejections) => {
+      // Clear any previous errors
+      setRejectionError(null);
+
+      // Handle file rejections
+      if (fileRejections.length > 0) {
+        const rejection = fileRejections[0];
+        let errorMessage = "File rejected. ";
+
+        if (rejection.errors.length > 0) {
+          const error = rejection.errors[0];
+          if (error.code === "file-invalid-type") {
+            errorMessage += `File type "${rejection.file.name.split('.').pop()?.toUpperCase()}" is not supported. Please upload a PDF, DOC, DOCX, TXT, image, video, or audio file.`;
+          } else if (error.code === "file-too-large") {
+            errorMessage += `File is too large (${Math.round((rejection.file.size || 0) / 1024 / 1024)}MB). Maximum size is ${maxFileSizeMB}MB. Please compress the file or contact your administrator.`;
+          } else if (error.code === "file-too-small") {
+            errorMessage += "File is too small.";
+          } else if (error.code === "too-many-files") {
+            errorMessage += "Please upload only one file at a time.";
+          } else {
+            errorMessage += error.message || "Unknown error.";
+          }
+        } else {
+          errorMessage += "Unknown rejection reason.";
+        }
+
+        setRejectionError(errorMessage);
+        return;
+      }
+
+      // If files were accepted, proceed with upload
+      if (acceptedFiles.length > 0) {
+        onDrop(acceptedFiles);
+      }
+    },
     multiple: false,
     disabled,
     accept: ACCEPTED_FILE_TYPES,
+    maxSize: maxFileSizeBytes,
   });
 
   return (
-    <div
-      {...getRootProps()}
-      className={`
-        border-2 border-dashed rounded-lg p-8 text-center cursor-pointer
-        transition-colors duration-200
-        ${isDragActive ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}
-        ${disabled ? "opacity-50 cursor-not-allowed" : ""}
-      `}
-    >
-      <input {...getInputProps()} />
-      <div className="flex flex-col items-center gap-4">
+    <div className="space-y-4">
+      {rejectionError && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{rejectionError}</AlertDescription>
+        </Alert>
+      )}
+      <div
+        {...getRootProps()}
+        className={`
+          border-2 border-dashed rounded-lg p-8 text-center cursor-pointer
+          transition-colors duration-200
+          ${isDragActive ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}
+          ${disabled ? "opacity-50 cursor-not-allowed" : ""}
+        `}
+      >
+        <input {...getInputProps()} />
+        <div className="flex flex-col items-center gap-4">
         <svg
           className="w-12 h-12 text-muted-foreground"
           fill="none"

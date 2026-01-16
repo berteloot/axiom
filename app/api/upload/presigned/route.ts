@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 import { presignedUploadSchema } from "@/lib/validations";
 import { requireAccountId } from "@/lib/account-utils";
 import { getAccountS3Prefix } from "@/lib/services/account-service";
+import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,7 +38,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { fileName, fileType } = validationResult.data;
+    const { fileName, fileType, fileSize } = validationResult.data;
+
+    // Validate file size against account's maxFileSize setting
+    if (fileSize !== undefined) {
+      const account = await prisma.account.findUnique({
+        where: { id: accountId },
+        select: { maxFileSize: true },
+      });
+
+      const maxFileSizeMB = account?.maxFileSize || 100; // Default to 100MB
+      const maxFileSizeBytes = maxFileSizeMB * 1024 * 1024;
+      const fileSizeMB = fileSize / (1024 * 1024);
+
+      if (fileSize > maxFileSizeBytes) {
+        return NextResponse.json(
+          {
+            error: `File size (${fileSizeMB.toFixed(2)}MB) exceeds the maximum allowed size of ${maxFileSizeMB}MB. Please compress the file or contact your administrator.`,
+          },
+          { status: 400 }
+        );
+      }
+    }
 
     // Generate a unique key for the file with account-specific prefix
     // Structure: accounts/{accountId}/uploads/{uuid}.{ext}

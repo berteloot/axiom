@@ -58,6 +58,9 @@ export const presignedUploadSchema = z.object({
     .refine((type) => ALLOWED_FILE_TYPES.includes(type as any), {
       message: "File type not allowed"
     }),
+  fileSize: z.number()
+    .positive("File size must be positive")
+    .optional(), // Optional for backward compatibility, but recommended for validation
 });
 
 /**
