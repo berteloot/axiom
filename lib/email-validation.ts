@@ -5,10 +5,13 @@
 
 const ALLOWED_EMAIL_DOMAINS = ["nytromarketing.com"];
 
+// Admin emails that bypass domain restrictions
+const ADMIN_EMAILS = ["berteloot@gmail.com"];
+
 /**
- * Check if an email address is from an allowed domain
+ * Check if an email address is from an allowed domain or is an admin email
  * @param email The email address to validate
- * @returns true if the email is from an allowed domain, false otherwise
+ * @returns true if the email is from an allowed domain or is an admin email, false otherwise
  */
 export function isAllowedEmailDomain(email: string): boolean {
   if (!email || typeof email !== "string" || !email.includes("@")) {
@@ -16,6 +19,12 @@ export function isAllowedEmailDomain(email: string): boolean {
   }
 
   const normalizedEmail = email.toLowerCase().trim();
+  
+  // Check if it's an admin email (bypasses domain restriction)
+  if (ADMIN_EMAILS.includes(normalizedEmail)) {
+    return true;
+  }
+
   const domain = normalizedEmail.split("@")[1];
 
   if (!domain) {

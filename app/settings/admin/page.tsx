@@ -113,12 +113,35 @@ export default function AdminSettings() {
     subscriptionEndsAt: string | null;
   }
 
+  interface AllAccount {
+    id: string;
+    name: string;
+    slug: string;
+    subscriptionStatus: "TRIAL" | "ACTIVE" | "CANCELLED" | "EXPIRED";
+    trialEndsAt: string | null;
+    subscriptionEndsAt: string | null;
+    createdAt: string;
+    userCount: number;
+    assetCount: number;
+    owners: Array<{
+      id: string;
+      email: string;
+      name: string | null;
+    }>;
+  }
+
+  const [allAccounts, setAllAccounts] = useState<AllAccount[]>([]);
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("");
+  const [accountsLoading, setAccountsLoading] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
   const [accountInfo, setAccountInfo] = useState<AccountInfo | null>(null);
   const [usersLoading, setUsersLoading] = useState(false);
   const [revokeUserId, setRevokeUserId] = useState<string | null>(null);
   const [revokeUserName, setRevokeUserName] = useState<string>("");
   const [showRevokeDialog, setShowRevokeDialog] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [editingUserRole, setEditingUserRole] = useState<"OWNER" | "ADMIN" | "MEMBER">("MEMBER");
+  const [showRoleEditDialog, setShowRoleEditDialog] = useState(false);
   const [extendTrialDays, setExtendTrialDays] = useState<number>(14);
 
   // Access control: Only berteloot@gmail.com can access this page
@@ -168,13 +191,38 @@ export default function AdminSettings() {
     loadSettings();
   }, [currentAccount]);
 
-  // Load users for the account
-  const loadUsers = async () => {
-    if (!currentAccount?.id) return;
+  // Load all accounts
+  const loadAllAccounts = async () => {
+    setAccountsLoading(true);
+    try {
+      const response = await fetch(`/api/admin/accounts`);
+      if (response.ok) {
+        const data = await response.json();
+        setAllAccounts(data.accounts || []);
+        // Auto-select current account if available, otherwise first account
+        if (!selectedAccountId && currentAccount?.id) {
+          setSelectedAccountId(currentAccount.id);
+        } else if (!selectedAccountId && data.accounts?.length > 0) {
+          setSelectedAccountId(data.accounts[0].id);
+        }
+      } else {
+        setErrorMessage("Failed to load accounts");
+      }
+    } catch (error) {
+      // Error logged silently - user sees error message via UI
+      setErrorMessage("Failed to load accounts");
+    } finally {
+      setAccountsLoading(false);
+    }
+  };
+
+  // Load users for the selected account
+  const loadUsers = async (accountId: string) => {
+    if (!accountId) return;
 
     setUsersLoading(true);
     try {
-      const response = await fetch(`/api/accounts/${currentAccount.id}/users`);
+      const response = await fetch(`/api/accounts/${accountId}/users`);
       if (response.ok) {
         const data = await response.json();
         setUsers(data.users || []);
@@ -190,23 +238,28 @@ export default function AdminSettings() {
     }
   };
 
-  // Load users when account changes
+  // Load all accounts on mount
   useEffect(() => {
-    if (currentAccount?.id) {
-      loadUsers();
+    loadAllAccounts();
+  }, []);
+
+  // Load users when selected account changes
+  useEffect(() => {
+    if (selectedAccountId) {
+      loadUsers(selectedAccountId);
     }
-  }, [currentAccount?.id]);
+  }, [selectedAccountId]);
 
   // Handle extend trial
   const handleExtendTrial = async () => {
-    if (!currentAccount?.id) return;
+    if (!selectedAccountId) return;
 
     setIsLoading(true);
     setSuccessMessage("");
     setErrorMessage("");
 
     try {
-      const response = await fetch(`/api/accounts/${currentAccount.id}/subscription`, {
+      const response = await fetch(`/api/accounts/${selectedAccountId}/subscription`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "extend_trial", days: extendTrialDays }),
@@ -214,7 +267,8 @@ export default function AdminSettings() {
 
       if (response.ok) {
         setSuccessMessage(`Trial extended by ${extendTrialDays} days`);
-        await loadUsers();
+        await loadUsers(selectedAccountId);
+        await loadAllAccounts();
         await refreshAccounts();
       } else {
         const data = await response.json();
@@ -230,14 +284,14 @@ export default function AdminSettings() {
 
   // Handle activate subscription
   const handleActivateSubscription = async () => {
-    if (!currentAccount?.id) return;
+    if (!selectedAccountId) return;
 
     setIsLoading(true);
     setSuccessMessage("");
     setErrorMessage("");
 
     try {
-      const response = await fetch(`/api/accounts/${currentAccount.id}/subscription`, {
+      const response = await fetch(`/api/accounts/${selectedAccountId}/subscription`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "activate" }),
@@ -245,7 +299,8 @@ export default function AdminSettings() {
 
       if (response.ok) {
         setSuccessMessage("Subscription activated successfully");
-        await loadUsers();
+        await loadUsers(selectedAccountId);
+        await loadAllAccounts();
         await refreshAccounts();
       } else {
         const data = await response.json();
@@ -261,14 +316,14 @@ export default function AdminSettings() {
 
   // Handle revoke access
   const handleRevokeAccess = async () => {
-    if (!currentAccount?.id || !revokeUserId) return;
+    if (!selectedAccountId || !revokeUserId) return;
 
     setIsLoading(true);
     setSuccessMessage("");
     setErrorMessage("");
 
     try {
-      const response = await fetch(`/api/accounts/${currentAccount.id}/users/${revokeUserId}`, {
+      const response = await fetch(`/api/accounts/${selectedAccountId}/users/${revokeUserId}`, {
         method: "DELETE",
       });
 
@@ -277,7 +332,8 @@ export default function AdminSettings() {
         setShowRevokeDialog(false);
         setRevokeUserId(null);
         setRevokeUserName("");
-        await loadUsers();
+        await loadUsers(selectedAccountId);
+        await loadAllAccounts();
       } else {
         const data = await response.json();
         setErrorMessage(data.error || "Failed to revoke access");
@@ -290,11 +346,53 @@ export default function AdminSettings() {
     }
   };
 
+  // Handle update user role
+  const handleUpdateUserRole = async () => {
+    if (!selectedAccountId || !editingUser) return;
+
+    setIsLoading(true);
+    setSuccessMessage("");
+    setErrorMessage("");
+
+    try {
+      const response = await fetch(`/api/admin/accounts/${selectedAccountId}/users/${editingUser.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ role: editingUserRole }),
+      });
+
+      if (response.ok) {
+        setSuccessMessage(`User role updated to ${editingUserRole}`);
+        setShowRoleEditDialog(false);
+        setEditingUser(null);
+        await loadUsers(selectedAccountId);
+        await loadAllAccounts();
+      } else {
+        const data = await response.json();
+        setErrorMessage(data.error || "Failed to update user role");
+      }
+    } catch (error) {
+      // Error logged silently - user sees error message via UI
+      setErrorMessage("Failed to update user role");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Open revoke dialog
   const openRevokeDialog = (user: User) => {
     setRevokeUserId(user.id);
     setRevokeUserName(user.name || user.email);
     setShowRevokeDialog(true);
+  };
+
+  // Open role edit dialog
+  const openRoleEditDialog = (user: User) => {
+    setEditingUser(user);
+    setEditingUserRole(user.role);
+    setShowRoleEditDialog(true);
   };
 
   // Show loading while checking authorization
@@ -668,66 +766,137 @@ export default function AdminSettings() {
                 User Management
               </CardTitle>
               <CardDescription>
-                Manage users and their access to {currentAccount?.name || "this account"}
+                View all accounts and manage users and their access rights
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {usersLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-8 w-8 animate-spin" />
-                </div>
-              ) : users.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  No users found
-                </div>
-              ) : (
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Email</TableHead>
-                        <TableHead>Role</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Joined</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {users.map((user) => (
-                        <TableRow key={user.id}>
-                          <TableCell className="font-medium">
-                            {user.name || "—"}
-                          </TableCell>
-                          <TableCell>{user.email}</TableCell>
-                          <TableCell>
-                            <Badge variant={user.role === "OWNER" ? "default" : user.role === "ADMIN" ? "secondary" : "outline"}>
-                              {user.role}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={user.emailVerified === "VERIFIED" ? "default" : "secondary"}>
-                              {user.emailVerified === "VERIFIED" ? "Verified" : "Unverified"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            {new Date(user.joinedAt).toLocaleDateString()}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => openRevokeDialog(user)}
-                              className="text-destructive hover:text-destructive"
-                            >
-                              <UserX className="h-4 w-4 mr-1" />
-                              Revoke
-                            </Button>
-                          </TableCell>
-                        </TableRow>
+              <div className="space-y-2">
+                <Label htmlFor="account-select">Select Account</Label>
+                {accountsLoading ? (
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="text-sm text-muted-foreground">Loading accounts...</span>
+                  </div>
+                ) : (
+                  <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
+                    <SelectTrigger id="account-select" className="w-full">
+                      <SelectValue placeholder="Select an account to manage users" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {allAccounts.map((account) => (
+                        <SelectItem key={account.id} value={account.id}>
+                          {account.name} ({account.userCount} users, {account.assetCount} assets)
+                        </SelectItem>
                       ))}
-                    </TableBody>
-                  </Table>
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+
+              {selectedAccountId && accountInfo && (
+                <div className="p-4 border rounded-lg bg-muted/50">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium">Account Name</Label>
+                      <p className="text-lg font-semibold">{accountInfo.name}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium">Status</Label>
+                      <Badge 
+                        variant={
+                          accountInfo.subscriptionStatus === "ACTIVE" ? "default" :
+                          accountInfo.subscriptionStatus === "TRIAL" ? "secondary" :
+                          "destructive"
+                        }
+                        className="mt-1"
+                      >
+                        {accountInfo.subscriptionStatus}
+                      </Badge>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium">Users</Label>
+                      <p className="text-lg font-semibold">{users.length}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium">Created</Label>
+                      <p className="text-sm">{allAccounts.find(a => a.id === selectedAccountId)?.createdAt 
+                        ? new Date(allAccounts.find(a => a.id === selectedAccountId)!.createdAt).toLocaleDateString()
+                        : "—"}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {selectedAccountId ? (
+                usersLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin" />
+                  </div>
+                ) : users.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No users found in this account
+                  </div>
+                ) : (
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Email</TableHead>
+                          <TableHead>Role</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Joined</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {users.map((user) => (
+                          <TableRow key={user.id}>
+                            <TableCell className="font-medium">
+                              {user.name || "—"}
+                            </TableCell>
+                            <TableCell>{user.email}</TableCell>
+                            <TableCell>
+                              <Badge variant={user.role === "OWNER" ? "default" : user.role === "ADMIN" ? "secondary" : "outline"}>
+                                {user.role}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={user.emailVerified === "VERIFIED" ? "default" : "secondary"}>
+                                {user.emailVerified === "VERIFIED" ? "Verified" : "Unverified"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {new Date(user.joinedAt).toLocaleDateString()}
+                            </TableCell>
+                            <TableCell className="text-right space-x-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => openRoleEditDialog(user)}
+                              >
+                                <Shield className="h-4 w-4 mr-1" />
+                                Edit Role
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => openRevokeDialog(user)}
+                                className="text-destructive hover:text-destructive"
+                              >
+                                <UserX className="h-4 w-4 mr-1" />
+                                Revoke
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  Please select an account to manage its users
                 </div>
               )}
 
@@ -751,6 +920,41 @@ export default function AdminSettings() {
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
+
+              <AlertDialog open={showRoleEditDialog} onOpenChange={setShowRoleEditDialog}>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Edit User Role</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Change the role for <strong>{editingUser?.name || editingUser?.email}</strong> in this account.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="role-select">Role</Label>
+                      <Select value={editingUserRole} onValueChange={(value) => setEditingUserRole(value as "OWNER" | "ADMIN" | "MEMBER")}>
+                        <SelectTrigger id="role-select">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="OWNER">OWNER - Full control, can delete account</SelectItem>
+                          <SelectItem value="ADMIN">ADMIN - Can manage users and settings</SelectItem>
+                          <SelectItem value="MEMBER">MEMBER - Can create and manage assets only</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleUpdateUserRole}
+                      disabled={isLoading}
+                    >
+                      {isLoading ? "Updating..." : "Update Role"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </CardContent>
           </Card>
         </TabsContent>
@@ -763,11 +967,15 @@ export default function AdminSettings() {
                 Billing & Subscription
               </CardTitle>
               <CardDescription>
-                Manage subscription and trial status for {currentAccount?.name || "this account"}
+                Manage subscription and trial status for selected account
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              {accountInfo && (
+              {!selectedAccountId ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  Please select an account from the Users tab to manage billing
+                </div>
+              ) : accountInfo && (
                 <>
                   <div className="grid grid-cols-2 gap-6">
                     <div>
