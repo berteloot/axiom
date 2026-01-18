@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState, useRef } from 'react';
 import { pdf } from '@react-pdf/renderer';
+import { useSession } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -31,11 +32,15 @@ const DownloadReportButton: React.FC<DownloadReportButtonProps> = ({
   const [generatingWord, setGeneratingWord] = useState(false);
   const [generatingPDF, setGeneratingPDF] = useState(false);
   const pdfLinkRef = useRef<HTMLAnchorElement>(null);
+  const { data: session } = useSession();
+  
+  // Get user name from session
+  const userName = session?.user?.name || session?.user?.email || 'Unknown User';
   
   // Generate report data
   const reportData = useMemo(() => {
-    return generateReportData(assets, brandContext);
-  }, [assets, brandContext]);
+    return generateReportData(assets, brandContext, userName);
+  }, [assets, brandContext, userName]);
 
   // Generate filename with timestamp
   const filename = useMemo(() => {
@@ -48,7 +53,7 @@ const DownloadReportButton: React.FC<DownloadReportButtonProps> = ({
     setGeneratingPDF(true);
     try {
       const blob = await pdf(
-        <StrategyReportPDF reportData={reportData} clientName={clientName} brandContext={brandContext} />
+        <StrategyReportPDF reportData={reportData} clientName={clientName} brandContext={brandContext} userName={userName} />
       ).toBlob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -70,7 +75,7 @@ const DownloadReportButton: React.FC<DownloadReportButtonProps> = ({
   const handleWordDownload = async () => {
     setGeneratingWord(true);
     try {
-      await generateWordDocument(reportData, clientName, brandContext);
+      await generateWordDocument(reportData, clientName, brandContext, userName);
     } catch (error) {
       console.error('Error generating Word document:', error);
       alert('Error generating Word document. Please try again.');

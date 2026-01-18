@@ -8,7 +8,7 @@
  * Both Brand Identity and Asset Review forms use this unified list.
  */
 
-import { ALL_JOB_TITLES } from "./job-titles"
+import { ALL_JOB_TITLES, normalizeJobTitle } from "./job-titles"
 
 // Re-export ALL_JOB_TITLES for convenience (components can import from either location)
 export { ALL_JOB_TITLES } from "./job-titles"
@@ -535,6 +535,14 @@ export function standardizeICPTargets(targets: string[]): string[] {
       }
     }
     
+    // Try to match using hierarchical normalizeJobTitle (handles aliases & keywords)
+    // This will match "CTO" -> "Chief Technology Officer (CTO)", "VP Engineering" -> "VP of Engineering", etc.
+    const matchedJobTitle = normalizeJobTitle(standardized)
+    if (matchedJobTitle) {
+      return matchedJobTitle.title // Return the standardized title from the database
+    }
+    
+    // If no match found in hierarchical structure, return the standardized version
     return standardized
   })
   

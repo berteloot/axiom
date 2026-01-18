@@ -1,4 +1,5 @@
 import { Asset, FunnelStage } from './types';
+import { getJobTitleByTitle, type FunctionalArea, type SeniorityLevel } from './job-titles';
 
 // BrandContext type based on Prisma schema
 export interface BrandContext {
@@ -48,6 +49,25 @@ export interface ReportData {
   recommendations: string[];
   generatedAt: string;
   clientName?: string;
+  generatedBy?: string; // User who produced the report
+  assetDetailsByICP: {
+    [icpTarget: string]: Array<{
+      title: string;
+      function: FunctionalArea | null;
+      seniority: SeniorityLevel | null;
+      painClusters: string[];
+      funnelStage: FunnelStage;
+    }>;
+  };
+  assetDetailsByPainCluster: {
+    [painCluster: string]: Array<{
+      title: string;
+      function: FunctionalArea | null;
+      seniority: SeniorityLevel | null;
+      icpTargets: string[];
+      funnelStage: FunnelStage;
+    }>;
+  };
 }
 
 export interface Gap {
@@ -89,7 +109,7 @@ function inferClientName(brandContext?: BrandContext): string | undefined {
 /**
  * Generate comprehensive report data for the Client Asset Strategy Report
  */
-export function generateReportData(assets: Asset[], brandContext?: BrandContext): ReportData {
+export function generateReportData(assets: Asset[], brandContext?: BrandContext, generatedBy?: string): ReportData {
   const generatedAt = new Date().toISOString();
 
   // Get all unique ICP targets/personas
@@ -128,6 +148,12 @@ export function generateReportData(assets: Asset[], brandContext?: BrandContext)
   // Recommendations
   const recommendations = generateRecommendations(gapAnalysis, strategicWins);
 
+  // Asset details by ICP
+  const assetDetailsByICP = calculateAssetDetailsByICP(assets);
+
+  // Asset details by Pain Cluster
+  const assetDetailsByPainCluster = calculateAssetDetailsByPainCluster(assets);
+
   return {
     healthScore,
     inventoryBreakdown,
@@ -139,6 +165,9 @@ export function generateReportData(assets: Asset[], brandContext?: BrandContext)
     recommendations,
     generatedAt,
     clientName: inferClientName(brandContext),
+    generatedBy,
+    assetDetailsByICP,
+    assetDetailsByPainCluster,
   };
 }
 
@@ -531,4 +560,69 @@ function generateRecommendations(gapAnalysis: ReturnType<typeof calculateGapAnal
   }
 
   return recommendations.slice(0, 5); // Limit to top 5 recommendations
+}
+
+/**
+ * Calculate asset details grouped by ICP target
+ * Includes Title, Function, Seniority, Pain Clusters, and Funnel Stage for each asset
+ */
+function calculateAssetDetailsByICP(assets: Asset[]): ReportData['assetDetailsByICP'] {
+  const detailsByICP: ReportData['assetDetailsByICP'] = {};
+
+  assets.forEach(asset => {
+    asset.icpTargets.forEach(icpTarget => {
+      if (!detailsByICP[icpTarget]) {
+        detailsByICP[icpTarget] = [];
+      }
+
+      // Extract Function and Seniority from ICP target (job title)
+      const jobTitle = getJobTitleByTitle(icpTarget);
+      const functionArea = jobTitle?.function || null;
+      const seniority = jobTitle?.seniority || null;
+
+      detailsByICP[icpTarget].push({
+        title: asset.title,
+        function: functionArea,
+        seniority: seniority,
+        painClusters: asset.painClusters,
+        funnelStage: asset.funnelStage,
+      });
+    });
+  });
+
+  return detailsByICP;
+}
+
+/**
+ * Calculate asset details grouped by Pain Cluster
+ * Includes Title, Function, Seniority, ICP Targets, and Funnel Stage for each asset
+ */
+function calculateAssetDetailsByPainCluster(assets: Asset[]): ReportData['assetDetailsByPainCluster'] {
+  const detailsByPainCluster: ReportData['assetDetailsByPainCluster'] = {};
+
+  assets.forEach(asset => {
+    asset.painClusters.forEach(painCluster => {
+      if (!detailsByPainCluster[painCluster]) {
+        detailsByPainCluster[painCluster] = [];
+      }
+
+      // For each asset in a pain cluster, we need to extract Function and Seniority
+      // from the ICP targets. If there are multiple ICP targets, we'll include all functions/seniorities
+      // For now, we'll take the first ICP target's function/seniority, or aggregate if needed
+      const firstIcpTarget = asset.icpTargets[0];
+      const jobTitle = firstIcpTarget ? getJobTitleByTitle(firstIcpTarget) : null;
+      const functionArea = jobTitle?.function || null;
+      const seniority = jobTitle?.seniority || null;
+
+      detailsByPainCluster[painCluster].push({
+        title: asset.title,
+        function: functionArea,
+        seniority: seniority,
+        icpTargets: asset.icpTargets,
+        funnelStage: asset.funnelStage,
+      });
+    });
+  });
+
+  return detailsByPainCluster;
 }

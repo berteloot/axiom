@@ -88,7 +88,15 @@ export async function POST(request: NextRequest) {
   try {
     const accountId = await requireAccountId(request);
     const body = await request.json();
-    const { blogUrl, maxPosts, dateRangeStart, dateRangeEnd, languageFilter } = body;
+    const { 
+      blogUrl, 
+      maxPosts, 
+      dateRangeStart, 
+      dateRangeEnd, 
+      selectedLanguages,
+      languageFilter,           // Pre-discovery language filter (from configure screen)
+      includeUndetectedLanguage // Whether to include URLs where language couldn't be detected
+    } = body;
 
     // Hard validation with actionable error messages
     if (!blogUrl || typeof blogUrl !== "string") {
@@ -210,6 +218,8 @@ export async function POST(request: NextRequest) {
       try {
         const discovery = await discoverBlogUrls(normalizedUrl, {
           maxUrls: maxPosts ? Number(maxPosts) : 100,
+          languageFilter: Array.isArray(languageFilter) && languageFilter.length > 0 ? languageFilter : null,
+          includeUndetectedLanguage: includeUndetectedLanguage !== false, // Default to true
         });
         
         if (discovery.urls.length > 0) {
@@ -268,7 +278,7 @@ export async function POST(request: NextRequest) {
     if (blogPosts.length === 0) {
       console.warn(`[Bulk Import Preview] No posts found for ${normalizedUrl}`);
       return NextResponse.json(
-        { error: "No blog posts found on this page. Please check the URL and ensure it's a blog listing page." },
+        { error: "No content found on this page. Please check the URL and ensure it's a content listing page (blog, case studies, help center, etc.)." },
         { status: 400 }
       );
     }
@@ -290,13 +300,19 @@ export async function POST(request: NextRequest) {
       language: detectLanguageFromUrl(post.url),
     }));
     
-    // Get unique languages for filtering UI
-    const detectedLanguages = [...new Set(postsWithLanguage.map(p => p.language).filter(Boolean))] as string[];
+    // Get unique languages for filtering UI - filter out null/undefined and ensure strings
+    const detectedLanguages = [...new Set(
+      postsWithLanguage
+        .map(p => p.language)
+        .filter((lang): lang is string => Boolean(lang) && typeof lang === 'string')
+    )] as string[];
 
-    // Filter by language if provided
+    // Filter by selected languages if provided
     let filteredPosts = postsWithLanguage;
-    if (languageFilter && languageFilter !== "all") {
-      filteredPosts = postsWithLanguage.filter(post => post.language === languageFilter);
+    if (selectedLanguages && Array.isArray(selectedLanguages) && selectedLanguages.length > 0) {
+      filteredPosts = postsWithLanguage.filter(post => 
+        post.language && selectedLanguages.includes(post.language)
+      );
     }
 
     // Enrich blog posts with duplicate information, detected asset type, and dates

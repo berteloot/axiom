@@ -67,10 +67,10 @@ interface DateStats {
 
 // Language code to name mapping
 const LANGUAGE_NAMES: Record<string, string> = {
-  de: "German",
-  fr: "French",
   en: "English",
+  de: "German",
   es: "Spanish",
+  fr: "French",
   it: "Italian",
   pt: "Portuguese",
   nl: "Dutch",
@@ -83,7 +83,27 @@ const LANGUAGE_NAMES: Record<string, string> = {
   no: "Norwegian",
   da: "Danish",
   fi: "Finnish",
+  ar: "Arabic",
+  he: "Hebrew",
+  tr: "Turkish",
+  cs: "Czech",
+  hu: "Hungarian",
 };
+
+// Common languages for the pre-filter UI (most commonly needed)
+const COMMON_LANGUAGE_OPTIONS = [
+  { code: "en", name: "English" },
+  { code: "de", name: "German" },
+  { code: "es", name: "Spanish" },
+  { code: "fr", name: "French" },
+  { code: "it", name: "Italian" },
+  { code: "pt", name: "Portuguese" },
+  { code: "nl", name: "Dutch" },
+  { code: "ja", name: "Japanese" },
+  { code: "zh", name: "Chinese" },
+  { code: "ko", name: "Korean" },
+  { code: "ru", name: "Russian" },
+];
 
 type Step = "configure" | "preview" | "importing";
 
@@ -102,8 +122,12 @@ export function BulkBlogImportModal({
   const [selectedAssetTypeFilter, setSelectedAssetTypeFilter] = useState<string>("all");
   const [dateRangeStart, setDateRangeStart] = useState<string>("");
   const [dateRangeEnd, setDateRangeEnd] = useState<string>("");
-  const [languageFilter, setLanguageFilter] = useState<string>("all");
+  const [selectedLanguages, setSelectedLanguages] = useState<string[]>([]); // Post-discovery filter
   const [detectedLanguages, setDetectedLanguages] = useState<string[]>([]);
+  
+  // Pre-discovery language filter (on configure screen)
+  const [languageFilter, setLanguageFilter] = useState<string[]>([]); // Empty = all languages
+  const [includeUndetectedLanguage, setIncludeUndetectedLanguage] = useState<boolean>(true);
   
   // Preview state
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
@@ -198,7 +222,10 @@ export function BulkBlogImportModal({
           maxPosts: maxPosts,
           dateRangeStart: dateRangeStart || null,
           dateRangeEnd: dateRangeEnd || null,
-          languageFilter: languageFilter !== "all" ? languageFilter : null,
+          selectedLanguages: selectedLanguages.length > 0 ? selectedLanguages : null,
+          // Pre-discovery language filter
+          languageFilter: languageFilter.length > 0 ? languageFilter : null,
+          includeUndetectedLanguage: includeUndetectedLanguage,
         }),
       });
 
@@ -216,6 +243,8 @@ export function BulkBlogImportModal({
       // Store detected languages for filter UI
       if (Array.isArray(data.detectedLanguages)) {
         setDetectedLanguages(data.detectedLanguages);
+        // Auto-select all detected languages initially
+        setSelectedLanguages(data.detectedLanguages);
       }
       // Auto-select all non-duplicate posts, up to maxPosts
       const nonDuplicates = posts
@@ -415,10 +444,10 @@ export function BulkBlogImportModal({
       setPainClusters("");
       setMaxPosts(50);
       setSelectedAssetTypeFilter("all");
-      setDateRangeStart("");
-      setDateRangeEnd("");
-      setLanguageFilter("all");
+      setSelectedLanguages([]);
       setDetectedLanguages([]);
+      setLanguageFilter([]);
+      setIncludeUndetectedLanguage(true);
       setPreviewPosts([]);
       setSelectedPostUrls(new Set());
       setProgress(0);
@@ -469,11 +498,11 @@ export function BulkBlogImportModal({
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Bulk Import Blog Posts</DialogTitle>
+          <DialogTitle>Bulk Import Content</DialogTitle>
           <DialogDescription>
-            {currentStep === "configure" && "Enter a blog URL to discover and preview posts before importing."}
-            {currentStep === "preview" && "Select the posts you want to import. Duplicates are marked."}
-            {currentStep === "importing" && "Importing selected posts..."}
+            {currentStep === "configure" && "Enter a content URL to discover and preview items before importing."}
+            {currentStep === "preview" && "Select the content you want to import. Duplicates are marked."}
+            {currentStep === "importing" && "Importing selected content..."}
           </DialogDescription>
         </DialogHeader>
 
@@ -481,11 +510,11 @@ export function BulkBlogImportModal({
         {currentStep === "configure" && (
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="blogUrl">Blog URL *</Label>
+              <Label htmlFor="blogUrl">Content URL *</Label>
               <Input
                 id="blogUrl"
                 type="url"
-                placeholder="https://example.com/blog"
+                placeholder="https://example.com/blog or /case-studies or /help-center"
                 value={blogUrl}
                 onChange={(e) => {
                   setBlogUrl(e.target.value);
@@ -496,7 +525,8 @@ export function BulkBlogImportModal({
               />
               <p className="text-xs text-muted-foreground flex items-start gap-1">
                 <Info className="h-3 w-3 mt-0.5 flex-shrink-0" />
-                Enter the URL of your blog homepage or blog listing page. The system will automatically discover all blog posts.
+                Enter the URL of any content section (blog, articles, case studies, testimonials, help center, resources, etc.). 
+                The system will automatically discover all content from sitemaps and RSS feeds.
               </p>
             </div>
 
@@ -547,6 +577,79 @@ export function BulkBlogImportModal({
                 <Info className="h-3 w-3 mt-0.5 flex-shrink-0" />
                 Filter posts by published date. Dates are extracted from URLs. Posts without dates in URLs will be included.
               </p>
+            </div>
+
+            {/* Language Filter Section */}
+            <div className="space-y-3 p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-semibold">Language Filter (Optional)</Label>
+                {languageFilter.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setLanguageFilter([]);
+                      setIncludeUndetectedLanguage(true);
+                    }}
+                    className="text-xs h-7"
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Select specific languages to import. Leave empty to import all languages. 
+                Language is detected from URL patterns (e.g., /de/, /en-us/, ?lang=es).
+              </p>
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                {COMMON_LANGUAGE_OPTIONS.map(lang => (
+                  <div key={lang.code} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`lang-filter-${lang.code}`}
+                      checked={languageFilter.includes(lang.code)}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setLanguageFilter([...languageFilter, lang.code]);
+                        } else {
+                          setLanguageFilter(languageFilter.filter(l => l !== lang.code));
+                        }
+                      }}
+                      disabled={isLoadingPreview}
+                    />
+                    <Label
+                      htmlFor={`lang-filter-${lang.code}`}
+                      className="text-xs font-normal cursor-pointer"
+                    >
+                      {lang.name}
+                    </Label>
+                  </div>
+                ))}
+              </div>
+              {languageFilter.length > 0 && (
+                <div className="flex items-center space-x-2 pt-2 border-t">
+                  <Checkbox
+                    id="include-undetected-lang"
+                    checked={includeUndetectedLanguage}
+                    onCheckedChange={(checked) => setIncludeUndetectedLanguage(!!checked)}
+                    disabled={isLoadingPreview}
+                  />
+                  <Label
+                    htmlFor="include-undetected-lang"
+                    className="text-xs font-normal cursor-pointer"
+                  >
+                    Include content where language could not be detected from URL
+                  </Label>
+                </div>
+              )}
+              {languageFilter.length > 0 && (
+                <Alert className="bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800">
+                  <Info className="h-4 w-4 text-amber-600" />
+                  <AlertDescription className="text-xs text-amber-800 dark:text-amber-200">
+                    Filtering for: {languageFilter.map(code => LANGUAGE_NAMES[code] || code.toUpperCase()).join(", ")}
+                    {includeUndetectedLanguage && " + undetected"}
+                  </AlertDescription>
+                </Alert>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -644,14 +747,14 @@ export function BulkBlogImportModal({
             <div className="space-y-3 p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
               <div className="flex items-center justify-between">
                 <Label className="text-sm font-semibold">Filters</Label>
-                {(dateRangeStart || dateRangeEnd || languageFilter !== "all") && (
+                {(dateRangeStart || dateRangeEnd || selectedLanguages.length > 0) && (
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => {
                       setDateRangeStart("");
                       setDateRangeEnd("");
-                      setLanguageFilter("all");
+                      setSelectedLanguages([]);
                     }}
                     className="text-xs h-7"
                   >
@@ -660,27 +763,41 @@ export function BulkBlogImportModal({
                 )}
               </div>
               
-              {/* Language Filter */}
+              {/* Language Filter - Multi-select checkboxes */}
               {detectedLanguages.length > 0 && (
-                <div className="space-y-1">
-                  <Label htmlFor="languageFilter" className="text-xs font-medium">Language</Label>
-                  <Select
-                    value={languageFilter}
-                    onValueChange={setLanguageFilter}
-                    disabled={isLoadingPreview}
-                  >
-                    <SelectTrigger id="languageFilter" className="text-sm">
-                      <SelectValue placeholder="All Languages" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Languages</SelectItem>
-                      {detectedLanguages.map(lang => (
-                        <SelectItem key={lang} value={lang}>
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">
+                    Languages to Import ({detectedLanguages.length} detected)
+                  </Label>
+                  <div className="space-y-2 max-h-32 overflow-y-auto border rounded-md p-2 bg-white dark:bg-gray-900">
+                    {detectedLanguages.filter(lang => lang && typeof lang === 'string').map(lang => (
+                      <div key={lang} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`language-${lang}`}
+                          checked={selectedLanguages.includes(lang)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setSelectedLanguages([...selectedLanguages, lang]);
+                            } else {
+                              setSelectedLanguages(selectedLanguages.filter(l => l !== lang));
+                            }
+                          }}
+                          disabled={isLoadingPreview}
+                        />
+                        <Label
+                          htmlFor={`language-${lang}`}
+                          className="text-sm font-normal cursor-pointer flex-1"
+                        >
                           {LANGUAGE_NAMES[lang] || lang.toUpperCase()} ({lang})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                  {selectedLanguages.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      No languages selected. Select at least one language to filter posts.
+                    </p>
+                  )}
                 </div>
               )}
               
