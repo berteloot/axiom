@@ -181,8 +181,33 @@ STRATEGY GUIDELINES:
    - NO generic titles (❌ "Manager", "Director" - be specific like "Marketing Manager", "Engineering Director")
    - 🔴 CRITICAL: If the company has provided PRIMARY ICP ROLES in the context, you MUST use those exact titles when the asset targets those personas
    - Be flexible in recognizing roles: "technology leaders" = CTO, "finance executives" = CFO, "sales leadership" = VP of Sales
-   - Prioritize C-level and VP roles when relevant
    - Examples: ✅ "CFO", "VP of Engineering", "Chief Marketing Officer" | ❌ "Enterprise", "SMB", "Startups", "Managers", "Leaders"
+   
+   **PAIN CLUSTER → ICP MAPPING (Match ICPs to pain ownership):**
+   When selecting ICPs, consider WHO OWNS the pain cluster you identified. Don't default to C-suite executives if a more specific role owns the problem:
+   
+   - **Data Privacy/Compliance pains** (e.g., "Data Privacy Compliance", "GDPR Risk", "Regulatory Compliance"):
+     → Data Protection Officer (DPO), Chief Privacy Officer, CISO, Compliance Manager, General Counsel, Risk Manager
+   
+   - **Security pains** (e.g., "Cybersecurity Risk", "Data Breach Exposure", "Security Compliance"):
+     → Chief Information Security Officer (CISO), Information Security Manager, Security Director, CIO
+   
+   - **Manual Process/Efficiency pains** (e.g., "Manual Processes", "Time-consuming Workflows", "Operational Bottlenecks"):
+     → VP of Operations, COO, Operations Director, PLUS the functional owner (e.g., "Manual Redaction" → Legal Operations Director, General Counsel)
+   
+   - **Technology/Engineering pains** (e.g., "Technical Debt", "Legacy Systems", "System Integration"):
+     → CTO, CIO, VP of Engineering, IT Director, Engineering Director
+   
+   - **Cost/Financial pains** (e.g., "Cost Overruns", "Budget Constraints", "ROI Uncertainty"):
+     → CFO, VP of Finance, Financial Controller
+   
+   - **Growth/Revenue pains** (e.g., "Customer Churn", "Lead Quality", "Pipeline Velocity"):
+     → CRO, VP of Sales, VP of Marketing, CMO, Customer Success Director
+   
+   - **Legal/Risk pains** (e.g., "Litigation Risk", "Contract Compliance", "E-Discovery"):
+     → General Counsel, Chief Legal Officer, Legal Operations Director, Risk Manager
+   
+   🔴 RULE: Always include the **functional owner** of the pain, not just C-suite generalists. If the pain is "Data Privacy Compliance", a DPO or Compliance Manager is MORE relevant than a CEO.
 
 3. **Funnel Stage** (STRICT WATERFALL LOGIC):
    Analyze the asset's *primary intent*. Check these conditions in order. Stop at the first match.
