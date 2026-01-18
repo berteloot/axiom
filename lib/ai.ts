@@ -187,36 +187,61 @@ STRATEGY GUIDELINES:
 3. **Funnel Stage** (STRICT WATERFALL LOGIC):
    Analyze the asset's *primary intent*. Check these conditions in order. Stop at the first match.
    
-   **PRIORITY 1: BOFU (Decision) - "The Proof & Validation"**
-   - **User Mindset:** "I am ready to buy, I just need to validate the risk/ROI."
-   - **Signals:** 
-     - Hard numbers: ROI metrics (e.g., "saved 30%"), specific pricing models.
-     - Validation: Trust centers, security compliance, legal terms, deep implementation specs (API docs).
-     - Commercials: Explicit "Book a Demo" or "Talk to Sales" as the primary focus.
-   - **Asset Types:** Pricing Sheets, ROI Calculators, Contracts, Technical Implementation Guides.
-   - **Case Study Rule:** If the Case Study contains specific metrics ($ saved, % gain) or a "Results" section, it is BOFU. If it is purely narrative without data, treat as MOFU.
+   **PRODUCT VISIBILITY QUICK CHECK (Initial Filter):**
+   - No product mention at all → Lean TOFU
+   - Product shown as one approach among alternatives → Lean MOFU
+   - Product as THE solution with proof/metrics → Lean BOFU
    
-   **PRIORITY 2: MOFU (Consideration) - "The Solution & Method"**
-   - **User Mindset:** "I know my problem, I am looking for the best approach/vendor."
+   **PRIORITY 1: BOFU (Decision) - "Validate & Buy"**
+   - **Buyer State:** Purchase-ready, needs risk reduction and ROI validation
    - **Signals:** 
-     - Comparative: "Us vs. Them" or "Old Way vs. New Way."
-     - Methodology: Explains the framework, features, or unique mechanism of action.
-     - Capabilities: Deep dives into *what* the product does, but without the hard commercial pricing/contract data.
-   - **Asset Types:** Whitepapers, Solution Briefs, Product Demos, Webinar Recordings.
+     - Hard numbers: ROI metrics (e.g., "saved 30%", "reduced by X%"), specific pricing models
+     - Social Proof: Named customers with specific results, direct testimonials with job titles
+     - Validation: Trust centers, security compliance, legal terms, deep implementation specs (API docs)
+     - Commercials: Explicit "Book a Demo", "Talk to Sales", "Get Pricing" as the primary CTA
+   - **Signal Words:** "achieved", "saved", "reduced", "ROI", "results", "testimonial", "proof", "success story", specific % or $
+   - **Asset Types:** Pricing Sheets, ROI Calculators, Contracts, Technical Implementation Guides, Case Studies with metrics
+   - **Case Study Rule:** Contains specific metrics ($ saved, % gain) or "Results" section → BOFU. Purely narrative without data → MOFU.
+   - **Social Proof Rule:** Named customers with quantified results → BOFU. Anonymous examples or general claims → MOFU.
    
-   **PRIORITY 3: TOFU (Awareness) - "The Problem & Context"**
-   - **User Mindset:** "I have a problem but I don't know the cause yet."
+   **PRIORITY 2: MOFU (Consideration) - "Evaluate Options"**
+   - **Buyer State:** Solution-aware, actively comparing approaches and vendors
    - **Signals:** 
-     - High-level trends, industry news, definitions ("What is X?").
-     - Agitating pain points without explicitly pitching the product as the *only* solution.
-     - Brand acts as a "Publisher/Educator" rather than a "Vendor."
-   - **Asset Types:** Blog Posts, Trend Reports, Infographics, High-Level Checklists.
+     - Comparative: "Us vs. Them", "Old Way vs. New Way", feature comparisons
+     - Methodology: Explains the framework, features, or unique mechanism of action
+     - Capabilities: Deep dives into *what* the product does, but without hard pricing/contract data
+     - CTAs: Free trial, demo requests, gated content downloads
+   - **Signal Words:** "vs", "comparison", "how to", "which is better", "features", "capabilities", "use cases", "best practices"
+   - **Asset Types:** Whitepapers, Solution Briefs, Product Demos, Webinar Recordings, Feature Deep-Dives
+   - **Competitor Rule:** Direct competitor comparisons → MOFU. Winning against competitor with proof → BOFU.
+   
+   **PRIORITY 3: TOFU (Awareness) - "Discover Problem"**
+   - **Buyer State:** Problem-aware or problem-unaware, not yet solution-aware
+   - **Signals:** 
+     - High-level trends, industry news, definitions ("What is X?")
+     - Agitating pain points without pitching product as the solution
+     - Brand acts as "Publisher/Educator" rather than "Vendor"
+     - CTAs: Subscribe, follow, download educational content
+   - **Signal Words:** "What is", "Guide to", "Introduction to", "101", "Basics of", "Why X matters", "trends"
+   - **Asset Types:** Blog Posts, Trend Reports, Infographics, Glossaries, High-Level Checklists, Thought Leadership
+   
+   **PRIORITY 4: RETENTION - "Expand & Succeed"**
+   - **Buyer State:** Existing customer seeking to maximize value
+   - **Signals:** Customer success content, upsell/cross-sell, advanced usage guides, community/user group content
+   - **Signal Words:** "advanced", "pro tips", "maximize", "expand", "upgrade", "new features for customers"
+   - **Asset Types:** Customer newsletters, advanced tutorials, expansion guides, user community content
+   
+   **EDGE CASES:**
+   - **Hybrid Content:** If content spans stages, classify by PRIMARY intent. Note that educational content featuring product heavily = MOFU minimum.
+   - **Gated vs Ungated:** Gating alone doesn't determine stage; analyze the content substance.
+   - **CTA Rule:** When in doubt, the call-to-action often reveals true funnel position.
    
    **ASSET TYPE HEURISTICS (Use as tie-breakers):**
-   - **Sales Deck** → Strong indicator of MOFU or BOFU.
-   - **Whitepaper** → Strong indicator of MOFU.
-   - **Playbook** → Strong indicator of MOFU (sales enablement, structured guidance).
-   - **Infographic** → Strong indicator of TOFU.
+   - **Sales Deck** → Strong indicator of MOFU or BOFU
+   - **Whitepaper** → Strong indicator of MOFU
+   - **Playbook** → Strong indicator of MOFU (sales enablement, structured guidance)
+   - **Infographic** → Strong indicator of TOFU
+   - **Case Study** → Check for metrics (BOFU) vs narrative-only (MOFU)
    
    **ASSET TYPE DETECTION PRIORITY:**
    - 🔴 CRITICAL: If the title contains "playbook" (case-insensitive), classify as "Playbook" - do NOT classify as "Whitepaper".
