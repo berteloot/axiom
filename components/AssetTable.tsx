@@ -168,9 +168,131 @@ export function AssetTable({
   const [itemsPerPage, setItemsPerPage] = useState<number>(25);
   const [titleSortOrder, setTitleSortOrder] = useState<'asc' | 'desc' | null>(null);
 
+  // Normalize assets to always be a valid array (hooks must always run in same order)
+  const safeAssets = useMemo(() => {
+    if (!Array.isArray(assets)) {
+      console.error("Assets is not an array:", assets);
+      return [];
+    }
+    return assets;
+  }, [assets]);
+
+  // Sorting logic with validation (MUST be before any early returns)
+  const sortedAssets = useMemo(() => {
+    try {
+      // Filter out invalid assets first
+      const validAssets = safeAssets.filter((asset) => asset && asset.id && typeof asset === "object");
+      
+      if (!titleSortOrder) {
+        return validAssets;
+      }
+      
+      const sorted = [...validAssets].sort((a, b) => {
+        try {
+          const titleA = (a.title && typeof a.title === "string") ? a.title.toLowerCase() : "";
+          const titleB = (b.title && typeof b.title === "string") ? b.title.toLowerCase() : "";
+          
+          if (titleSortOrder === 'asc') {
+            return titleA.localeCompare(titleB);
+          } else {
+            return titleB.localeCompare(titleA);
+          }
+        } catch (error) {
+          console.warn("Error sorting assets:", error);
+          return 0;
+        }
+      });
+      
+      return sorted;
+    } catch (error) {
+      console.error("Error in sorting logic:", error);
+      // Return original assets if sorting fails
+      return safeAssets.filter((asset) => asset && asset.id);
+    }
+  }, [safeAssets, titleSortOrder]);
+
+  // Pagination logic with validation (MUST be before any early returns)
+  const totalPages = Math.max(1, Math.ceil(sortedAssets.length / itemsPerPage));
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  
+  const paginatedAssets = useMemo(() => {
+    try {
+      // Validate and filter out any invalid assets before pagination
+      const validAssets = sortedAssets.filter((asset) => {
+        // Must have id and be a valid object
+        if (!asset || typeof asset !== "object" || !asset.id) {
+          return false;
+        }
+        // Ensure critical properties exist (even if null/undefined)
+        return true;
+      });
+      return validAssets.slice(startIndex, endIndex);
+    } catch (error) {
+      console.error("Error in pagination:", error);
+      return [];
+    }
+  }, [sortedAssets, startIndex, endIndex]);
+
+  // Detect duplicates based on normalized title (case-insensitive) (MUST be before any early returns)
+  const duplicateMap = useMemo(() => {
+    const titleGroups = new Map<string, Asset[]>();
+    
+    // Group assets by normalized title (lowercase, trimmed)
+    safeAssets.forEach((asset) => {
+      if (!asset || !asset.title) return;
+      const normalizedTitle = asset.title.toLowerCase().trim();
+      if (!titleGroups.has(normalizedTitle)) {
+        titleGroups.set(normalizedTitle, []);
+      }
+      titleGroups.get(normalizedTitle)!.push(asset);
+    });
+    
+    // Create a map of asset ID to duplicate info
+    const dupMap = new Map<string, { count: number; duplicates: Asset[] }>();
+    
+    titleGroups.forEach((group, normalizedTitle) => {
+      if (group.length > 1) {
+        // Multiple assets with the same title - mark all as duplicates
+        group.forEach((asset) => {
+          dupMap.set(asset.id, {
+            count: group.length,
+            duplicates: group.filter(a => a.id !== asset.id),
+          });
+        });
+      }
+    });
+    
+    return dupMap;
+  }, [safeAssets]);
+
+  // Selectable assets on current page only (MUST be before any early returns)
+  const selectableAssetIdsOnPage = useMemo(() => {
+    return paginatedAssets
+      .filter((asset) => asset.status === "APPROVED" || asset.status === "PROCESSED" || asset.status === "ERROR")
+      .map((asset) => asset.id);
+  }, [paginatedAssets]);
+
+  // Reset to page 1 when items per page changes (MUST be before any early returns)
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [itemsPerPage]);
+
+  // Reset to page 1 when sort order changes (MUST be before any early returns)
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [titleSortOrder]);
+
+  // Reset to page 1 when assets change (e.g., after filtering) (MUST be before any early returns)
+  useEffect(() => {
+    if (currentPage > totalPages && totalPages > 0) {
+      setCurrentPage(1);
+    }
+  }, [sortedAssets.length, currentPage, totalPages]);
+
+  // ========== EARLY RETURNS - Only AFTER all hooks ==========
   // Validate assets array
   if (!Array.isArray(assets)) {
-    console.error("Assets is not an array:", assets);
     return (
       <div className="text-center py-12 text-muted-foreground">
         Invalid assets data. Please refresh the page.
@@ -178,7 +300,7 @@ export function AssetTable({
     );
   }
 
-  if (assets.length === 0) {
+  if (safeAssets.length === 0) {
     return (
       <div className="text-center py-12 text-muted-foreground">
         No assets found. Upload some assets to get started.
@@ -236,62 +358,6 @@ export function AssetTable({
     });
   };
 
-  // Sorting logic with validation
-  const sortedAssets = useMemo(() => {
-    try {
-      // Filter out invalid assets first
-      const validAssets = assets.filter((asset) => asset && asset.id && typeof asset === "object");
-      
-      if (!titleSortOrder) {
-        return validAssets;
-      }
-      
-      const sorted = [...validAssets].sort((a, b) => {
-        try {
-          const titleA = (a.title && typeof a.title === "string") ? a.title.toLowerCase() : "";
-          const titleB = (b.title && typeof b.title === "string") ? b.title.toLowerCase() : "";
-          
-          if (titleSortOrder === 'asc') {
-            return titleA.localeCompare(titleB);
-          } else {
-            return titleB.localeCompare(titleA);
-          }
-        } catch (error) {
-          console.warn("Error sorting assets:", error);
-          return 0;
-        }
-      });
-      
-      return sorted;
-    } catch (error) {
-      console.error("Error in sorting logic:", error);
-      // Return original assets if sorting fails
-      return assets.filter((asset) => asset && asset.id);
-    }
-  }, [assets, titleSortOrder]);
-
-  // Pagination logic with validation
-  const totalPages = Math.ceil(sortedAssets.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedAssets = useMemo(() => {
-    try {
-      // Validate and filter out any invalid assets before pagination
-      const validAssets = sortedAssets.filter((asset) => {
-        // Must have id and be a valid object
-        if (!asset || typeof asset !== "object" || !asset.id) {
-          return false;
-        }
-        // Ensure critical properties exist (even if null/undefined)
-        return true;
-      });
-      return validAssets.slice(startIndex, endIndex);
-    } catch (error) {
-      console.error("Error in pagination:", error);
-      return [];
-    }
-  }, [sortedAssets, startIndex, endIndex]);
-
   // Handle title sort toggle
   const handleTitleSort = () => {
     if (titleSortOrder === null) {
@@ -304,55 +370,6 @@ export function AssetTable({
     // Reset to page 1 when sorting changes
     setCurrentPage(1);
   };
-
-  // Reset to page 1 when items per page changes
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [itemsPerPage]);
-
-  // Reset to page 1 when sort order changes
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [titleSortOrder]);
-
-  // Detect duplicates based on normalized title (case-insensitive)
-  const duplicateMap = useMemo(() => {
-    const titleGroups = new Map<string, Asset[]>();
-    
-    // Group assets by normalized title (lowercase, trimmed)
-    assets.forEach((asset) => {
-      if (!asset || !asset.title) return;
-      const normalizedTitle = asset.title.toLowerCase().trim();
-      if (!titleGroups.has(normalizedTitle)) {
-        titleGroups.set(normalizedTitle, []);
-      }
-      titleGroups.get(normalizedTitle)!.push(asset);
-    });
-    
-    // Create a map of asset ID to duplicate info
-    const dupMap = new Map<string, { count: number; duplicates: Asset[] }>();
-    
-    titleGroups.forEach((group, normalizedTitle) => {
-      if (group.length > 1) {
-        // Multiple assets with the same title - mark all as duplicates
-        group.forEach((asset) => {
-          dupMap.set(asset.id, {
-            count: group.length,
-            duplicates: group.filter(a => a.id !== asset.id),
-          });
-        });
-      }
-    });
-    
-    return dupMap;
-  }, [assets]);
-
-  // Selectable assets on current page only - use useMemo to ensure it's stable
-  const selectableAssetIdsOnPage = useMemo(() => {
-    return paginatedAssets
-      .filter((asset) => asset.status === "APPROVED" || asset.status === "PROCESSED" || asset.status === "ERROR")
-      .map((asset) => asset.id);
-  }, [paginatedAssets]);
 
   const allSelectableSelected =
     selectableAssetIdsOnPage.length > 0 &&
@@ -387,13 +404,6 @@ export function AssetTable({
       });
     }
   };
-
-  // Reset to page 1 when assets change (e.g., after filtering)
-  useEffect(() => {
-    if (currentPage > totalPages && totalPages > 0) {
-      setCurrentPage(1);
-    }
-  }, [sortedAssets.length, currentPage, totalPages]);
 
   // Generate page numbers to display
   const getPageNumbers = () => {
@@ -859,7 +869,7 @@ export function AssetTable({
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 px-4 py-4 border-t">
           <div className="flex items-center gap-3 flex-wrap">
             <div className="text-sm text-muted-foreground">
-              Showing {startIndex + 1} to {Math.min(endIndex, assets.length)} of {assets.length} assets
+              Showing {startIndex + 1} to {Math.min(endIndex, safeAssets.length)} of {safeAssets.length} assets
             </div>
             <div className="flex items-center gap-2">
               <label htmlFor="items-per-page" className="text-sm text-muted-foreground whitespace-nowrap">
