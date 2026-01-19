@@ -426,6 +426,7 @@ const LEGACY_JOB_TITLES = {
     "Risk Manager",
     "Risk Director",
     "Data Protection Officer (DPO)",
+    "Data Privacy Officer",
     "Privacy Manager",
     "Privacy Officer",
     "Records Manager",

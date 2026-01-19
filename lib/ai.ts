@@ -183,17 +183,20 @@ STRATEGY GUIDELINES:
    - Be flexible in recognizing roles: "technology leaders" = CTO, "finance executives" = CFO, "sales leadership" = VP of Sales
    - Examples: ✅ "CFO", "VP of Engineering", "Chief Marketing Officer" | ❌ "Enterprise", "SMB", "Startups", "Managers", "Leaders"
    
-   **PAIN CLUSTER → ICP MAPPING (Match ICPs to pain ownership):**
-   When selecting ICPs, consider WHO OWNS the pain cluster you identified. Don't default to C-suite executives if a more specific role owns the problem:
+   **PAIN CLUSTER → ICP MAPPING (MANDATORY - Match ICPs to pain ownership):**
+   🔴 CRITICAL: You MUST include the functional owner of the pain cluster, not just C-suite generalists.
    
-   - **Data Privacy/Compliance pains** (e.g., "Data Privacy Compliance", "GDPR Risk", "Regulatory Compliance"):
-     → Data Protection Officer (DPO), Chief Privacy Officer, CISO, Compliance Manager, General Counsel, Risk Manager
+   - **Data Privacy/Compliance pains** (e.g., "Data Privacy Compliance", "Data Privacy", "GDPR Risk", "Regulatory Compliance", "Sensitive Data"):
+     → 🔴 MUST INCLUDE: Data Privacy Officer, Data Protection Officer (DPO), or Privacy Officer
+     → ALSO CONSIDER: Chief Privacy Officer, CISO, Compliance Manager, Compliance Officer, General Counsel, Risk Manager
    
-   - **Security pains** (e.g., "Cybersecurity Risk", "Data Breach Exposure", "Security Compliance"):
-     → Chief Information Security Officer (CISO), Information Security Manager, Security Director, CIO
+   - **Security pains** (e.g., "Cybersecurity Risk", "Data Breach Exposure", "Security Compliance", "Data Security"):
+     → 🔴 MUST INCLUDE: Chief Information Security Officer (CISO) or Information Security Manager
+     → ALSO CONSIDER: Security Director, CIO, IT Security Manager
    
-   - **Manual Process/Efficiency pains** (e.g., "Manual Processes", "Time-consuming Workflows", "Operational Bottlenecks"):
-     → VP of Operations, COO, Operations Director, PLUS the functional owner (e.g., "Manual Redaction" → Legal Operations Director, General Counsel)
+   - **Manual Process/Efficiency pains** (e.g., "Manual Processes", "Time-consuming Workflows", "Operational Bottlenecks", "Manual Redaction"):
+     → MUST INCLUDE: The functional owner (e.g., "Manual Redaction" → Legal Operations Director, General Counsel)
+     → ALSO CONSIDER: VP of Operations, COO, Operations Director
    
    - **Technology/Engineering pains** (e.g., "Technical Debt", "Legacy Systems", "System Integration"):
      → CTO, CIO, VP of Engineering, IT Director, Engineering Director
@@ -207,7 +210,7 @@ STRATEGY GUIDELINES:
    - **Legal/Risk pains** (e.g., "Litigation Risk", "Contract Compliance", "E-Discovery"):
      → General Counsel, Chief Legal Officer, Legal Operations Director, Risk Manager
    
-   🔴 RULE: Always include the **functional owner** of the pain, not just C-suite generalists. If the pain is "Data Privacy Compliance", a DPO or Compliance Manager is MORE relevant than a CEO.
+   🔴 MANDATORY RULE: If the pain cluster contains "Data Privacy" or "Privacy Compliance", you MUST include "Data Privacy Officer" or "Data Protection Officer (DPO)" as one of the ICPs. Do NOT skip this role in favor of generic executives like CEO.
 
 3. **Funnel Stage** (STRICT WATERFALL LOGIC):
    Analyze the asset's *primary intent*. Check these conditions in order. Stop at the first match.
