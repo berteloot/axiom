@@ -6,7 +6,7 @@
 const ALLOWED_EMAIL_DOMAINS = ["nytromarketing.com"];
 
 // Admin emails that bypass domain restrictions
-const ADMIN_EMAILS = ["berteloot@gmail.com"];
+const ADMIN_EMAILS = ["berteloot@gmail.com", "melissa@cleardigitallabs.com"];
 
 /**
  * Check if an email address is from an allowed domain or is an admin email
