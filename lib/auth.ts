@@ -329,85 +329,121 @@ export const authOptions: NextAuthOptions = {
   },
   events: {
     async createUser({ user }) {
-      // Get accountType from temporary store (set during signup)
-      const accountType = user.email ? getAccountType(user.email) : null;
+      console.log("🆕 [CreateUser Event] Creating account for new user:", user.email);
       
-      // Get accountName from temporary store (set during signup)
-      const storedAccountName = user.email ? getAccountName(user.email) : null;
-      
-      // Use stored account name if available, otherwise fall back to default
-      let accountName: string;
-      if (storedAccountName) {
-        accountName = storedAccountName;
-      } else {
-        // Fallback to default naming if name wasn't provided during signup
-        if (accountType === "CORPORATE") {
-          accountName = `${user.name || "My"} Organization`;
-        } else if (accountType === "AGENCY") {
-          accountName = `${user.name || "My"} Agency`;
+      // Retry helper for transient database failures
+      const retryOperation = async <T>(
+        operation: () => Promise<T>,
+        operationName: string,
+        maxRetries: number = 3
+      ): Promise<T> => {
+        let lastError: Error | null = null;
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            return await operation();
+          } catch (error) {
+            lastError = error instanceof Error ? error : new Error(String(error));
+            console.warn(`⚠️ [CreateUser] ${operationName} failed (attempt ${attempt}/${maxRetries}):`, lastError.message);
+            if (attempt < maxRetries) {
+              // Exponential backoff: 100ms, 200ms, 400ms...
+              await new Promise(resolve => setTimeout(resolve, 100 * Math.pow(2, attempt - 1)));
+            }
+          }
+        }
+        throw lastError;
+      };
+
+      try {
+        // Get accountType from temporary store (set during signup)
+        const accountType = user.email ? getAccountType(user.email) : null;
+        
+        // Get accountName from temporary store (set during signup)
+        const storedAccountName = user.email ? getAccountName(user.email) : null;
+        
+        // Use stored account name if available, otherwise fall back to default
+        let accountName: string;
+        if (storedAccountName) {
+          accountName = storedAccountName;
         } else {
-          // Legacy users or sign-in without signup (default to organization)
-          accountName = `${user.name || "My"} Organization`;
+          // Fallback to default naming if name wasn't provided during signup
+          if (accountType === "CORPORATE") {
+            accountName = `${user.name || "My"} Organization`;
+          } else if (accountType === "AGENCY") {
+            accountName = `${user.name || "My"} Agency`;
+          } else {
+            // Legacy users or sign-in without signup (default to organization)
+            accountName = `${user.name || "My"} Organization`;
+          }
         }
+
+        // Update user with accountType and verification status
+        await retryOperation(
+          () => prisma.user.update({
+            where: { id: user.id },
+            data: {
+              emailVerified: "PENDING",
+              accountType: accountType || null,
+            }
+          }),
+          "Update user accountType"
+        );
+
+        // Remove accountType from temporary store after use
+        if (user.email && accountType) {
+          removeAccountType(user.email);
+        }
+
+        // Create ACTIVE account for new users
+        const account = await retryOperation(
+          () => prisma.account.create({
+            data: {
+              name: accountName,
+              slug: `org-${randomBytes(4).toString('hex')}`,
+              subscriptionStatus: "ACTIVE",
+            }
+          }),
+          "Create account"
+        );
+
+        console.log("✅ [CreateUser] Account created:", account.name, account.id);
+
+        await retryOperation(
+          () => prisma.userAccount.create({
+            data: {
+              userId: user.id,
+              accountId: account.id,
+              role: "OWNER",
+            }
+          }),
+          "Create userAccount relationship"
+        );
+
+        console.log("✅ [CreateUser] UserAccount relationship created");
+
+        // Set as current session
+        await retryOperation(
+          () => prisma.session.upsert({
+            where: { userId: user.id },
+            create: {
+              userId: user.id,
+              accountId: account.id,
+            },
+            update: {
+              accountId: account.id,
+            }
+          }),
+          "Create/update session"
+        );
+
+        console.log("✅ [CreateUser] Session created for user:", user.email);
+      } catch (error) {
+        // Log the error but don't throw - user is already created
+        // The repair mechanism in /api/accounts will handle orphaned users
+        console.error("❌ [CreateUser] Failed to create account for user:", user.email);
+        console.error("❌ [CreateUser] Error:", error instanceof Error ? error.message : error);
+        console.error("❌ [CreateUser] User will be repaired on next API call");
+        // Don't throw - let the user sign in, they'll be repaired later
       }
-
-      // Update user with accountType and verification status
-      await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          emailVerified: "PENDING",
-          accountType: accountType || null,
-        }
-      })
-
-      // Remove accountType from temporary store after use
-      if (user.email && accountType) {
-        removeAccountType(user.email);
-      }
-
-      // TRIAL PERIOD DISABLED: All @NytroMarketing.com users get ACTIVE accounts
-      // Preserved trial period code below for future re-enablement:
-      // // Set up default trial account for new users
-      // const trialEndDate = new Date()
-      // trialEndDate.setDate(trialEndDate.getDate() + 14) // 14 days trial
-      // const account = await prisma.account.create({
-      //   data: {
-      //     name: accountName,
-      //     slug: `org-${randomBytes(4).toString('hex')}`,
-      //     subscriptionStatus: "TRIAL",
-      //     trialEndsAt: trialEndDate,
-      //   }
-      // })
-
-      // Create ACTIVE account for @NytroMarketing.com users (trial period disabled)
-      const account = await prisma.account.create({
-        data: {
-          name: accountName,
-          slug: `org-${randomBytes(4).toString('hex')}`,
-          subscriptionStatus: "ACTIVE",
-          // trialEndsAt is not set for ACTIVE accounts (preserved for schema compatibility)
-        }
-      })
-
-      await prisma.userAccount.create({
-        data: {
-          userId: user.id,
-          accountId: account.id,
-          role: "OWNER",
-        }
-      })
-
-      // Set as current session
-      await prisma.session.upsert({
-        where: { userId: user.id },
-        create: {
-          userId: user.id,
-          accountId: account.id,
-        },
-        update: {
-          accountId: account.id,
-        }
-      })
     },
     async signIn({ user, account, profile }) {
       // Mark email as verified when user successfully signs in

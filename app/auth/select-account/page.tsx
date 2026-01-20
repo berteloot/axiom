@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount } from "@/lib/account-context";
 import { getSession } from "next-auth/react";
@@ -10,9 +10,11 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, RefreshCw } from "lucide-react";
 
 export default function SelectAccount() {
-  const { accounts, currentAccount, switchAccount, isLoading } = useAccount();
+  const { accounts, currentAccount, switchAccount, isLoading, refreshAccounts } = useAccount();
   const router = useRouter();
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [isRepairing, setIsRepairing] = useState(false);
+  const [repairAttempted, setRepairAttempted] = useState(false);
 
   useEffect(() => {
     // Check if user is authenticated
@@ -28,12 +30,48 @@ export default function SelectAccount() {
     checkAuth();
   }, [router]);
 
+  // Auto-repair: When user has no accounts after loading, trigger a refresh
+  // The /api/accounts endpoint will automatically create an account for orphaned users
+  const attemptRepair = useCallback(async () => {
+    if (repairAttempted || isRepairing) return;
+    
+    setIsRepairing(true);
+    setRepairAttempted(true);
+    
+    console.log("🔧 [SelectAccount] User has no accounts, attempting auto-repair...");
+    
+    // Clear cache first
+    sessionStorage.clear();
+    
+    try {
+      // Call refreshAccounts which will hit /api/accounts
+      // The API will automatically repair orphaned users
+      await refreshAccounts();
+      
+      // Give a moment for state to update
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      console.log("✅ [SelectAccount] Repair attempt completed");
+    } catch (error) {
+      console.error("❌ [SelectAccount] Repair failed:", error);
+    } finally {
+      setIsRepairing(false);
+    }
+  }, [repairAttempted, isRepairing, refreshAccounts]);
+
   useEffect(() => {
     // If we have a current account, redirect to dashboard
     if (currentAccount && !isLoading && !checkingAuth) {
       router.push("/dashboard");
     }
   }, [currentAccount, isLoading, checkingAuth, router]);
+
+  // Trigger auto-repair when we detect no accounts
+  useEffect(() => {
+    if (!checkingAuth && !isLoading && accounts.length === 0 && !repairAttempted) {
+      attemptRepair();
+    }
+  }, [checkingAuth, isLoading, accounts.length, repairAttempted, attemptRepair]);
 
   const handleSelectAccount = async (accountId: string) => {
     try {
@@ -44,13 +82,19 @@ export default function SelectAccount() {
     }
   };
 
-  if (checkingAuth || isLoading) {
+  if (checkingAuth || isLoading || isRepairing) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <Card className="w-full max-w-md">
           <CardContent className="flex items-center justify-center py-8">
             <Loader2 className="h-8 w-8 animate-spin mr-2" />
-            <span>{checkingAuth ? "Checking authentication..." : "Loading accounts..."}</span>
+            <span>
+              {checkingAuth 
+                ? "Checking authentication..." 
+                : isRepairing 
+                  ? "Setting up your account..." 
+                  : "Loading accounts..."}
+            </span>
           </CardContent>
         </Card>
       </div>
@@ -58,6 +102,7 @@ export default function SelectAccount() {
   }
 
   const handleRefresh = async () => {
+    setRepairAttempted(false); // Allow another repair attempt
     // Clear browser cache
     sessionStorage.clear();
     // Force reload to get fresh data
@@ -71,19 +116,17 @@ export default function SelectAccount() {
           <CardHeader className="text-center">
             <CardTitle>Welcome!</CardTitle>
             <CardDescription>
-              You don&apos;t have any organizations yet. Let&apos;s create one.
+              We&apos;re setting up your organization. If this persists, click the button below.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 text-center">
-            <Button onClick={() => router.push("/dashboard")}>
-              Go to Dashboard
+            <Button onClick={handleRefresh} className="w-full">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Retry Setup
             </Button>
-            <div className="pt-2">
-              <Button variant="outline" onClick={handleRefresh} className="w-full">
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Refresh (if you just signed up)
-              </Button>
-            </div>
+            <p className="text-xs text-muted-foreground">
+              If you continue to see this message, please contact support.
+            </p>
           </CardContent>
         </Card>
       </div>

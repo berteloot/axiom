@@ -2,9 +2,83 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getUserId } from "@/lib/account-utils";
 import { createAccountWithSlug } from "@/lib/services/account-service";
+import { randomBytes } from "crypto";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// Helper function to repair orphaned users (users with no accounts)
+async function repairOrphanedUser(userId: string): Promise<{
+  account: { id: string; name: string; slug: string; createdAt: Date };
+  role: "OWNER";
+} | null> {
+  try {
+    // Get user details for account naming
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true, email: true, accountType: true },
+    });
+
+    if (!user) {
+      console.error("🔧 [RepairUser] User not found:", userId);
+      return null;
+    }
+
+    console.log("🔧 [RepairUser] Repairing orphaned user:", user.email);
+
+    // Generate account name based on user info
+    const accountName = user.accountType === "AGENCY"
+      ? `${user.name || "My"} Agency`
+      : `${user.name || "My"} Organization`;
+
+    // Create account
+    const account = await prisma.account.create({
+      data: {
+        name: accountName,
+        slug: `org-${randomBytes(4).toString('hex')}`,
+        subscriptionStatus: "ACTIVE",
+      },
+    });
+
+    console.log("🔧 [RepairUser] Account created:", account.name, account.id);
+
+    // Create userAccount relationship
+    await prisma.userAccount.create({
+      data: {
+        userId,
+        accountId: account.id,
+        role: "OWNER",
+      },
+    });
+
+    // Create session
+    await prisma.session.upsert({
+      where: { userId },
+      create: {
+        userId,
+        accountId: account.id,
+      },
+      update: {
+        accountId: account.id,
+      },
+    });
+
+    console.log("✅ [RepairUser] User repaired successfully:", user.email);
+
+    return {
+      account: {
+        id: account.id,
+        name: account.name,
+        slug: account.slug,
+        createdAt: account.createdAt,
+      },
+      role: "OWNER",
+    };
+  } catch (error) {
+    console.error("❌ [RepairUser] Failed to repair user:", userId, error);
+    return null;
+  }
+}
 
 // GET /api/accounts - List all accounts for the current user
 export async function GET(request: NextRequest) {
@@ -19,7 +93,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get all accounts the user has access to
-    const userAccounts = await prisma.userAccount.findMany({
+    let userAccounts = await prisma.userAccount.findMany({
       where: { userId },
       include: {
         account: true,
@@ -28,6 +102,26 @@ export async function GET(request: NextRequest) {
         createdAt: "desc",
       },
     });
+
+    // REPAIR MECHANISM: If user has no accounts, create one automatically
+    // This handles the case where createUser event failed during signup
+    if (userAccounts.length === 0) {
+      console.log("⚠️ [GET /api/accounts] User has no accounts, attempting repair:", userId);
+      const repaired = await repairOrphanedUser(userId);
+      
+      if (repaired) {
+        // Fetch the newly created userAccount
+        userAccounts = await prisma.userAccount.findMany({
+          where: { userId },
+          include: {
+            account: true,
+          },
+          orderBy: {
+            createdAt: "desc",
+          },
+        });
+      }
+    }
 
     // Get user's accountType (with error handling in case field doesn't exist yet)
     let accountType: "CORPORATE" | "AGENCY" | null = null;
