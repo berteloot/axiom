@@ -7,7 +7,7 @@ import { getSession } from "next-auth/react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2 } from "lucide-react";
+import { Loader2, RefreshCw } from "lucide-react";
 
 export default function SelectAccount() {
   const { accounts, currentAccount, switchAccount, isLoading } = useAccount();
@@ -57,6 +57,13 @@ export default function SelectAccount() {
     );
   }
 
+  const handleRefresh = async () => {
+    // Clear browser cache
+    sessionStorage.clear();
+    // Force reload to get fresh data
+    window.location.reload();
+  };
+
   if (accounts.length === 0) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -67,10 +74,16 @@ export default function SelectAccount() {
               You don&apos;t have any organizations yet. Let&apos;s create one.
             </CardDescription>
           </CardHeader>
-          <CardContent className="text-center">
+          <CardContent className="space-y-4 text-center">
             <Button onClick={() => router.push("/dashboard")}>
               Go to Dashboard
             </Button>
+            <div className="pt-2">
+              <Button variant="outline" onClick={handleRefresh} className="w-full">
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Refresh (if you just signed up)
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>
