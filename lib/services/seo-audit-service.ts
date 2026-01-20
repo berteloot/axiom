@@ -16,9 +16,10 @@ const DATAFORSEO_LOGIN = process.env.DATAFORSEO_LOGIN;
 const DATAFORSEO_PASSWORD = process.env.DATAFORSEO_PASSWORD;
 
 // Simple in-memory cache with max size (URL -> { result, timestamp })
+// Reduced from 100 to 25 entries to conserve memory on 512MB servers
 const cache = new Map<string, { result: any; timestamp: number }>();
 const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
-const CACHE_MAX_SIZE = 100; // Prevent unbounded memory growth
+const CACHE_MAX_SIZE = 25; // Reduced for memory-constrained servers
 
 /**
  * Stable JSON stringify for cache keys - ensures consistent key ordering

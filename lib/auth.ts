@@ -234,9 +234,9 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     async jwt({ token, user, trigger }) {
-      authLog("🔄 [JWT Callback] Called with trigger:", trigger || "initial");
+      // Only log on actual sign-in events (when user object is present), not routine session checks
       if (user) {
-        authLog("🔄 [JWT Callback] User object present, email:", user.email, "id:", user.id);
+        authLog("🔄 [JWT Callback] Sign-in event for:", user.email, "id:", user.id);
         // CRITICAL: Set token.sub FIRST before any database calls
         // token.sub is required for session callback to work
         token.sub = user.id
@@ -263,29 +263,24 @@ export const authOptions: NextAuthOptions = {
           // The user will still be authenticated, just without emailVerified status
           token.emailVerified = "UNVERIFIED"
         }
-      } else {
-        authLog("🔄 [JWT Callback] No user object, using existing token");
-        authLog("🔄 [JWT Callback] Existing token sub:", token.sub);
       }
+      // Note: Removed verbose logging for routine session validation (trigger=initial without user)
+      // This was causing excessive log output every 6 seconds per user
       
       if (!token.sub) {
         console.error("❌ [JWT Callback] WARNING: token.sub is not set! This will cause session creation to fail.");
       }
       
-      authLog("🔄 [JWT Callback] Returning token with sub:", token.sub, "email:", token.email, "emailVerified:", token.emailVerified);
       return token
     },
     async session({ session, token }) {
-      authLog("🔄 [Session Callback] Called");
-      authLog("🔄 [Session Callback] Token sub:", token.sub);
-      authLog("🔄 [Session Callback] Token emailVerified:", token.emailVerified);
+      // Only log errors, not routine session creation
       if (session.user) {
         if (!token.sub) {
           console.error("❌ [Session Callback] Token.sub is missing!");
         }
         session.user.id = token.sub!
         session.user.emailVerified = (token.emailVerified as string) || "UNVERIFIED"
-        authLog("✅ [Session Callback] Session created for user:", session.user.email, "id:", session.user.id);
       } else {
         console.error("❌ [Session Callback] session.user is missing!");
       }
@@ -301,22 +296,15 @@ export const authOptions: NextAuthOptions = {
       // For passwordless email auth, clicking the email link IS the verification step
       // Don't block sign-in - the email link itself proves ownership
       // We mark email as verified in the signIn event instead
-      try {
-        authLog("✅ [SignIn Callback] User signing in:", user.email);
-        authLog("✅ [SignIn Callback] User ID:", user.id);
-        authLog("✅ [SignIn Callback] Account provider:", account?.provider);
-        return true;
-      } catch (error) {
-        console.error("❌ [SignIn Callback] Error during sign-in:", error);
-        // Return false to block sign-in on error, or true to allow
-        // For now, we'll allow it since the token verification already happened
-        return true;
+      // Log actual sign-in events (not routine session checks)
+      if (account?.provider) {
+        authLog("✅ [SignIn Callback] User signing in:", user.email, "via", account.provider);
       }
+      return true;
     },
     async redirect({ url, baseUrl }) {
-      authLog("🔄 [Redirect Callback] Called");
-      authLog("🔄 [Redirect Callback] URL:", url);
-      authLog("🔄 [Redirect Callback] Base URL:", baseUrl);
+      // Note: Removed verbose logging for redirect callback to reduce log noise
+      // Redirects happen on every session check, so logging them is excessive
       
       // If redirecting to error page, allow it (don't override)
       if (url.includes("/auth/error")) {
@@ -329,19 +317,14 @@ export const authOptions: NextAuthOptions = {
       
       // If url is relative, make it absolute
       if (url.startsWith("/")) {
-        const redirectUrl = `${baseUrl}${url}`;
-        authLog("✅ [Redirect Callback] Redirecting to:", redirectUrl);
-        return redirectUrl;
+        return `${baseUrl}${url}`;
       }
       // If url is on the same origin, allow it
       if (new URL(url).origin === baseUrl) {
-        authLog("✅ [Redirect Callback] Redirecting to same origin:", url);
         return url;
       }
       // Default to dashboard
-      const defaultUrl = `${baseUrl}/dashboard`;
-      authLog("✅ [Redirect Callback] Default redirect to:", defaultUrl);
-      return defaultUrl;
+      return `${baseUrl}/dashboard`;
     },
   },
   events: {

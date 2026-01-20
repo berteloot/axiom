@@ -78,11 +78,13 @@ const BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME || "";
 // Maximum file size for Whisper API (25MB)
 const MAX_WHISPER_FILE_SIZE = 25 * 1024 * 1024;
 
-// Maximum file size we'll attempt to process (500MB) - larger files should use dedicated media processing
-const MAX_PROCESSABLE_SIZE = 500 * 1024 * 1024;
+// Maximum file size we'll attempt to process (100MB) - reduced for 512MB server memory limit
+// Larger files should be compressed client-side or use dedicated media processing
+const MAX_PROCESSABLE_SIZE = 100 * 1024 * 1024;
 
-// Maximum file size for streaming download (450MB) - prevents disk space issues
-const MAX_STREAMING_SIZE = 450 * 1024 * 1024;
+// Maximum file size for streaming download (75MB) - keeps memory safe on 512MB servers
+// A 75MB file + audio extraction + Node.js overhead stays under memory limits
+const MAX_STREAMING_SIZE = 75 * 1024 * 1024;
 
 // Supported video formats (check with startsWith for broader compatibility)
 const SUPPORTED_VIDEO_TYPES = [
@@ -331,7 +333,7 @@ async function prepareWhisperInput(
     if (fileBuffer.length > MAX_PROCESSABLE_SIZE) {
       throw new Error(
         `File too large (${Math.round(fileBuffer.length / 1024 / 1024)}MB). ` +
-          `Maximum processable size is 500MB. Please compress the video first.`
+          `Maximum processable size is 100MB. Please compress the video first using HandBrake or similar tools.`
       );
     }
 
@@ -368,7 +370,7 @@ async function prepareWhisperInput(
                   `• HandBrake (free, recommended)\n` +
                   `• Adobe Media Encoder\n` +
                   `• FFmpeg command: ffmpeg -i input.mp4 -vf scale=1280:-1 -c:v libx264 -crf 28 -preset fast -c:a aac -b:a 128k output.mp4\n` +
-                  `Target file size: under 25MB for direct upload, or under 500MB for processing.`
+                  `Target file size: under 25MB for direct upload, or under 100MB for server processing.`
                 : `Please try:\n` +
                   `1. Compress the video using HandBrake or similar tool\n` +
                   `2. Extract audio manually: ffmpeg -i video.mp4 -vn -acodec libmp3lame -ab 64k audio.mp3\n` +
