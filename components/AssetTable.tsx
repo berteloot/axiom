@@ -450,7 +450,7 @@ export function AssetTable({
     <React.Fragment>
       <div className="rounded-md border overflow-hidden">
         <div className="overflow-x-auto">
-          <Table>
+          <Table className="min-w-[1000px]">
           <TableHeader>
             <TableRow>
               {onSelectionChange && (
@@ -462,7 +462,7 @@ export function AssetTable({
                   />
                 </TableHead>
               )}
-              <TableHead className="min-w-[180px] px-2">
+              <TableHead className="min-w-[200px] max-w-[300px] px-2">
                 <button
                   onClick={handleTitleSort}
                   className="flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer font-medium"
@@ -523,7 +523,7 @@ export function AssetTable({
                         />
                       </TableCell>
                     )}
-                    <TableCell className="font-medium min-w-[180px] px-2">
+                    <TableCell className="font-medium min-w-[200px] max-w-[300px] px-2">
                       <div className="flex items-start gap-1">
                         <div className="flex-shrink-0 pt-0.5">
                           {getFileTypeIcon(asset.fileType)}
@@ -536,8 +536,8 @@ export function AssetTable({
                             aria-label={`Color: ${asset.dominantColor}`}
                           />
                         )}
-                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                          <span className="text-sm line-clamp-2 leading-tight" title={asset.title || "Untitled"}>
+                        <div className="flex items-start gap-1.5 flex-1 min-w-0 max-w-[250px]">
+                          <span className="text-sm line-clamp-2 leading-tight break-all" title={asset.title || "Untitled"}>
                             {asset.title || "Untitled"}
                           </span>
                           {duplicateMap.has(asset.id) && (() => {

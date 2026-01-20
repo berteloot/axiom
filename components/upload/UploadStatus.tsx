@@ -3,6 +3,9 @@
 interface UploadProgress {
   status: "idle" | "uploading" | "processing" | "success" | "error";
   message?: string;
+  currentFile?: number;
+  totalFiles?: number;
+  currentFileName?: string;
 }
 
 interface UploadStatusProps {
@@ -58,9 +61,16 @@ export function UploadStatus({ progress }: UploadStatusProps) {
               />
             </svg>
           ) : null}
-          <p className="text-sm font-medium">
-            {progress.message || "Processing..."}
-          </p>
+          <div className="flex-1">
+            <p className="text-sm font-medium">
+              {progress.message || "Processing..."}
+            </p>
+            {progress.totalFiles && progress.totalFiles > 1 && (
+              <p className="text-xs text-muted-foreground mt-1">
+                File {progress.currentFile || 0} of {progress.totalFiles}
+              </p>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -1,9 +1,12 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useAccount } from "@/lib/account-context";
 
 interface UploadProgress {
   status: "idle" | "uploading" | "processing" | "success" | "error";
   message?: string;
+  currentFile?: number;
+  totalFiles?: number;
+  currentFileName?: string;
 }
 
 // MIME type mapping for common file extensions
@@ -77,9 +80,12 @@ function inferMimeType(fileName: string, browserType: string): string {
 
 export function useFileUpload(onSuccess?: () => void) {
   const [uploadProgress, setUploadProgress] = useState<UploadProgress>({ status: "idle" });
+  const [fileQueue, setFileQueue] = useState<File[]>([]);
+  const [isProcessingQueue, setIsProcessingQueue] = useState(false);
   const { currentAccount } = useAccount();
 
-  const uploadFile = useCallback(async (file: File) => {
+  // Process a single file upload
+  const processSingleFile = useCallback(async (file: File, fileIndex: number, totalFiles: number) => {
     try {
       // Validate file size before starting upload
       const fileSizeMB = file.size / (1024 * 1024);
@@ -87,11 +93,17 @@ export function useFileUpload(onSuccess?: () => void) {
       
       if (fileSizeMB > maxFileSizeMB) {
         throw new Error(
-          `File size (${fileSizeMB.toFixed(2)}MB) exceeds the maximum allowed size of ${maxFileSizeMB}MB. Please compress the file or contact your administrator.`
+          `File "${file.name}" size (${fileSizeMB.toFixed(2)}MB) exceeds the maximum allowed size of ${maxFileSizeMB}MB. Please compress the file or contact your administrator.`
         );
       }
 
-      setUploadProgress({ status: "uploading", message: "Uploading file..." });
+      setUploadProgress({ 
+        status: "uploading", 
+        message: `Uploading ${file.name}...`,
+        currentFile: fileIndex + 1,
+        totalFiles,
+        currentFileName: file.name
+      });
 
       const fileSize = file.size;
       const fileExtension = file.name.split(".").pop()?.toLowerCase() || "";
@@ -216,23 +228,74 @@ export function useFileUpload(onSuccess?: () => void) {
 
       setUploadProgress({
         status: "success",
-        message: `Uploaded. Asset ID: ${result.asset?.id ?? "unknown"}`,
+        message: `Uploaded ${file.name}. Asset ID: ${result.asset?.id ?? "unknown"}`,
+        currentFile: fileIndex + 1,
+        totalFiles,
+        currentFileName: file.name
       });
 
-      if (onSuccess) {
-        onSuccess();
-      }
-
-      setTimeout(() => setUploadProgress({ status: "idle" }), 2500);
+      return { success: true };
     } catch (err) {
       console.error("Upload error:", err);
       const errorMessage = err instanceof Error ? err.message : "Upload failed";
       setUploadProgress({
         status: "error",
-        message: errorMessage,
+        message: `Failed to upload ${file.name}: ${errorMessage}`,
+        currentFile: fileIndex + 1,
+        totalFiles,
+        currentFileName: file.name
       });
+      return { success: false, error: errorMessage };
     }
-  }, [onSuccess, currentAccount]);
+  }, [currentAccount]);
+
+  // Process the file queue sequentially
+  useEffect(() => {
+    const processQueue = async () => {
+      if (isProcessingQueue || fileQueue.length === 0) return;
+      
+      setIsProcessingQueue(true);
+      const filesToProcess = [...fileQueue]; // Copy queue before processing
+      const totalFiles = filesToProcess.length;
+      
+      // Clear queue immediately to prevent duplicate processing
+      setFileQueue([]);
+      
+      for (let i = 0; i < filesToProcess.length; i++) {
+        const file = filesToProcess[i];
+        await processSingleFile(file, i, totalFiles);
+        
+        // Small delay between files to avoid overwhelming the server
+        if (i < filesToProcess.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+      
+      // Reset processing state
+      setIsProcessingQueue(false);
+      
+      // Show final success message
+      setUploadProgress({
+        status: "success",
+        message: `Successfully uploaded ${totalFiles} file${totalFiles > 1 ? 's' : ''}`,
+      });
+      
+      if (onSuccess) {
+        onSuccess();
+      }
+      
+      setTimeout(() => setUploadProgress({ status: "idle" }), 3000);
+    };
+    
+    if (fileQueue.length > 0 && !isProcessingQueue) {
+      processQueue();
+    }
+  }, [fileQueue, isProcessingQueue, processSingleFile, onSuccess]);
+
+  // Main upload function - adds file to queue
+  const uploadFile = useCallback((file: File) => {
+    setFileQueue(prev => [...prev, file]);
+  }, []);
 
   const uploadText = useCallback(async (textContent: string, textTitle: string) => {
     if (!textContent.trim()) {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useFileUpload } from "@/lib/hooks/useFileUpload";
 import { FileDropzone } from "@/components/upload/FileDropzone";
@@ -12,24 +13,45 @@ import { Building2, AlertCircle } from "lucide-react";
 
 interface FileUploaderProps {
   onUploadSuccess?: () => void;
+  redirectAfterUpload?: boolean;
 }
 
-export function FileUploader({ onUploadSuccess }: FileUploaderProps) {
+export function FileUploader({ onUploadSuccess, redirectAfterUpload = false }: FileUploaderProps) {
   const { currentAccount, isLoading: accountLoading } = useAccount();
-  const { uploadProgress, uploadFile, uploadText } = useFileUpload(onUploadSuccess);
+  const router = useRouter();
+  
+  const handleUploadSuccess = useCallback(() => {
+    if (onUploadSuccess) {
+      onUploadSuccess();
+    }
+    if (redirectAfterUpload) {
+      // Set flag to switch to library view in dashboard
+      sessionStorage.setItem('switch-to-library-view', 'true');
+      router.push('/dashboard');
+    }
+  }, [onUploadSuccess, redirectAfterUpload, router]);
+  
+  const { uploadProgress, uploadFile, uploadText } = useFileUpload(handleUploadSuccess);
 
   const handleDrop = useCallback((files: File[]) => {
     if (!currentAccount) return;
-    const file = files[0];
-    if (file) {
+    // Upload all files - they will be processed sequentially
+    files.forEach(file => {
       uploadFile(file);
-    }
+    });
   }, [uploadFile, currentAccount]);
 
   const handleTextUpload = useCallback((text: string, title: string) => {
     if (!currentAccount) return;
     uploadText(text, title);
-  }, [uploadText, currentAccount]);
+    // Redirect after text upload if enabled
+    if (redirectAfterUpload) {
+      setTimeout(() => {
+        sessionStorage.setItem('switch-to-library-view', 'true');
+        router.push('/dashboard');
+      }, 2000); // Give time for upload to complete
+    }
+  }, [uploadText, currentAccount, redirectAfterUpload, router]);
 
   const isUploading = uploadProgress.status === "uploading" || uploadProgress.status === "processing";
 

@@ -55,18 +55,16 @@ export function FileDropzone({ onDrop, disabled }: FileDropzoneProps) {
       // Handle file rejections
       if (fileRejections.length > 0) {
         const rejection = fileRejections[0];
-        let errorMessage = "File rejected. ";
+        let errorMessage = "Some files were rejected. ";
 
         if (rejection.errors.length > 0) {
           const error = rejection.errors[0];
           if (error.code === "file-invalid-type") {
-            errorMessage += `File type "${rejection.file.name.split('.').pop()?.toUpperCase()}" is not supported. Please upload a PDF, DOC, DOCX, TXT, image, video, or audio file.`;
+            errorMessage += `File "${rejection.file.name}" has unsupported type "${rejection.file.name.split('.').pop()?.toUpperCase()}". Please upload a PDF, DOC, DOCX, TXT, image, video, or audio file.`;
           } else if (error.code === "file-too-large") {
-            errorMessage += `File is too large (${Math.round((rejection.file.size || 0) / 1024 / 1024)}MB). Maximum size is ${maxFileSizeMB}MB. Please compress the file or contact your administrator.`;
+            errorMessage += `File "${rejection.file.name}" is too large (${Math.round((rejection.file.size || 0) / 1024 / 1024)}MB). Maximum size is ${maxFileSizeMB}MB.`;
           } else if (error.code === "file-too-small") {
-            errorMessage += "File is too small.";
-          } else if (error.code === "too-many-files") {
-            errorMessage += "Please upload only one file at a time.";
+            errorMessage += `File "${rejection.file.name}" is too small.`;
           } else {
             errorMessage += error.message || "Unknown error.";
           }
@@ -75,7 +73,7 @@ export function FileDropzone({ onDrop, disabled }: FileDropzoneProps) {
         }
 
         setRejectionError(errorMessage);
-        return;
+        // Continue with accepted files even if some were rejected
       }
 
       // If files were accepted, proceed with upload
@@ -83,7 +81,7 @@ export function FileDropzone({ onDrop, disabled }: FileDropzoneProps) {
         onDrop(acceptedFiles);
       }
     },
-    multiple: false,
+    multiple: true,
     disabled,
     accept: ACCEPTED_FILE_TYPES,
     maxSize: maxFileSizeBytes,
@@ -123,14 +121,14 @@ export function FileDropzone({ onDrop, disabled }: FileDropzoneProps) {
           />
         </svg>
         {isDragActive ? (
-          <p className="text-lg font-medium">Drop the file here...</p>
+          <p className="text-lg font-medium">Drop the files here...</p>
         ) : (
           <>
             <p className="text-lg font-medium">
-              Drag & drop a file here, or click to select
+              Drag & drop files here, or click to select
             </p>
             <p className="text-sm text-muted-foreground">
-              Upload marketing assets for AI analysis
+              Upload marketing assets for AI analysis (multiple files supported)
             </p>
           </>
         )}

@@ -10,7 +10,7 @@ export default function Home() {
             Upload marketing assets for AI-powered analysis and categorization
           </p>
         </div>
-        <FileUploader />
+        <FileUploader redirectAfterUpload={true} />
       </div>
     </main>
   );
