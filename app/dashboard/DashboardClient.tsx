@@ -225,8 +225,19 @@ export default function DashboardClient() {
   const [isCriticalGapsModalOpen, setIsCriticalGapsModalOpen] = useState(false);
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [isSingleImportOpen, setIsSingleImportOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<string>("strategy");
+  // Persist activeTab to sessionStorage so it survives modal actions and refreshes
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem('dashboard-active-tab') || "strategy";
+    }
+    return "strategy";
+  });
   const [brandContext, setBrandContext] = useState<BrandContext | null>(null);
+  
+  // Save activeTab to sessionStorage whenever it changes
+  useEffect(() => {
+    sessionStorage.setItem('dashboard-active-tab', activeTab);
+  }, [activeTab]);
   
   // Check if we should switch to library view (e.g., after saving content)
   useEffect(() => {
