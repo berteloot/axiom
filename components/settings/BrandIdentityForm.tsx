@@ -134,6 +134,7 @@ export function BrandIdentityForm({
   const [icpOptions, setIcpOptions] = React.useState<string[]>(ALL_JOB_TITLES);
   const [isLoadingIcp, setIsLoadingIcp] = React.useState(true);
   const [customTargets, setCustomTargets] = React.useState<string[]>([]);
+  const [industryOptions, setIndustryOptions] = React.useState<string[]>([...INDUSTRIES]);
 
   const form = useForm<BrandIdentityFormData>({
     resolver: zodResolver(brandIdentitySchema),
@@ -213,8 +214,9 @@ export function BrandIdentityForm({
         }
         
         // Only include targetIndustries if it has at least 1 item (required field)
+        // Filter out empty strings to avoid validation errors
         if (dataToSave.targetIndustries && dataToSave.targetIndustries.length > 0) {
-          filteredData.targetIndustries = dataToSave.targetIndustries
+          filteredData.targetIndustries = dataToSave.targetIndustries.filter(item => item && item.trim().length > 0)
         }
         
         // Include optional arrays (can be empty, but only send if they exist)
@@ -288,6 +290,15 @@ export function BrandIdentityForm({
   // Initialize lastSavedDataRef when initialData changes
   React.useEffect(() => {
     if (initialData) {
+      // Merge custom industries from initialData with standard industries
+      const industriesArray = [...INDUSTRIES] as string[]
+      const customIndustries = (initialData?.targetIndustries || []).filter(
+        (industry): industry is string => typeof industry === 'string' && !industriesArray.includes(industry)
+      )
+      if (customIndustries.length > 0) {
+        setIndustryOptions([...new Set([...INDUSTRIES, ...customIndustries])])
+      }
+      
       const initialDataString = JSON.stringify({
         brandVoice: initialData?.brandVoice || [],
         competitors: initialData?.competitors || [],
@@ -838,11 +849,21 @@ export function BrandIdentityForm({
       <div className="space-y-2">
         <Label htmlFor="targetIndustries">Target Industries</Label>
         <MultiSelectCombobox
-          options={[...INDUSTRIES]}
+          options={industryOptions}
           value={targetIndustries}
-          onChange={(value) => form.setValue("targetIndustries", value)}
+          onChange={(value) => {
+            form.setValue("targetIndustries", value)
+            // Update industry options to include any new custom industries
+            const industriesArray = [...INDUSTRIES] as string[]
+            const newIndustries = value.filter(industry => !industriesArray.includes(industry))
+            if (newIndustries.length > 0) {
+              setIndustryOptions([...new Set([...industriesArray, ...newIndustries])])
+            }
+          }}
           placeholder="Select industries..."
           searchPlaceholder="Search industries..."
+          creatable={true}
+          createText="Add custom industry"
         />
         {targetIndustries && targetIndustries.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-2">
