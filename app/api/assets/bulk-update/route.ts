@@ -95,19 +95,56 @@ export async function PATCH(request: NextRequest) {
 
       // Update brand context if it exists
       if (brandContext) {
-        // Update customICPTargets array
-        const updatedCustom = standardizeICPTargets(
-          brandContext.customICPTargets.map(
-            t => standardizeICPTargets([t])[0].toLowerCase() === standardizedFrom.toLowerCase() ? standardizedTo : t
-          )
-        )
+        // Standardize all existing ICPs once for comparison
+        const standardizedCustom = brandContext.customICPTargets.map(t => standardizeICPTargets([t])[0])
+        const standardizedPrimary = brandContext.primaryICPRoles.map(t => standardizeICPTargets([t])[0])
         
-        // Update primaryICPRoles if present
-        const updatedPrimary = standardizeICPTargets(
-          brandContext.primaryICPRoles.map(
-            t => standardizeICPTargets([t])[0].toLowerCase() === standardizedFrom.toLowerCase() ? standardizedTo : t
-          )
-        )
+        // Check if we need to convert in each array
+        const needsConversionInCustom = standardizedCustom.some(t => t.toLowerCase() === standardizedFrom.toLowerCase())
+        const needsConversionInPrimary = standardizedPrimary.some(t => t.toLowerCase() === standardizedFrom.toLowerCase())
+        
+        // Update customICPTargets array - replace matching ICPs
+        let updatedCustom = brandContext.customICPTargets.map((t, index) => {
+          const standardizedT = standardizedCustom[index]
+          if (standardizedT.toLowerCase() === standardizedFrom.toLowerCase()) {
+            return standardizedTo
+          }
+          return t
+        })
+        
+        // Update primaryICPRoles - replace matching ICPs
+        let updatedPrimary = brandContext.primaryICPRoles.map((t, index) => {
+          const standardizedT = standardizedPrimary[index]
+          if (standardizedT.toLowerCase() === standardizedFrom.toLowerCase()) {
+            return standardizedTo
+          }
+          return t
+        })
+        
+        // Standardize both arrays to deduplicate and normalize
+        updatedCustom = standardizeICPTargets(updatedCustom)
+        updatedPrimary = standardizeICPTargets(updatedPrimary)
+        
+        // Verify the "to" ICP is present after standardization
+        // If it was converted but got removed by deduplication, add it back
+        const hasToInCustom = updatedCustom.some(t => {
+          const standardized = standardizeICPTargets([t])[0]
+          return standardized.toLowerCase() === standardizedTo.toLowerCase()
+        })
+        const hasToInPrimary = updatedPrimary.some(t => {
+          const standardized = standardizeICPTargets([t])[0]
+          return standardized.toLowerCase() === standardizedTo.toLowerCase()
+        })
+        
+        // If we converted in customICPTargets but the "to" ICP is missing, add it
+        if (needsConversionInCustom && !hasToInCustom) {
+          updatedCustom = standardizeICPTargets([...updatedCustom, standardizedTo])
+        }
+        
+        // If we converted in primaryICPRoles but the "to" ICP is missing, add it
+        if (needsConversionInPrimary && !hasToInPrimary) {
+          updatedPrimary = standardizeICPTargets([...updatedPrimary, standardizedTo])
+        }
         
         // Update brand context
         await prisma.brandContext.update({
