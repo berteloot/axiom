@@ -506,6 +506,7 @@ export default function DashboardClient() {
   const handleBulkEdit = async (updates: {
     productLineIds?: string[]
     icpTargets?: string[]
+    icpConvert?: { from: string; to: string }
     funnelStage?: FunnelStage
   }) => {
     try {

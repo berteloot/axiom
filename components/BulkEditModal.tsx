@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { ALL_JOB_TITLES } from "@/lib/job-titles"
-import { Loader2, Package, Users, X, Sparkles, Trash2, AlertTriangle } from "lucide-react"
+import { Loader2, Package, Users, X, Sparkles, Trash2, AlertTriangle, ArrowRight } from "lucide-react"
 import { FunnelStage } from "@/lib/types"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -46,6 +46,7 @@ interface BulkEditModalProps {
   onSave: (updates: {
     productLineIds?: string[]
     icpTargets?: string[]
+    icpConvert?: { from: string; to: string }
     funnelStage?: FunnelStage
   }) => Promise<void>
   onReanalyze?: () => Promise<void>
@@ -66,6 +67,8 @@ export function BulkEditModal({
   const [selectedIcpTargets, setSelectedIcpTargets] = React.useState<string[]>([])
   const [icpOptions, setIcpOptions] = React.useState<string[]>(ALL_JOB_TITLES)
   const [isLoadingIcp, setIsLoadingIcp] = React.useState(true)
+  const [icpConvertFrom, setIcpConvertFrom] = React.useState<string>("")
+  const [icpConvertTo, setIcpConvertTo] = React.useState<string>("")
   const [selectedFunnelStage, setSelectedFunnelStage] = React.useState<FunnelStage | undefined>(undefined)
   const [shouldReanalyze, setShouldReanalyze] = React.useState(false)
   const [isSaving, setIsSaving] = React.useState(false)
@@ -114,6 +117,8 @@ export function BulkEditModal({
     if (open) {
       setSelectedProductLineIds([])
       setSelectedIcpTargets([])
+      setIcpConvertFrom("")
+      setIcpConvertTo("")
       setSelectedFunnelStage(undefined)
       setShouldReanalyze(false)
       setShowDeleteConfirm(false)
@@ -139,10 +144,25 @@ export function BulkEditModal({
   }
 
   const handleSave = async () => {
+    // Validate ICP conversion if provided
+    if (icpConvertFrom && !icpConvertTo) {
+      setError("Please select a target ICP to convert to")
+      return
+    }
+    if (!icpConvertFrom && icpConvertTo) {
+      setError("Please select a source ICP to convert from")
+      return
+    }
+    if (icpConvertFrom && icpConvertTo && icpConvertFrom === icpConvertTo) {
+      setError("Source and target ICP must be different")
+      return
+    }
+
     // Check if at least one action is being performed
     const hasFieldUpdates = 
       selectedProductLineIds.length > 0 ||
       selectedIcpTargets.length > 0 ||
+      (icpConvertFrom && icpConvertTo) ||
       selectedFunnelStage !== undefined
 
     if (!hasFieldUpdates && !shouldReanalyze) {
@@ -159,6 +179,7 @@ export function BulkEditModal({
         const updates: {
           productLineIds?: string[]
           icpTargets?: string[]
+          icpConvert?: { from: string; to: string }
           funnelStage?: FunnelStage
         } = {}
 
@@ -167,6 +188,9 @@ export function BulkEditModal({
         }
         if (selectedIcpTargets.length > 0) {
           updates.icpTargets = selectedIcpTargets
+        }
+        if (icpConvertFrom && icpConvertTo) {
+          updates.icpConvert = { from: icpConvertFrom, to: icpConvertTo }
         }
         if (selectedFunnelStage !== undefined) {
           updates.funnelStage = selectedFunnelStage
@@ -191,6 +215,7 @@ export function BulkEditModal({
   const hasChanges =
     selectedProductLineIds.length > 0 ||
     selectedIcpTargets.length > 0 ||
+    (icpConvertFrom && icpConvertTo) ||
     selectedFunnelStage !== undefined ||
     shouldReanalyze
 
@@ -316,6 +341,81 @@ export function BulkEditModal({
             )}
             <p className="text-xs text-muted-foreground">
               Replace all selected assets' ICP targets with these selections. Leave empty to keep unchanged.
+            </p>
+          </div>
+
+          {/* ICP Conversion */}
+          <div className="space-y-2 border-t pt-4">
+            <Label className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-muted-foreground" />
+              Convert ICP Target
+            </Label>
+            <div className="grid grid-cols-[1fr_auto_1fr] gap-3 items-end">
+              <div className="space-y-1">
+                <Label htmlFor="icp-convert-from" className="text-xs text-muted-foreground">
+                  From
+                </Label>
+                <Select
+                  value={icpConvertFrom}
+                  onValueChange={setIcpConvertFrom}
+                  disabled={isLoadingIcp || isSaving}
+                >
+                  <SelectTrigger id="icp-convert-from">
+                    <SelectValue placeholder="Select ICP to convert from..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">(None)</SelectItem>
+                    {icpOptions.map((icp) => (
+                      <SelectItem key={icp} value={icp}>
+                        {icp}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center justify-center pb-2">
+                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="icp-convert-to" className="text-xs text-muted-foreground">
+                  To
+                </Label>
+                <Select
+                  value={icpConvertTo}
+                  onValueChange={setIcpConvertTo}
+                  disabled={isLoadingIcp || isSaving}
+                >
+                  <SelectTrigger id="icp-convert-to">
+                    <SelectValue placeholder="Select ICP to convert to..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">(None)</SelectItem>
+                    {icpOptions.map((icp) => (
+                      <SelectItem key={icp} value={icp}>
+                        {icp}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {(icpConvertFrom || icpConvertTo) && (
+              <div className="mt-2 p-3 rounded-lg bg-muted/50 border border-muted">
+                <p className="text-xs text-muted-foreground">
+                  {icpConvertFrom && icpConvertTo ? (
+                    <>
+                      Will convert <span className="font-medium text-foreground">"{icpConvertFrom}"</span> to{" "}
+                      <span className="font-medium text-foreground">"{icpConvertTo}"</span> in all selected assets.
+                      Other ICP targets will remain unchanged.
+                    </>
+                  ) : (
+                    "Please select both source and target ICP to enable conversion."
+                  )}
+                </p>
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Convert a specific ICP target to another while keeping other ICPs unchanged. Useful for merging similar ICPs.
             </p>
           </div>
 

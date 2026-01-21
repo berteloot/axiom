@@ -11,6 +11,10 @@ const bulkUpdateSchema = z.object({
   assetIds: z.array(z.string()).min(1, "At least one asset ID is required"),
   productLineIds: z.array(z.string()).optional(), // Array of product line IDs
   icpTargets: z.array(z.string()).optional(),
+  icpConvert: z.object({
+    from: z.string().min(1),
+    to: z.string().min(1),
+  }).optional(),
   funnelStage: z.enum([
     "TOFU_AWARENESS",
     "MOFU_CONSIDERATION",
@@ -33,7 +37,7 @@ export async function PATCH(request: NextRequest) {
       )
     }
 
-    const { assetIds, productLineIds, icpTargets, funnelStage } = validation.data
+    const { assetIds, productLineIds, icpTargets, icpConvert, funnelStage } = validation.data
 
     // Verify all assets belong to the current account
     const assets = await prisma.asset.findMany({
@@ -73,6 +77,58 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
+    // Handle ICP conversion if provided
+    if (icpConvert) {
+      const { from, to } = icpConvert
+      // Standardize both values for consistent comparison
+      const standardizedFrom = standardizeICPTargets([from.trim()])[0]
+      const standardizedTo = standardizeICPTargets([to.trim()])[0]
+
+      // Get all assets that need ICP conversion
+      const assetsToUpdate = await prisma.asset.findMany({
+        where: {
+          id: { in: assetIds },
+          accountId,
+        },
+        select: { id: true, icpTargets: true },
+      })
+
+      // Update each asset's ICP targets array
+      for (const asset of assetsToUpdate) {
+        // Check if asset has the "from" target (case-insensitive)
+        const fromTargetIndex = asset.icpTargets.findIndex(
+          (target) => standardizeICPTargets([target])[0].toLowerCase() === standardizedFrom.toLowerCase()
+        )
+
+        if (fromTargetIndex !== -1) {
+          // Check if "to" target already exists (case-insensitive)
+          const hasToTarget = asset.icpTargets.some(
+            (target) => standardizeICPTargets([target])[0].toLowerCase() === standardizedTo.toLowerCase()
+          )
+
+          if (hasToTarget) {
+            // If "to" target already exists, just remove the "from" target
+            const updatedTargets = asset.icpTargets.filter(
+              (target, index) => index !== fromTargetIndex
+            )
+            await prisma.asset.update({
+              where: { id: asset.id },
+              data: { icpTargets: standardizeICPTargets(updatedTargets) },
+            })
+          } else {
+            // Replace the "from" target with "to" target
+            const updatedTargets = asset.icpTargets.map((target, index) =>
+              index === fromTargetIndex ? standardizedTo : target
+            )
+            await prisma.asset.update({
+              where: { id: asset.id },
+              data: { icpTargets: standardizeICPTargets(updatedTargets) },
+            })
+          }
+        }
+      }
+    }
+
     // Build update data object (only include fields that are defined)
     const updateData: Record<string, any> = {}
 
@@ -83,7 +139,7 @@ export async function PATCH(request: NextRequest) {
       updateData.funnelStage = funnelStage
     }
 
-    // Update asset fields (excluding product lines which are handled separately)
+    // Update asset fields (excluding product lines and ICP conversion which are handled separately)
     if (Object.keys(updateData).length > 0) {
       await prisma.asset.updateMany({
         where: {
