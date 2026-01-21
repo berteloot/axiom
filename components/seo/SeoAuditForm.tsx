@@ -10,6 +10,7 @@ import { MultiSelectCombobox } from "@/components/ui/combobox";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Search, X } from "lucide-react";
 import { SeoAuditResults } from "./SeoAuditResults";
+import { AiSeoBestPractices } from "./AiSeoBestPractices";
 import { SeoAuditResult } from "@/lib/ai/seo-audit";
 import { BRAND_VOICES } from "@/lib/constants/brand-voices";
 import { ALL_JOB_TITLES } from "@/lib/job-titles";
@@ -79,6 +80,7 @@ export function SeoAuditForm({ accountId }: SeoAuditFormProps) {
 
   return (
     <div className="space-y-6">
+      <AiSeoBestPractices />
       <Card>
         <CardHeader>
           <CardTitle>AI SEO Structure Audit</CardTitle>
