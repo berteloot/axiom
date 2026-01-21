@@ -12,6 +12,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ExternalLink, Copy, Check, Search, ArrowUpDown, Download, Linkedin, Eye, Filter, Info } from "lucide-react";
 import { LinkedInPostGenerator } from "@/components/LinkedInPostGenerator";
@@ -109,6 +110,7 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
     painCluster?: string;
     productLineId?: string;
   } | null>(null);
+  const [openPopoverStage, setOpenPopoverStage] = useState<FunnelStage | null>(null);
 
   // Fetch product lines on mount
   useEffect(() => {
@@ -568,33 +570,40 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
                           <div className="flex flex-col items-center gap-0.5 w-full">
                             <div className="flex items-center justify-center gap-1">
                               <span>{STAGE_DISPLAY[stage]}</span>
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
+                              <Popover 
+                                open={openPopoverStage === stage} 
+                                onOpenChange={(open) => setOpenPopoverStage(open ? stage : null)}
+                              >
+                                <PopoverTrigger asChild>
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center justify-center"
+                                    onClick={(e) => e.stopPropagation()}
+                                    aria-label={`Learn more about ${helper.title}`}
+                                  >
                                     <Info 
-                                      className="h-3 w-3 text-muted-foreground hover:text-foreground transition-colors cursor-help" 
-                                      onClick={(e) => e.stopPropagation()}
+                                      className="h-3 w-3 text-muted-foreground hover:text-foreground transition-colors cursor-pointer" 
                                     />
-                                  </TooltipTrigger>
-                                  <TooltipContent className="max-w-sm p-4" side="bottom">
-                                    <div className="space-y-2">
-                                      <h4 className="font-semibold text-sm">{helper.title}</h4>
-                                      <p className="text-sm text-muted-foreground">{helper.description}</p>
-                                      <div className="mt-2">
-                                        <p className="text-xs font-medium mb-1">Examples:</p>
-                                        <ul className="text-xs text-muted-foreground space-y-0.5">
-                                          {helper.examples.map((example, idx) => (
-                                            <li key={idx} className="flex items-start">
-                                              <span className="mr-1.5">•</span>
-                                              <span>{example}</span>
-                                            </li>
-                                          ))}
-                                        </ul>
-                                      </div>
+                                  </button>
+                                </PopoverTrigger>
+                                <PopoverContent className="max-w-sm p-4" side="bottom" align="center">
+                                  <div className="space-y-2">
+                                    <h4 className="font-semibold text-sm">{helper.title}</h4>
+                                    <p className="text-sm text-muted-foreground">{helper.description}</p>
+                                    <div className="mt-2">
+                                      <p className="text-xs font-medium mb-1">Examples:</p>
+                                      <ul className="text-xs text-muted-foreground space-y-0.5">
+                                        {helper.examples.map((example, idx) => (
+                                          <li key={idx} className="flex items-start">
+                                            <span className="mr-1.5">•</span>
+                                            <span>{example}</span>
+                                          </li>
+                                        ))}
+                                      </ul>
                                     </div>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
+                                  </div>
+                                </PopoverContent>
+                              </Popover>
                             </div>
                             <span className="text-[10px] font-normal text-muted-foreground">
                               {stagePercentages[stage]}%
