@@ -40,7 +40,7 @@ export function AiSeoBestPractices() {
             <CardTitle className="text-xl sm:text-2xl text-gray-900 flex items-center gap-2">
               AI SEO Best Practices Guide
               <Badge variant="outline" className="ml-2 border-blue-300 text-blue-700 bg-blue-50">
-                2024-2025
+                as of Jan. 2026
               </Badge>
             </CardTitle>
             <CardDescription className="mt-2 text-sm text-gray-600">
@@ -124,7 +124,7 @@ export function AiSeoBestPractices() {
                 <Shield className="h-5 w-5 text-indigo-600 mt-0.5 flex-shrink-0" />
                 <div>
                   <p className="font-medium text-sm text-gray-900">Demonstrate E-E-A-T Explicitly</p>
-                  <p className="text-xs text-gray-600 mt-1">Add named authors with credentials, cite primary sources for facts/numbers, separate observations from inferences. Google emphasizes people-first content and E-E-A-T signals.</p>
+                  <p className="text-xs text-gray-600 mt-1">E-E-A-T stands for Experience, Expertise, Authoritativeness, and Trustworthiness. Add named authors with credentials, cite primary sources for facts/numbers, separate observations from inferences. Google emphasizes people-first content and E-E-A-T signals.</p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
