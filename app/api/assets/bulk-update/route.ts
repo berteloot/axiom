@@ -95,21 +95,24 @@ export async function PATCH(request: NextRequest) {
 
       // Update each asset's ICP targets array
       for (const asset of assetsToUpdate) {
+        // Standardize all targets once for comparison
+        const standardizedTargets = asset.icpTargets.map(target => standardizeICPTargets([target])[0])
+        
         // Check if asset has the "from" target (case-insensitive)
-        const fromTargetIndex = asset.icpTargets.findIndex(
-          (target) => standardizeICPTargets([target])[0].toLowerCase() === standardizedFrom.toLowerCase()
+        const fromTargetIndex = standardizedTargets.findIndex(
+          (standardizedTarget) => standardizedTarget.toLowerCase() === standardizedFrom.toLowerCase()
         )
 
         if (fromTargetIndex !== -1) {
           // Check if "to" target already exists (case-insensitive)
-          const hasToTarget = asset.icpTargets.some(
-            (target) => standardizeICPTargets([target])[0].toLowerCase() === standardizedTo.toLowerCase()
+          const hasToTarget = standardizedTargets.some(
+            (standardizedTarget) => standardizedTarget.toLowerCase() === standardizedTo.toLowerCase()
           )
 
           if (hasToTarget) {
             // If "to" target already exists, just remove the "from" target
             const updatedTargets = asset.icpTargets.filter(
-              (target, index) => index !== fromTargetIndex
+              (_, index) => index !== fromTargetIndex
             )
             await prisma.asset.update({
               where: { id: asset.id },

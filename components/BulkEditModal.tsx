@@ -158,6 +158,12 @@ export function BulkEditModal({
       return
     }
 
+    // Prevent using both ICP replacement and conversion at the same time
+    if (selectedIcpTargets.length > 0 && icpConvertFrom && icpConvertTo) {
+      setError("Cannot use both 'Replace ICP Targets' and 'Convert ICP Target' at the same time. Please use one or the other.")
+      return
+    }
+
     // Check if at least one action is being performed
     const hasFieldUpdates = 
       selectedProductLineIds.length > 0 ||
