@@ -65,12 +65,12 @@ const partialBrandContextSchema = z.object({
     },
     z.union([z.string().max(500), z.null()]).optional()
   ).optional(),
-  painClusters: z.array(z.string()).max(10).optional(),
-  keyDifferentiators: z.array(z.string()).max(10).optional(),
-  primaryICPRoles: z.array(z.string()).max(10).optional(),
-  useCases: z.array(z.string()).max(20).optional(),
-  roiClaims: z.array(z.string()).max(10).optional(),
-  customICPTargets: z.array(z.string()).max(50).optional(),
+  painClusters: z.array(z.string().min(1, "Pain cluster cannot be empty")).max(10).optional(),
+  keyDifferentiators: z.array(z.string().min(1, "Key differentiator cannot be empty")).max(10).optional(),
+  primaryICPRoles: z.array(z.string().min(1, "ICP role cannot be empty")).max(10).optional(),
+  useCases: z.array(z.string().min(1, "Use case cannot be empty")).max(20).optional(),
+  roiClaims: z.array(z.string().min(1, "ROI claim cannot be empty")).max(10).optional(),
+  customICPTargets: z.array(z.string().min(1, "Custom ICP target cannot be empty")).max(50).optional(),
 })
 
 export async function GET(request: NextRequest) {
@@ -218,9 +218,14 @@ export async function PATCH(request: NextRequest) {
     // Validate request body (partial update allowed)
     const validation = partialBrandContextSchema.safeParse(body)
     if (!validation.success) {
-      console.error("[Brand Context PATCH] Validation failed:", validation.error.issues)
+      console.error("[Brand Context PATCH] Validation failed:", JSON.stringify(validation.error.issues, null, 2))
+      console.error("[Brand Context PATCH] Request body:", JSON.stringify(body, null, 2))
       return NextResponse.json(
-        { error: "Validation failed", details: validation.error.issues },
+        { 
+          error: "Validation failed", 
+          details: validation.error.issues,
+          message: validation.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; ')
+        },
         { status: 400 }
       )
     }

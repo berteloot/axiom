@@ -218,23 +218,24 @@ export function BrandIdentityForm({
         }
         
         // Include optional arrays (can be empty, but only send if they exist)
+        // Filter out empty strings from arrays to avoid validation errors
         if (dataToSave.competitors !== undefined) {
-          filteredData.competitors = dataToSave.competitors
+          filteredData.competitors = dataToSave.competitors.filter(item => item && item.trim().length > 0)
         }
         if (dataToSave.painClusters !== undefined) {
-          filteredData.painClusters = dataToSave.painClusters
+          filteredData.painClusters = dataToSave.painClusters.filter(item => item && item.trim().length > 0)
         }
         if (dataToSave.keyDifferentiators !== undefined) {
-          filteredData.keyDifferentiators = dataToSave.keyDifferentiators
+          filteredData.keyDifferentiators = dataToSave.keyDifferentiators.filter(item => item && item.trim().length > 0)
         }
         if (dataToSave.primaryICPRoles !== undefined) {
-          filteredData.primaryICPRoles = dataToSave.primaryICPRoles
+          filteredData.primaryICPRoles = dataToSave.primaryICPRoles.filter(item => item && item.trim().length > 0)
         }
         if (dataToSave.useCases !== undefined) {
-          filteredData.useCases = dataToSave.useCases
+          filteredData.useCases = dataToSave.useCases.filter(item => item && item.trim().length > 0)
         }
         if (dataToSave.roiClaims !== undefined) {
-          filteredData.roiClaims = dataToSave.roiClaims
+          filteredData.roiClaims = dataToSave.roiClaims.filter(item => item && item.trim().length > 0)
         }
         
         // Include optional string fields (convert empty strings to undefined to avoid validation issues)

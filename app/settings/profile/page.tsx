@@ -118,7 +118,8 @@ export default function CompanyProfilePage() {
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || "Failed to save brand identity")
+        const errorMessage = errorData.message || errorData.error || "Failed to save brand identity"
+        throw new Error(errorMessage)
       }
 
       const result = await response.json()
