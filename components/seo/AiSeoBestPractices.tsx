@@ -44,7 +44,7 @@ export function AiSeoBestPractices() {
               </Badge>
             </CardTitle>
             <CardDescription className="mt-2 text-sm text-gray-600">
-              Optimize your content for AI search engines (Google SGE, ChatGPT, Perplexity) with these proven formatting and structure tips
+              Make your content easy to extract, clearly attributable, and demonstrably trustworthy. Focus on good SEO fundamentals and helpful, people-first content.
             </CardDescription>
           </div>
         </div>
@@ -73,28 +73,28 @@ export function AiSeoBestPractices() {
                 <CheckCircle2 className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
                 <div>
                   <p className="font-medium text-sm text-gray-900">Lead with the Answer</p>
-                  <p className="text-xs text-gray-600 mt-1">Provide a concise 2-4 sentence summary at the top. AI models favor content where answers appear early.</p>
+                  <p className="text-xs text-gray-600 mt-1">Start with a 2-4 sentence direct answer that matches the primary query. Make answers easy to extract and verify.</p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
                 <CheckCircle2 className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
                 <div>
-                  <p className="font-medium text-sm text-gray-900">Question-Based Headings (H2, H3)</p>
-                  <p className="text-xs text-gray-600 mt-1">Use "What is X?", "How do I Y?", "Why does Z?" format. Helps match natural-language queries.</p>
+                  <p className="font-medium text-sm text-gray-900">Precise Question-Based Headings</p>
+                  <p className="text-xs text-gray-600 mt-1">Use question-led headings, but make them specific. Good: "What is X?" Better: "What is X in B2B SaaS lead scoring?" Reduces ambiguity and improves match quality.</p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
                 <CheckCircle2 className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
                 <div>
-                  <p className="font-medium text-sm text-gray-900">Clear Heading Hierarchy</p>
-                  <p className="text-xs text-gray-600 mt-1">One H1 per page. Use H2s for main sections, H3s for subsections. Don't skip levels.</p>
+                  <p className="font-medium text-sm text-gray-900">Extractable Content Blocks</p>
+                  <p className="text-xs text-gray-600 mt-1">Structure as: 1 sentence answer, 3-6 bullets of supporting detail, one example (numbers or scenario). Makes it easier for systems to identify the right passage.</p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
                 <CheckCircle2 className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
                 <div>
-                  <p className="font-medium text-sm text-gray-900">Short Paragraphs & Lists</p>
-                  <p className="text-xs text-gray-600 mt-1">Aim for 2-3 sentences per paragraph. Use bulleted/numbered lists for tips and steps. Tables for comparisons.</p>
+                  <p className="font-medium text-sm text-gray-900">Use Tables Correctly</p>
+                  <p className="text-xs text-gray-600 mt-1">Use real HTML tables (not images) for tabular data. Include a caption, use column headers (&lt;th&gt;), consistent units, and focus on one decision or comparison per table.</p>
                 </div>
               </div>
             </div>
@@ -121,31 +121,31 @@ export function AiSeoBestPractices() {
           <CollapsibleContent className="pt-3 space-y-3">
             <div className="bg-white/60 rounded-lg p-4 space-y-3 border border-green-100">
               <div className="flex items-start gap-3">
-                <Lightbulb className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+                <Shield className="h-5 w-5 text-indigo-600 mt-0.5 flex-shrink-0" />
                 <div>
-                  <p className="font-medium text-sm text-gray-900">Conversational & Natural Language</p>
-                  <p className="text-xs text-gray-600 mt-1">Write how users speak. Use "why/how" and "what are" formats. AI search picks up answer intent better.</p>
+                  <p className="font-medium text-sm text-gray-900">Demonstrate E-E-A-T Explicitly</p>
+                  <p className="text-xs text-gray-600 mt-1">Add named authors with credentials, cite primary sources for facts/numbers, separate observations from inferences. Google emphasizes people-first content and E-E-A-T signals.</p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
                 <Lightbulb className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
                 <div>
-                  <p className="font-medium text-sm text-gray-900">Entity-Rich Content</p>
-                  <p className="text-xs text-gray-600 mt-1">Include names, tools, frameworks, people, places. Internal linking between entity pages builds authority.</p>
+                  <p className="font-medium text-sm text-gray-900">Avoid "Scaled Filler"</p>
+                  <p className="text-xs text-gray-600 mt-1">If using AI to generate content, add real value: analysis, original examples, proprietary data, or strong editorial review. Mass-producing low-value pages can violate spam policies.</p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
                 <Lightbulb className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
                 <div>
-                  <p className="font-medium text-sm text-gray-900">Human Value & Original Insights</p>
-                  <p className="text-xs text-gray-600 mt-1">First-hand experience, case studies, anecdotes. Merely rewriting existing content won't work as well.</p>
+                  <p className="font-medium text-sm text-gray-900">Content That Wins Citations</p>
+                  <p className="text-xs text-gray-600 mt-1">AI answer engines disproportionately cite content that looks like it has a right to exist. Show expertise, experience, and trustworthiness clearly.</p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
-                <Lightbulb className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+                <CheckCircle2 className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
                 <div>
-                  <p className="font-medium text-sm text-gray-900">Frequent Summary Blocks</p>
-                  <p className="text-xs text-gray-600 mt-1">Add mini Q&A or summary blocks underneath headings. Easy for AI to extract exactly.</p>
+                  <p className="font-medium text-sm text-gray-900">FAQs: Content Yes, Schema Carefully</p>
+                  <p className="text-xs text-gray-600 mt-1">Include FAQ sections for users and long-tail coverage. Note: FAQPage schema eligibility is now limited to well-known government and health sites. For most commercial sites, keep the FAQ content, skip the markup.</p>
                 </div>
               </div>
             </div>
@@ -174,29 +174,29 @@ export function AiSeoBestPractices() {
               <div className="flex items-start gap-3">
                 <Zap className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
                 <div>
-                  <p className="font-medium text-sm text-gray-900">Schema Markup & Structured Data</p>
-                  <p className="text-xs text-gray-600 mt-1">Use Article, FAQPage, HowTo, Review, VideoObject schema. Helps AI identify content type.</p>
+                  <p className="font-medium text-sm text-gray-900">Strategic Structured Data</p>
+                  <p className="text-xs text-gray-600 mt-1">Prioritize durable, business-relevant schema: Organization, Person, Article, BreadcrumbList, Product, Review (when applicable), VideoObject. HowTo only for true step-by-step tasks. FAQPage only if eligible.</p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
                 <Zap className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
                 <div>
-                  <p className="font-medium text-sm text-gray-900">Content Freshness</p>
-                  <p className="text-xs text-gray-600 mt-1">Regularly update content (stats, examples). Include "Published / Updated" dates to help AI detect freshness.</p>
+                  <p className="font-medium text-sm text-gray-900">Freshness & Maintenance</p>
+                  <p className="text-xs text-gray-600 mt-1">Show visible "Updated on" dates when you materially update content. Quarterly refresh for pages tied to tools, pricing, regulations, or fast-moving categories. Prune or consolidate thin pages.</p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
                 <Zap className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
                 <div>
-                  <p className="font-medium text-sm text-gray-900">Website Health & Performance</p>
-                  <p className="text-xs text-gray-600 mt-1">Fast load times, mobile-first design, clean HTML, accessible content. AI favors sites that perform well.</p>
+                  <p className="font-medium text-sm text-gray-900">SEO Fundamentals</p>
+                  <p className="text-xs text-gray-600 mt-1">AI features rely on normal search eligibility. Ensure fast load times, mobile-first design, clean HTML, accessible content, proper indexing, and snippet eligibility.</p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
                 <Shield className="h-5 w-5 text-indigo-600 mt-0.5 flex-shrink-0" />
                 <div>
-                  <p className="font-medium text-sm text-gray-900">Trust Signals & Branding</p>
-                  <p className="text-xs text-gray-600 mt-1">Author bio with credentials, transparent sourcing, clear contact info, HTTPS, reviews, consistent branding.</p>
+                  <p className="font-medium text-sm text-gray-900">Evidence & Attribution</p>
+                  <p className="text-xs text-gray-600 mt-1">Include author box with credentials, cite primary sources, show methodology, provide editorial policy explaining how you test, update, and correct content.</p>
                 </div>
               </div>
             </div>
@@ -221,27 +221,55 @@ export function AiSeoBestPractices() {
             <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${openSections.structure ? 'rotate-180' : ''}`} />
           </CollapsibleTrigger>
           <CollapsibleContent className="pt-3">
-            <div className="bg-white/60 rounded-lg p-4 space-y-2 border border-indigo-100">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                <div className="space-y-1">
-                  <p className="font-semibold text-gray-900">✓ Intro</p>
-                  <p className="text-gray-600">Short summary block (2-4 sentences). Use "Key Takeaways" or "What you'll learn."</p>
+            <div className="bg-white/60 rounded-lg p-4 space-y-3 border border-indigo-100">
+              <div className="space-y-2.5 text-xs">
+                <div className="flex items-start gap-2">
+                  <span className="font-bold text-indigo-600">1.</span>
+                  <div>
+                    <p className="font-semibold text-gray-900">H1: Exact topic</p>
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <p className="font-semibold text-gray-900">✓ Headings</p>
-                  <p className="text-gray-600">H2s that are actual questions; H3s for subparts. Labels like "FAQ", "How To", "Common Mistakes."</p>
+                <div className="flex items-start gap-2">
+                  <span className="font-bold text-indigo-600">2.</span>
+                  <div>
+                    <p className="font-semibold text-gray-900">Answer block (2-4 sentences)</p>
+                    <p className="text-gray-600 mt-0.5">Direct, quotable, no throat-clearing. Matches primary query.</p>
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <p className="font-semibold text-gray-900">✓ Within Sections</p>
-                  <p className="text-gray-600">Start with one-sentence answer; follow with supporting detail. Use lists or steps.</p>
+                <div className="flex items-start gap-2">
+                  <span className="font-bold text-indigo-600">3.</span>
+                  <div>
+                    <p className="font-semibold text-gray-900">Key takeaways (3-6 bullets)</p>
+                    <p className="text-gray-600 mt-0.5">Practical and specific.</p>
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <p className="font-semibold text-gray-900">✓ After Major Sections</p>
-                  <p className="text-gray-600">Include mini-summary or "In summary" blocks.</p>
+                <div className="flex items-start gap-2">
+                  <span className="font-bold text-indigo-600">4.</span>
+                  <div>
+                    <p className="font-semibold text-gray-900">Main sections (H2 as questions)</p>
+                    <p className="text-gray-600 mt-0.5">Each starts with one-sentence answer, then bullets/steps/table/example.</p>
+                  </div>
                 </div>
-                <div className="space-y-1 sm:col-span-2">
-                  <p className="font-semibold text-gray-900">✓ End with FAQ Section</p>
-                  <p className="text-gray-600">Use common user questions, short and direct answers. Highlight original content: author bio, case studies, quotes, unique images or data.</p>
+                <div className="flex items-start gap-2">
+                  <span className="font-bold text-indigo-600">5.</span>
+                  <div>
+                    <p className="font-semibold text-gray-900">Proof section</p>
+                    <p className="text-gray-600 mt-0.5">Sources, methodology, screenshots, or mini case study.</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="font-bold text-indigo-600">6.</span>
+                  <div>
+                    <p className="font-semibold text-gray-900">FAQ section (plain content)</p>
+                    <p className="text-gray-600 mt-0.5">5-8 real questions from sales calls, support tickets, or Search Console queries.</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="font-bold text-indigo-600">7.</span>
+                  <div>
+                    <p className="font-semibold text-gray-900">Author box + editorial policy</p>
+                    <p className="text-gray-600 mt-0.5">How you test, update, and correct content.</p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -250,7 +278,7 @@ export function AiSeoBestPractices() {
 
         <div className="pt-2 border-t border-blue-200">
           <p className="text-xs text-gray-500 text-center">
-            💡 <strong>Tip:</strong> Format your content with these practices before running the audit to maximize your AI SEO score!
+            💡 <strong>Remember:</strong> There are no special "AI SEO" tricks. Focus on helpful, reliable, people-first content that's easy to extract and clearly attributable. Good SEO fundamentals win.
           </p>
         </div>
       </CardContent>
