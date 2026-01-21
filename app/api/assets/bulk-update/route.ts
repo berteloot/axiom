@@ -84,17 +84,52 @@ export async function PATCH(request: NextRequest) {
       const standardizedFrom = standardizeICPTargets([from.trim()])[0]
       const standardizedTo = standardizeICPTargets([to.trim()])[0]
 
-      // Get all assets that need ICP conversion
-      const assetsToUpdate = await prisma.asset.findMany({
+      // Get brand context to update primaryICPRoles and customICPTargets
+      const brandContext = await prisma.brandContext.findUnique({
+        where: { accountId },
+        select: { 
+          customICPTargets: true,
+          primaryICPRoles: true 
+        }
+      })
+
+      // Update brand context if it exists
+      if (brandContext) {
+        // Update customICPTargets array
+        const updatedCustom = standardizeICPTargets(
+          brandContext.customICPTargets.map(
+            t => standardizeICPTargets([t])[0].toLowerCase() === standardizedFrom.toLowerCase() ? standardizedTo : t
+          )
+        )
+        
+        // Update primaryICPRoles if present
+        const updatedPrimary = standardizeICPTargets(
+          brandContext.primaryICPRoles.map(
+            t => standardizeICPTargets([t])[0].toLowerCase() === standardizedFrom.toLowerCase() ? standardizedTo : t
+          )
+        )
+        
+        // Update brand context
+        await prisma.brandContext.update({
+          where: { accountId },
+          data: {
+            customICPTargets: updatedCustom,
+            primaryICPRoles: updatedPrimary,
+          }
+        })
+      }
+
+      // Get all assets in the account (not just selected ones) to update the ICP conversion
+      // This ensures consistency across all assets, similar to /api/icp-targets/update
+      const allAssets = await prisma.asset.findMany({
         where: {
-          id: { in: assetIds },
           accountId,
         },
         select: { id: true, icpTargets: true },
       })
 
       // Update each asset's ICP targets array
-      for (const asset of assetsToUpdate) {
+      for (const asset of allAssets) {
         // Standardize all targets once for comparison
         const standardizedTargets = asset.icpTargets.map(target => standardizeICPTargets([target])[0])
         
