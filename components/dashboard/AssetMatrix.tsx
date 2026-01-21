@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ExternalLink, Copy, Check, Search, ArrowUpDown, Download, Linkedin, Eye, Filter } from "lucide-react";
+import { ExternalLink, Copy, Check, Search, ArrowUpDown, Download, Linkedin, Eye, Filter, Info } from "lucide-react";
 import { LinkedInPostGenerator } from "@/components/LinkedInPostGenerator";
 import { ReviewModal } from "@/components/ReviewModal";
 import { CreateContentWorkflow } from "@/components/content/CreateContentWorkflow";
@@ -49,6 +49,30 @@ const STAGES: FunnelStage[] = [
   "BOFU_DECISION",
   "RETENTION",
 ];
+
+// Helper text for each funnel stage
+const STAGE_HELPERS: Record<FunnelStage, { title: string; description: string; examples: string[] }> = {
+  TOFU_AWARENESS: {
+    title: "Top of Funnel (TOFU)",
+    description: "Content that attracts new audiences. The goal is visibility and awareness.",
+    examples: ["Blog posts", "Audiocasts", "Infographics", "Industry newsletters"],
+  },
+  MOFU_CONSIDERATION: {
+    title: "Middle of Funnel (MOFU)",
+    description: "Content that educates and builds trust.",
+    examples: ["Whitepapers", "Webinars", "Customer success stories"],
+  },
+  BOFU_DECISION: {
+    title: "Bottom of Funnel (BOFU)",
+    description: "Assets that support decision-making.",
+    examples: ["Product demos", "Comparison guides", "Pricing documents", "Personalized consultations"],
+  },
+  RETENTION: {
+    title: "Retention",
+    description: "Content designed to keep customers engaged and loyal.",
+    examples: ["Onboarding tutorials", "Newsletters", "Product updates", "Upsell campaigns"],
+  },
+};
 
 function getCellColor(count: number): string {
   if (count === 0) {
@@ -533,20 +557,52 @@ export function AssetMatrix({ assets }: AssetMatrixProps) {
                     <th className="border border-border p-1.5 text-left font-semibold bg-muted sticky left-0 z-10 text-xs min-w-[200px]">
                       {viewBy === "icp" ? "ICP Target" : "Pain Cluster"}
                     </th>
-                    {STAGES.map((stage) => (
-                      <th
-                        key={stage}
-                        className="border border-border p-1.5 text-center font-semibold bg-muted cursor-pointer hover:bg-muted/80 transition-colors text-xs"
-                        onClick={() => handleStageClick(stage)}
-                      >
-                        <div className="flex flex-col items-center gap-0.5">
-                          <span>{STAGE_DISPLAY[stage]}</span>
-                          <span className="text-[10px] font-normal text-muted-foreground">
-                            {stagePercentages[stage]}%
-                          </span>
-                        </div>
-                      </th>
-                    ))}
+                    {STAGES.map((stage) => {
+                      const helper = STAGE_HELPERS[stage];
+                      return (
+                        <th
+                          key={stage}
+                          className="border border-border p-1.5 text-center font-semibold bg-muted cursor-pointer hover:bg-muted/80 transition-colors text-xs"
+                          onClick={() => handleStageClick(stage)}
+                        >
+                          <div className="flex flex-col items-center gap-0.5 w-full">
+                            <div className="flex items-center justify-center gap-1">
+                              <span>{STAGE_DISPLAY[stage]}</span>
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Info 
+                                      className="h-3 w-3 text-muted-foreground hover:text-foreground transition-colors cursor-help" 
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                  </TooltipTrigger>
+                                  <TooltipContent className="max-w-sm p-4" side="bottom">
+                                    <div className="space-y-2">
+                                      <h4 className="font-semibold text-sm">{helper.title}</h4>
+                                      <p className="text-sm text-muted-foreground">{helper.description}</p>
+                                      <div className="mt-2">
+                                        <p className="text-xs font-medium mb-1">Examples:</p>
+                                        <ul className="text-xs text-muted-foreground space-y-0.5">
+                                          {helper.examples.map((example, idx) => (
+                                            <li key={idx} className="flex items-start">
+                                              <span className="mr-1.5">•</span>
+                                              <span>{example}</span>
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    </div>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            </div>
+                            <span className="text-[10px] font-normal text-muted-foreground">
+                              {stagePercentages[stage]}%
+                            </span>
+                          </div>
+                        </th>
+                      );
+                    })}
                   </tr>
                   {/* Summary row showing totals per stage */}
                   <tr className="bg-muted/30">
