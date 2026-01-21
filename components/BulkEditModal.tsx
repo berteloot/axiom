@@ -355,23 +355,35 @@ export function BulkEditModal({
                 <Label htmlFor="icp-convert-from" className="text-xs text-muted-foreground">
                   From
                 </Label>
-                <Select
-                  value={icpConvertFrom}
-                  onValueChange={setIcpConvertFrom}
-                  disabled={isLoadingIcp || isSaving}
-                >
-                  <SelectTrigger id="icp-convert-from">
-                    <SelectValue placeholder="Select ICP to convert from..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">(None)</SelectItem>
-                    {icpOptions.map((icp) => (
-                      <SelectItem key={icp} value={icp}>
-                        {icp}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={icpConvertFrom || undefined}
+                    onValueChange={(value) => setIcpConvertFrom(value || "")}
+                    disabled={isLoadingIcp || isSaving}
+                  >
+                    <SelectTrigger id="icp-convert-from" className="flex-1">
+                      <SelectValue placeholder="Select ICP to convert from..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {icpOptions.map((icp) => (
+                        <SelectItem key={icp} value={icp}>
+                          {icp}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {icpConvertFrom && (
+                    <button
+                      type="button"
+                      onClick={() => setIcpConvertFrom("")}
+                      disabled={isSaving}
+                      className="p-1 hover:bg-muted rounded"
+                      aria-label="Clear selection"
+                    >
+                      <X className="h-4 w-4 text-muted-foreground" />
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="flex items-center justify-center pb-2">
                 <ArrowRight className="h-4 w-4 text-muted-foreground" />
@@ -380,23 +392,35 @@ export function BulkEditModal({
                 <Label htmlFor="icp-convert-to" className="text-xs text-muted-foreground">
                   To
                 </Label>
-                <Select
-                  value={icpConvertTo}
-                  onValueChange={setIcpConvertTo}
-                  disabled={isLoadingIcp || isSaving}
-                >
-                  <SelectTrigger id="icp-convert-to">
-                    <SelectValue placeholder="Select ICP to convert to..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">(None)</SelectItem>
-                    {icpOptions.map((icp) => (
-                      <SelectItem key={icp} value={icp}>
-                        {icp}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={icpConvertTo || undefined}
+                    onValueChange={(value) => setIcpConvertTo(value || "")}
+                    disabled={isLoadingIcp || isSaving}
+                  >
+                    <SelectTrigger id="icp-convert-to" className="flex-1">
+                      <SelectValue placeholder="Select ICP to convert to..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {icpOptions.map((icp) => (
+                        <SelectItem key={icp} value={icp}>
+                          {icp}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {icpConvertTo && (
+                    <button
+                      type="button"
+                      onClick={() => setIcpConvertTo("")}
+                      disabled={isSaving}
+                      className="p-1 hover:bg-muted rounded"
+                      aria-label="Clear selection"
+                    >
+                      <X className="h-4 w-4 text-muted-foreground" />
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
             {(icpConvertFrom || icpConvertTo) && (
