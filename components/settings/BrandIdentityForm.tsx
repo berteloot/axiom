@@ -201,10 +201,58 @@ export function BrandIdentityForm({
       
       try {
         const dataToSave = form.getValues()
-        await onSubmit(dataToSave)
         
-        // Update last saved data reference (no form.reset to avoid re-renders)
-        lastSavedDataRef.current = JSON.stringify(dataToSave)
+        // Filter out empty arrays for required fields to avoid validation errors
+        // The API validation requires brandVoice and targetIndustries to have at least 1 item
+        // So we only include them if they have values, otherwise omit them from the update
+        const filteredData: Partial<BrandIdentityFormData> = {}
+        
+        // Only include brandVoice if it has at least 1 item (required field)
+        if (dataToSave.brandVoice && dataToSave.brandVoice.length > 0) {
+          filteredData.brandVoice = dataToSave.brandVoice
+        }
+        
+        // Only include targetIndustries if it has at least 1 item (required field)
+        if (dataToSave.targetIndustries && dataToSave.targetIndustries.length > 0) {
+          filteredData.targetIndustries = dataToSave.targetIndustries
+        }
+        
+        // Include optional arrays (can be empty, but only send if they exist)
+        if (dataToSave.competitors !== undefined) {
+          filteredData.competitors = dataToSave.competitors
+        }
+        if (dataToSave.painClusters !== undefined) {
+          filteredData.painClusters = dataToSave.painClusters
+        }
+        if (dataToSave.keyDifferentiators !== undefined) {
+          filteredData.keyDifferentiators = dataToSave.keyDifferentiators
+        }
+        if (dataToSave.primaryICPRoles !== undefined) {
+          filteredData.primaryICPRoles = dataToSave.primaryICPRoles
+        }
+        if (dataToSave.useCases !== undefined) {
+          filteredData.useCases = dataToSave.useCases
+        }
+        if (dataToSave.roiClaims !== undefined) {
+          filteredData.roiClaims = dataToSave.roiClaims
+        }
+        
+        // Include optional string fields (convert empty strings to undefined to avoid validation issues)
+        if (dataToSave.websiteUrl !== undefined && dataToSave.websiteUrl !== "") {
+          filteredData.websiteUrl = dataToSave.websiteUrl
+        }
+        if (dataToSave.valueProposition !== undefined && dataToSave.valueProposition !== "") {
+          filteredData.valueProposition = dataToSave.valueProposition
+        }
+        
+        // Only save if we have at least one field to update
+        // This prevents sending empty updates that would fail validation
+        if (Object.keys(filteredData).length > 0) {
+          await onSubmit(filteredData as BrandIdentityFormData)
+          
+          // Update last saved data reference (no form.reset to avoid re-renders)
+          lastSavedDataRef.current = JSON.stringify(dataToSave)
+        }
       } catch (error) {
         console.error("Auto-save failed:", error)
         // Don't show error to user for auto-save failures

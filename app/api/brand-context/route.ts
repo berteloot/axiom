@@ -41,7 +41,37 @@ const brandContextSchema = z.object({
   customICPTargets: z.array(z.string()).max(50).optional(),
 })
 
-const partialBrandContextSchema = brandContextSchema.partial()
+// For PATCH requests, make all fields optional but validate them if provided
+// For required fields (brandVoice, targetIndustries), if provided, they must meet min requirements
+const partialBrandContextSchema = z.object({
+  brandVoice: z.array(z.string()).min(1, "At least one brand voice attribute is required").max(10).optional(),
+  competitors: z.array(z.string()).max(20).optional(),
+  targetIndustries: z.array(z.string()).min(1, "At least one industry is required").max(10).optional(),
+  websiteUrl: z.preprocess(
+    (val) => {
+      if (val === "" || val === undefined || val === null) {
+        return null;
+      }
+      return val;
+    },
+    z.union([z.string().url(), z.null()]).optional()
+  ).optional(),
+  valueProposition: z.preprocess(
+    (val) => {
+      if (val === "" || val === undefined || val === null) {
+        return null;
+      }
+      return val;
+    },
+    z.union([z.string().max(500), z.null()]).optional()
+  ).optional(),
+  painClusters: z.array(z.string()).max(10).optional(),
+  keyDifferentiators: z.array(z.string()).max(10).optional(),
+  primaryICPRoles: z.array(z.string()).max(10).optional(),
+  useCases: z.array(z.string()).max(20).optional(),
+  roiClaims: z.array(z.string()).max(10).optional(),
+  customICPTargets: z.array(z.string()).max(50).optional(),
+})
 
 export async function GET(request: NextRequest) {
   try {
