@@ -43,6 +43,7 @@ interface BulkEditModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   selectedCount: number
+  selectedAssetIds?: string[] // Optional: pass selected asset IDs to fetch their ICPs
   onSave: (updates: {
     productLineIds?: string[]
     icpTargets?: string[]
@@ -57,6 +58,7 @@ export function BulkEditModal({
   open,
   onOpenChange,
   selectedCount,
+  selectedAssetIds = [],
   onSave,
   onReanalyze,
   onDelete,
@@ -94,23 +96,47 @@ export function BulkEditModal({
     }
   }, [open])
 
-  // Fetch ICP targets
+  // Fetch ICP targets and merge with ICPs from selected assets
   React.useEffect(() => {
     if (open) {
       setIsLoadingIcp(true)
-      fetch("/api/icp-targets")
+      
+      // Fetch standard ICP targets
+      const fetchStandardTargets = fetch("/api/icp-targets")
         .then((res) => res.json())
-        .then((data) => {
-          setIcpOptions(data.icpTargets || ALL_JOB_TITLES)
-        })
+        .then((data) => data.icpTargets || ALL_JOB_TITLES)
         .catch((err) => {
           console.error("Error fetching ICP targets:", err)
+          return ALL_JOB_TITLES
+        })
+      
+      // Fetch ICPs from selected assets if asset IDs are provided
+      const fetchAssetICPs = selectedAssetIds.length > 0
+        ? fetch("/api/assets/icps", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ assetIds: selectedAssetIds }),
+          })
+            .then((res) => res.json())
+            .then((data) => data.icps || [])
+            .catch((err) => {
+              console.error("Error fetching asset ICPs:", err)
+              return []
+            })
+        : Promise.resolve([])
+      
+      // Merge both lists
+      Promise.all([fetchStandardTargets, fetchAssetICPs])
+        .then(([standardTargets, assetICPs]) => {
+          // Combine and deduplicate ICPs
+          const allICPs = new Set([...standardTargets, ...assetICPs])
+          setIcpOptions(Array.from(allICPs).sort())
         })
         .finally(() => {
           setIsLoadingIcp(false)
         })
     }
-  }, [open])
+  }, [open, selectedAssetIds])
 
   // Reset form when modal opens
   React.useEffect(() => {

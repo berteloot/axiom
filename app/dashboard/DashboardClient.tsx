@@ -1216,6 +1216,7 @@ export default function DashboardClient() {
         open={isBulkEditModalOpen}
         onOpenChange={setIsBulkEditModalOpen}
         selectedCount={selectedAssetIds.length}
+        selectedAssetIds={selectedAssetIds}
         onSave={handleBulkEdit}
         onReanalyze={async () => {
           try {
