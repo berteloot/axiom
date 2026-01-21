@@ -296,9 +296,16 @@ function normalizePhrases(
 
 /**
  * Maps AI-detected industries to INDUSTRIES options
+ * Also preserves custom industries that don't match standard ones
+ * @param detectedIndustries - Industries detected by AI
+ * @param existingCustomIndustries - Optional: existing custom industries to preserve
  */
-function mapIndustriesToOptions(detectedIndustries: string[]): string[] {
+function mapIndustriesToOptions(
+  detectedIndustries: string[], 
+  existingCustomIndustries: string[] = []
+): string[] {
   const matchedIndustries: string[] = [];
+  const industriesArray = [...INDUSTRIES] as string[]
 
   // Extended alias map for common industry variations
   const aliasMap: Record<string, string> = {
@@ -350,8 +357,22 @@ function mapIndustriesToOptions(detectedIndustries: string[]): string[] {
   for (const detected of detectedIndustries) {
     const normalized = detected.toLowerCase().trim();
     
+    // Check if it's an existing custom industry (preserve it as-is)
+    const isCustomIndustry = existingCustomIndustries.some(
+      custom => custom.toLowerCase() === normalized
+    )
+    if (isCustomIndustry) {
+      const customIndustry = existingCustomIndustries.find(
+        custom => custom.toLowerCase() === normalized
+      )
+      if (customIndustry && !matchedIndustries.includes(customIndustry)) {
+        matchedIndustries.push(customIndustry)
+        continue
+      }
+    }
+    
     // Try exact match first
-    const exactMatch = INDUSTRIES.find(
+    const exactMatch = industriesArray.find(
       (ind) => ind.toLowerCase() === normalized
     );
     if (exactMatch && !matchedIndustries.includes(exactMatch)) {
@@ -374,11 +395,17 @@ function mapIndustriesToOptions(detectedIndustries: string[]): string[] {
     // Try partial match on INDUSTRIES list
     const firstToken = normalized.split(/\s+/)[0];
     if (!matchedIndustries.some(m => m.toLowerCase().includes(firstToken))) {
-      const partialMatch = INDUSTRIES.find(
+      const partialMatch = industriesArray.find(
         (ind) => ind.toLowerCase().includes(normalized) || normalized.includes(ind.toLowerCase())
       );
       if (partialMatch && !matchedIndustries.includes(partialMatch)) {
         matchedIndustries.push(partialMatch);
+      } else {
+        // If no match found in standard list, preserve the detected industry as custom
+        // This ensures custom industries detected by AI are preserved
+        if (!matchedIndustries.some(m => m.toLowerCase() === normalized)) {
+          matchedIndustries.push(detected.trim()) // Use original case from detection
+        }
       }
     }
   }
@@ -388,8 +415,13 @@ function mapIndustriesToOptions(detectedIndustries: string[]): string[] {
 
 /**
  * Analyzes a website URL and extracts company profile information
+ * @param url - Website URL to analyze
+ * @param existingCustomIndustries - Optional: existing custom industries to preserve
  */
-export async function detectProfileFromUrl(url: string): Promise<{
+export async function detectProfileFromUrl(
+  url: string,
+  existingCustomIndustries: string[] = []
+): Promise<{
   // Form fields (mapped to existing options)
   targetIndustries: string[];
   brandVoice: string[];
@@ -430,7 +462,7 @@ export async function detectProfileFromUrl(url: string): Promise<{
 
     // Step 3: Map AI results to form fields
     const brandVoiceOptions = mapBrandVoiceToOptions(analysis.brandVoice);
-    const industryOptions = mapIndustriesToOptions(analysis.targetIndustries);
+    const industryOptions = mapIndustriesToOptions(analysis.targetIndustries, existingCustomIndustries);
     const competitors = analysis.competitors || [];
 
     return {
@@ -459,8 +491,13 @@ export async function detectProfileFromUrl(url: string): Promise<{
 /**
  * Extracts brand context information from pasted text (e.g., brand guides, value proposition documents)
  * Reuses the same analysis logic as detectProfileFromUrl but accepts text directly
+ * @param text - Text content to analyze
+ * @param existingCustomIndustries - Optional: existing custom industries to preserve
  */
-export async function extractBrandContextFromText(text: string): Promise<{
+export async function extractBrandContextFromText(
+  text: string,
+  existingCustomIndustries: string[] = []
+): Promise<{
   // Form fields (mapped to existing options)
   targetIndustries: string[];
   brandVoice: string[];
@@ -512,7 +549,7 @@ export async function extractBrandContextFromText(text: string): Promise<{
 
     // Map AI results to form fields (same logic as detectProfileFromUrl)
     const brandVoiceOptions = mapBrandVoiceToOptions(analysis.brandVoice);
-    const industryOptions = mapIndustriesToOptions(analysis.targetIndustries);
+    const industryOptions = mapIndustriesToOptions(analysis.targetIndustries, existingCustomIndustries);
     const competitors = analysis.competitors || [];
 
     return {
@@ -1894,6 +1931,11 @@ ${searchResultsForAnalysis}`,
               url: jinaResult.url,
               title: jinaResult.title,
               content: jinaResult.content?.substring(0, 2000) || "",
+              publisher: null,
+              publishedDate: null,
+              excerpt: null,
+              whyReputable: null,
+              whyRelevant: null,
               relevance: "medium" as const,
               sourceType: "other" as const, // Will be classified below
               isReputable: false, // Will be determined below

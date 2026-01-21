@@ -385,9 +385,17 @@ export function BrandIdentityForm({
       setShowDetectedSummary(true)
     }
 
-    // Auto-fill basic fields
+    // Auto-fill basic fields - merge industries instead of replacing to preserve custom industries
     if (data.targetIndustries?.length > 0) {
-      form.setValue("targetIndustries", data.targetIndustries)
+      const currentIndustries = form.getValues("targetIndustries")
+      const merged = [...new Set([...currentIndustries, ...data.targetIndustries])]
+      form.setValue("targetIndustries", merged)
+      // Update industry options to include any new industries
+      const industriesArray = [...INDUSTRIES] as string[]
+      const newIndustries = merged.filter(industry => !industriesArray.includes(industry))
+      if (newIndustries.length > 0) {
+        setIndustryOptions([...new Set([...industriesArray, ...newIndustries])])
+      }
     }
     
     if (data.brandVoice?.length > 0) {

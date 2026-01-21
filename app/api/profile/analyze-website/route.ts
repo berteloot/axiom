@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { detectProfileFromUrl } from "@/lib/ai/website-scanner";
+import { requireAccountId } from "@/lib/account-utils";
+import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
 export const runtime = "nodejs";
@@ -26,8 +28,27 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { url } = analyzeWebsiteSchema.parse(body);
 
+    // Get existing custom industries from brand context to preserve them
+    let existingCustomIndustries: string[] = []
+    try {
+      const accountId = await requireAccountId(request)
+      const brandContext = await prisma.brandContext.findUnique({
+        where: { accountId },
+        select: { targetIndustries: true }
+      })
+      if (brandContext) {
+        const industriesArray = require("@/lib/constants/industries").INDUSTRIES as readonly string[]
+        existingCustomIndustries = brandContext.targetIndustries.filter(
+          industry => !industriesArray.includes(industry as any)
+        )
+      }
+    } catch (error) {
+      // If account ID is not available or brand context doesn't exist, continue without custom industries
+      console.log("Could not fetch existing custom industries:", error)
+    }
+
     // Analyze the website
-    const result = await detectProfileFromUrl(url);
+    const result = await detectProfileFromUrl(url, existingCustomIndustries);
 
     return NextResponse.json({
       success: true,
