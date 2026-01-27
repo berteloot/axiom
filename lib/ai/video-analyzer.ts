@@ -715,12 +715,15 @@ export async function analyzeVideo(
     console.error("Error analyzing video:", error);
     throw error;
   } finally {
-    // Always cleanup temp file
+    // Always cleanup temp file (if it exists)
     try {
       await unlink(tempFilePath);
       console.log(`[STREAM] Cleaned up temp file: ${tempFilePath}`);
-    } catch (cleanupError) {
-      console.warn(`[STREAM] Failed to cleanup temp file ${tempFilePath}:`, cleanupError);
+    } catch (cleanupError: any) {
+      // Ignore ENOENT errors (file doesn't exist) - this happens when error occurs before download
+      if (cleanupError?.code !== 'ENOENT') {
+        console.warn(`[STREAM] Failed to cleanup temp file ${tempFilePath}:`, cleanupError);
+      }
     }
   }
 }
