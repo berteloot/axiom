@@ -8,10 +8,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ChevronUp, ChevronDown, Copy, Check } from "lucide-react";
+import { ChevronUp, ChevronDown, Copy, Check, Download, FileText, FileSpreadsheet, FileCode } from "lucide-react";
 import { FunnelStage } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -72,6 +78,7 @@ export function SequenceModal({
 }: SequenceModalProps) {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [localOrder, setLocalOrder] = useState<number[]>([]);
+  const [exportCopied, setExportCopied] = useState<string | null>(null);
 
   // Initialize local order based on sequence length
   useEffect(() => {
@@ -123,6 +130,141 @@ export function SequenceModal({
   const handleCopyEmail = async (email: SequenceEmail, index: number) => {
     const emailText = `Subject: ${email.subject}\n\n${email.body}`;
     await handleCopy(emailText, index);
+  };
+
+  // Export as plain text
+  const exportAsText = () => {
+    const lines: string[] = [
+      `NURTURE SEQUENCE (${orderedEmails.length} Emails)`,
+      `${"=".repeat(50)}`,
+      "",
+    ];
+
+    orderedEmails.forEach((email, index) => {
+      const asset = orderedAssets[index];
+      lines.push(`EMAIL ${index + 1} OF ${orderedEmails.length}`);
+      lines.push(`Funnel Stage: ${formatStage(asset.funnelStage)}`);
+      lines.push(`${"─".repeat(40)}`);
+      lines.push("");
+      lines.push(`SUBJECT: ${email.subject}`);
+      lines.push("");
+      lines.push("BODY:");
+      lines.push(email.body);
+      lines.push("");
+      lines.push(`LINKED ASSET: ${asset.title}`);
+      lines.push(`ASSET URL: ${asset.s3Url}`);
+      lines.push("");
+      lines.push(`${"─".repeat(40)}`);
+      lines.push("");
+    });
+
+    return lines.join("\n");
+  };
+
+  // Export as Markdown
+  const exportAsMarkdown = () => {
+    const lines: string[] = [
+      `# Nurture Sequence (${orderedEmails.length} Emails)`,
+      "",
+      "## Sequence Overview",
+      "",
+      "| Order | Subject | Funnel Stage | Asset |",
+      "|-------|---------|--------------|-------|",
+    ];
+
+    orderedEmails.forEach((email, index) => {
+      const asset = orderedAssets[index];
+      lines.push(`| ${index + 1} | ${email.subject} | ${formatStage(asset.funnelStage)} | ${asset.title} |`);
+    });
+
+    lines.push("");
+    lines.push("---");
+    lines.push("");
+    lines.push("## Email Details");
+    lines.push("");
+
+    orderedEmails.forEach((email, index) => {
+      const asset = orderedAssets[index];
+      lines.push(`### Email ${index + 1}: ${formatStage(asset.funnelStage)}`);
+      lines.push("");
+      lines.push(`**Subject:** ${email.subject}`);
+      lines.push("");
+      lines.push("**Body:**");
+      lines.push("");
+      lines.push(email.body);
+      lines.push("");
+      lines.push(`**Linked Asset:** [${asset.title}](${asset.s3Url})`);
+      lines.push("");
+      lines.push("---");
+      lines.push("");
+    });
+
+    return lines.join("\n");
+  };
+
+  // Export as CSV
+  const exportAsCSV = () => {
+    const escapeCSV = (str: string) => {
+      if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    const headers = ["Order", "Subject", "Body", "Funnel Stage", "Asset Title", "Asset URL"];
+    const rows = orderedEmails.map((email, index) => {
+      const asset = orderedAssets[index];
+      return [
+        (index + 1).toString(),
+        escapeCSV(email.subject),
+        escapeCSV(email.body),
+        formatStage(asset.funnelStage),
+        escapeCSV(asset.title),
+        asset.s3Url,
+      ].join(",");
+    });
+
+    return [headers.join(","), ...rows].join("\n");
+  };
+
+  const handleExportCopy = async (format: "text" | "markdown") => {
+    const content = format === "text" ? exportAsText() : exportAsMarkdown();
+    await navigator.clipboard.writeText(content);
+    setExportCopied(format);
+    setTimeout(() => setExportCopied(null), 2000);
+  };
+
+  const handleExportDownload = (format: "csv" | "text" | "markdown") => {
+    let content: string;
+    let filename: string;
+    let mimeType: string;
+
+    switch (format) {
+      case "csv":
+        content = exportAsCSV();
+        filename = "nurture-sequence.csv";
+        mimeType = "text/csv";
+        break;
+      case "markdown":
+        content = exportAsMarkdown();
+        filename = "nurture-sequence.md";
+        mimeType = "text/markdown";
+        break;
+      default:
+        content = exportAsText();
+        filename = "nurture-sequence.txt";
+        mimeType = "text/plain";
+    }
+
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -241,13 +383,48 @@ export function SequenceModal({
           })}
         </div>
 
-        <div className="flex justify-end gap-2 mt-6 pt-4 border-t">
-          {onRegenerate && (
-            <Button variant="outline" onClick={onRegenerate}>
-              Regenerate Sequence
-            </Button>
-          )}
-          <Button onClick={() => onOpenChange(false)}>Done</Button>
+        <div className="flex justify-between items-center mt-6 pt-4 border-t">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="gap-2">
+                <Download className="h-4 w-4" />
+                Export Sequence
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56">
+              <DropdownMenuItem onClick={() => handleExportCopy("text")} className="gap-2 cursor-pointer">
+                <FileText className="h-4 w-4" />
+                <span className="flex-1">Copy as Text</span>
+                {exportCopied === "text" && <Check className="h-4 w-4 text-green-500" />}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExportCopy("markdown")} className="gap-2 cursor-pointer">
+                <FileCode className="h-4 w-4" />
+                <span className="flex-1">Copy as Markdown</span>
+                {exportCopied === "markdown" && <Check className="h-4 w-4 text-green-500" />}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExportDownload("csv")} className="gap-2 cursor-pointer">
+                <FileSpreadsheet className="h-4 w-4" />
+                Download as CSV
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExportDownload("text")} className="gap-2 cursor-pointer">
+                <FileText className="h-4 w-4" />
+                Download as Text
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExportDownload("markdown")} className="gap-2 cursor-pointer">
+                <FileCode className="h-4 w-4" />
+                Download as Markdown
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <div className="flex gap-2">
+            {onRegenerate && (
+              <Button variant="outline" onClick={onRegenerate}>
+                Regenerate Sequence
+              </Button>
+            )}
+            <Button onClick={() => onOpenChange(false)}>Done</Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
