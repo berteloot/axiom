@@ -17,7 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ChevronUp, ChevronDown, Copy, Check, Download, FileText, FileSpreadsheet, FileCode } from "lucide-react";
+import { ChevronUp, ChevronDown, Copy, Check, Download, FileText, FileCode } from "lucide-react";
 import { FunnelStage } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -137,6 +137,8 @@ export function SequenceModal({
     const lines: string[] = [
       `NURTURE SEQUENCE (${orderedEmails.length} Emails)`,
       `${"=".repeat(50)}`,
+      `Generated: ${new Date().toLocaleDateString()}`,
+      `Note: Asset download links are valid for 7 days.`,
       "",
     ];
 
@@ -152,7 +154,7 @@ export function SequenceModal({
       lines.push(email.body);
       lines.push("");
       lines.push(`LINKED ASSET: ${asset.title}`);
-      lines.push(`ASSET URL: ${asset.s3Url}`);
+      lines.push(`DOWNLOAD LINK: ${asset.s3Url}`);
       lines.push("");
       lines.push(`${"─".repeat(40)}`);
       lines.push("");
@@ -165,6 +167,10 @@ export function SequenceModal({
   const exportAsMarkdown = () => {
     const lines: string[] = [
       `# Nurture Sequence (${orderedEmails.length} Emails)`,
+      "",
+      `*Generated: ${new Date().toLocaleDateString()}*`,
+      "",
+      "> **Note:** Asset download links are valid for 7 days.",
       "",
       "## Sequence Overview",
       "",
@@ -202,31 +208,6 @@ export function SequenceModal({
     return lines.join("\n");
   };
 
-  // Export as CSV
-  const exportAsCSV = () => {
-    const escapeCSV = (str: string) => {
-      if (str.includes(",") || str.includes('"') || str.includes("\n")) {
-        return `"${str.replace(/"/g, '""')}"`;
-      }
-      return str;
-    };
-
-    const headers = ["Order", "Subject", "Body", "Funnel Stage", "Asset Title", "Asset URL"];
-    const rows = orderedEmails.map((email, index) => {
-      const asset = orderedAssets[index];
-      return [
-        (index + 1).toString(),
-        escapeCSV(email.subject),
-        escapeCSV(email.body),
-        formatStage(asset.funnelStage),
-        escapeCSV(asset.title),
-        asset.s3Url,
-      ].join(",");
-    });
-
-    return [headers.join(","), ...rows].join("\n");
-  };
-
   const handleExportCopy = async (format: "text" | "markdown") => {
     const content = format === "text" ? exportAsText() : exportAsMarkdown();
     await navigator.clipboard.writeText(content);
@@ -234,26 +215,19 @@ export function SequenceModal({
     setTimeout(() => setExportCopied(null), 2000);
   };
 
-  const handleExportDownload = (format: "csv" | "text" | "markdown") => {
+  const handleExportDownload = (format: "text" | "markdown") => {
     let content: string;
     let filename: string;
     let mimeType: string;
 
-    switch (format) {
-      case "csv":
-        content = exportAsCSV();
-        filename = "nurture-sequence.csv";
-        mimeType = "text/csv";
-        break;
-      case "markdown":
-        content = exportAsMarkdown();
-        filename = "nurture-sequence.md";
-        mimeType = "text/markdown";
-        break;
-      default:
-        content = exportAsText();
-        filename = "nurture-sequence.txt";
-        mimeType = "text/plain";
+    if (format === "markdown") {
+      content = exportAsMarkdown();
+      filename = "nurture-sequence.md";
+      mimeType = "text/markdown";
+    } else {
+      content = exportAsText();
+      filename = "nurture-sequence.txt";
+      mimeType = "text/plain";
     }
 
     const blob = new Blob([content], { type: mimeType });
@@ -401,10 +375,6 @@ export function SequenceModal({
                 <FileCode className="h-4 w-4" />
                 <span className="flex-1">Copy as Markdown</span>
                 {exportCopied === "markdown" && <Check className="h-4 w-4 text-green-500" />}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleExportDownload("csv")} className="gap-2 cursor-pointer">
-                <FileSpreadsheet className="h-4 w-4" />
-                Download as CSV
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => handleExportDownload("text")} className="gap-2 cursor-pointer">
                 <FileText className="h-4 w-4" />

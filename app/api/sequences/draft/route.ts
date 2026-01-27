@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAccountId } from "@/lib/account-utils";
+import { getPresignedDownloadUrl, extractKeyFromS3Url } from "@/lib/s3";
 import OpenAI from "openai";
 import { z } from "zod";
 import { zodResponseFormat } from "openai/helpers/zod";
@@ -154,7 +155,7 @@ ${emailRequirements}
 - Make it feel personal, not generic
 - Generate exactly ${emailCount} emails, one for each asset`;
 
-    // Call OpenAI
+    // Call OpenAI (increased max_tokens for up to 5 emails)
     const completion = await openai.chat.completions.parse({
       model: "gpt-4o-2024-08-06",
       messages: [
@@ -163,7 +164,7 @@ ${emailRequirements}
       ],
       response_format: zodResponseFormat(SequenceSchema, "sequence"),
       temperature: 0.35,
-      max_tokens: 1200,
+      max_tokens: 2000,
     });
 
     const result = completion.choices[0].message.parsed;
@@ -176,16 +177,36 @@ ${emailRequirements}
       throw new Error(`AI returned ${result.emails?.length ?? 0} emails, expected ${emailCount}`);
     }
 
-    return NextResponse.json({
-      success: true,
-      sequence: {
-        assets: sortedAssets.map(asset => ({
+    // Generate presigned URLs for each asset (valid for 7 days)
+    const SEVEN_DAYS_IN_SECONDS = 7 * 24 * 60 * 60;
+    const assetsWithPresignedUrls = await Promise.all(
+      sortedAssets.map(async (asset) => {
+        let publicUrl = asset.s3Url;
+        
+        try {
+          const s3Key = extractKeyFromS3Url(asset.s3Url);
+          if (s3Key) {
+            publicUrl = await getPresignedDownloadUrl(s3Key, SEVEN_DAYS_IN_SECONDS);
+          }
+        } catch (error) {
+          console.error(`Failed to generate presigned URL for asset ${asset.id}:`, error);
+          // Fall back to original URL if presigning fails
+        }
+        
+        return {
           id: asset.id,
           title: asset.title,
           funnelStage: asset.funnelStage,
-          s3Url: asset.s3Url,
+          s3Url: publicUrl,
           atomicSnippets: Array.isArray(asset.atomicSnippets) ? asset.atomicSnippets.slice(0, 5) : [],
-        })),
+        };
+      })
+    );
+
+    return NextResponse.json({
+      success: true,
+      sequence: {
+        assets: assetsWithPresignedUrls,
         emails: result.emails,
       },
     });
