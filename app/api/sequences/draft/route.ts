@@ -209,27 +209,48 @@ ${emailRequirements}
       throw new Error(`AI returned ${result.emails?.length ?? 0} emails, expected ${emailCount}`);
     }
 
-    // Generate presigned URLs for each asset (valid for 7 days)
+    // Extract source URLs from atomicSnippets, fall back to presigned S3 URLs for uploaded files
     const SEVEN_DAYS_IN_SECONDS = 7 * 24 * 60 * 60;
-    const assetsWithPresignedUrls = await Promise.all(
+    const assetsWithUrls = await Promise.all(
       sortedAssets.map(async (asset) => {
-        let publicUrl = asset.s3Url;
+        let assetUrl: string | null = null;
         
-        try {
-          const s3Key = extractKeyFromS3Url(asset.s3Url);
-          if (s3Key) {
-            publicUrl = await getPresignedDownloadUrl(s3Key, SEVEN_DAYS_IN_SECONDS);
+        // Try to extract sourceUrl from atomicSnippets (for imported content)
+        const snippets = asset.atomicSnippets;
+        if (snippets) {
+          // Check for sourceUrl at top level (object format)
+          if (typeof snippets === 'object' && !Array.isArray(snippets) && (snippets as any).sourceUrl) {
+            assetUrl = (snippets as any).sourceUrl;
           }
-        } catch (error) {
-          console.error(`Failed to generate presigned URL for asset ${asset.id}:`, error);
-          // Fall back to original URL if presigning fails
+          // Check first element if array
+          else if (Array.isArray(snippets) && snippets.length > 0) {
+            const firstItem = snippets[0];
+            if (typeof firstItem === 'object' && (firstItem as any).sourceUrl) {
+              assetUrl = (firstItem as any).sourceUrl;
+            }
+          }
+        }
+        
+        // If no sourceUrl found, generate presigned S3 URL (for uploaded files)
+        if (!assetUrl) {
+          try {
+            const s3Key = extractKeyFromS3Url(asset.s3Url);
+            if (s3Key) {
+              assetUrl = await getPresignedDownloadUrl(s3Key, SEVEN_DAYS_IN_SECONDS);
+            } else {
+              assetUrl = asset.s3Url;
+            }
+          } catch (error) {
+            console.error(`Failed to generate presigned URL for asset ${asset.id}:`, error);
+            assetUrl = asset.s3Url;
+          }
         }
         
         return {
           id: asset.id,
           title: asset.title,
           funnelStage: asset.funnelStage,
-          s3Url: publicUrl,
+          s3Url: assetUrl,
           atomicSnippets: Array.isArray(asset.atomicSnippets) ? asset.atomicSnippets.slice(0, 5) : [],
         };
       })
@@ -238,7 +259,7 @@ ${emailRequirements}
     return NextResponse.json({
       success: true,
       sequence: {
-        assets: assetsWithPresignedUrls,
+        assets: assetsWithUrls,
         emails: result.emails,
       },
     });

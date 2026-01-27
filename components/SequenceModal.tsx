@@ -138,7 +138,6 @@ export function SequenceModal({
       `NURTURE SEQUENCE (${orderedEmails.length} Emails)`,
       `${"=".repeat(50)}`,
       `Generated: ${new Date().toLocaleDateString()}`,
-      `Note: Asset download links are valid for 7 days.`,
       "",
     ];
 
@@ -154,7 +153,7 @@ export function SequenceModal({
       lines.push(email.body);
       lines.push("");
       lines.push(`LINKED ASSET: ${asset.title}`);
-      lines.push(`DOWNLOAD LINK: ${asset.s3Url}`);
+      lines.push(`ASSET LINK: ${asset.s3Url}`);
       lines.push("");
       lines.push(`${"─".repeat(40)}`);
       lines.push("");
@@ -169,8 +168,6 @@ export function SequenceModal({
       `# Nurture Sequence (${orderedEmails.length} Emails)`,
       "",
       `*Generated: ${new Date().toLocaleDateString()}*`,
-      "",
-      "> **Note:** Asset download links are valid for 7 days.",
       "",
       "## Sequence Overview",
       "",
