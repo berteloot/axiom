@@ -14,7 +14,7 @@ const openai = new OpenAI({
 });
 
 const BodySchema = z.object({
-  assetIds: z.array(z.string().min(1)).min(2).max(4),
+  assetIds: z.array(z.string().min(1)).min(2).max(5),
 });
 
 // Schema for sequence email response

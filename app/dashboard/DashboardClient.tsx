@@ -537,7 +537,7 @@ export default function DashboardClient() {
   }
 
   const handleDraftSequence = async () => {
-    if (selectedAssetIds.length < 2 || selectedAssetIds.length > 4) {
+    if (selectedAssetIds.length < 2 || selectedAssetIds.length > 5) {
       return;
     }
 
@@ -582,7 +582,7 @@ export default function DashboardClient() {
   };
 
   const handleRegenerateSequence = async () => {
-    if (selectedAssetIds.length < 2 || selectedAssetIds.length > 4) {
+    if (selectedAssetIds.length < 2 || selectedAssetIds.length > 5) {
       return;
     }
 

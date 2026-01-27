@@ -23,7 +23,7 @@ export function SequenceActionBar({
 }: SequenceActionBarProps) {
   if (selectedCount === 0) return null;
 
-  const showSequenceButton = selectedCount >= 2 && selectedCount <= 4;
+  const showSequenceButton = selectedCount >= 2 && selectedCount <= 5;
 
   return (
     <div
@@ -91,13 +91,13 @@ export function SequenceActionBar({
 
       {!showSequenceButton && selectedCount > 0 && selectedCount < 2 && (
         <div className="text-xs text-muted-foreground">
-          Select 2-4 assets to create a sequence
+          Select 2-5 assets to create a sequence
         </div>
       )}
       
-      {selectedCount > 4 && (
+      {selectedCount > 5 && (
         <div className="text-xs text-orange-600 dark:text-orange-400">
-          Maximum 4 assets per sequence
+          Maximum 5 assets per sequence
         </div>
       )}
     </div>
