@@ -121,38 +121,70 @@ ${snippetText ? `Key Points:\n${snippetText}` : ""}`;
 
     const emailCount = sortedAssets.length;
 
-    const systemPrompt = `You are an expert B2B marketing email copywriter.
-Your task is to create a ${emailCount}-email nurture sequence that tells a cohesive story across the provided assets.
+    const systemPrompt = `You are an expert B2B email marketing specialist. Write emails like a helpful colleague, not a marketer.
 
 ${brandVoiceText}
 
-Rules:
-- Use ONLY the provided asset titles and atomic snippets as proof points. Do not invent statistics, quotes, customers, or outcomes.
-- Each email should build on the previous one and naturally bridge to the next asset.
-- Keep the tone professional and personal (not generic).
-- Include one clear CTA per email (reply, read, watch, or ask a question).`;
+LENGTH & STRUCTURE:
+- Maximum 120 words per email
+- 3-4 short paragraphs, each 1-3 sentences max
+- Get to the point in the first 2 sentences
+
+TONE & LANGUAGE:
+- Conversational, plain language
+- Use contractions naturally (you'll, we've, it's)
+- Replace vague claims with specific, concrete benefits
+- NEVER use these words: "unlock", "optimize", "leverage", "transform", "harness", "elevate", "seamless", "cutting-edge", "game-changing", "revolutionary", "empower", "robust", "synergy", "breakthrough", "discover", "explore"
+- NEVER use phrases like: "in today's rapidly evolving", "don't miss out", "take the next step", "this is your opportunity"
+
+SUBJECT LINES:
+- Specific and benefit-focused
+- No hype or urgency tactics
+- No colons unless absolutely necessary
+- Focus on "what's in it for them"
+
+CONTENT RULES:
+- Use ONLY the provided asset titles and atomic snippets as proof points
+- Do NOT invent statistics, quotes, customers, or outcomes
+- Lead with a problem or specific situation they recognize
+- Be direct about what the resource contains
+- Use "real", "actual", "specific" to add credibility
+- Reference concrete outcomes, not abstract benefits
+- Connect each email to the previous one naturally
+- Make CTAs simple and clear (e.g., "Here's the link", "Take a look", "Let me know what you think")
+
+WHAT TO AVOID:
+- Exclamation points
+- Multiple questions in one email
+- Overenthusiastic language
+- Claims without specifics
+- Passive voice
+- Corporate buzzwords
+- Salesy pressure tactics`;
 
     const emailRequirements = sortedAssets.map((asset, index) => {
+      const stage = asset.funnelStage;
       if (index === 0) {
-        return `- **Email ${index + 1}:** Introduce ${asset.title}. Focus on the problem it addresses. Make it compelling and relevant.`;
+        return `- **Email ${index + 1} (${stage}):** Introduce a relevant problem they recognize, then position "${asset.title}" as helpful. Be direct about what it contains.`;
+      } else if (stage === 'BOFU_DECISION') {
+        return `- **Email ${index + 1} (${stage}):** Reference the previous email briefly, then show real-world proof through "${asset.title}". Focus on concrete results.`;
       } else {
-        return `- **Email ${index + 1}:** Acknowledge they received the previous asset. Bridge to ${asset.title} by building on what they learned. Say something like "Now that you understand [previous concept], here's the ${index === emailCount - 1 && asset.funnelStage === 'BOFU_DECISION' ? 'proof/solution' : 'next step'}..." or similar bridging language.`;
+        return `- **Email ${index + 1} (${stage}):** Reference the previous email briefly, then go deeper on a specific application with "${asset.title}". Build on what they've already seen.`;
       }
     }).join("\n");
 
-    const userPrompt = `Create a ${emailCount}-email nurture sequence using these ${emailCount} assets:
+    const userPrompt = `Create a ${emailCount}-email nurture sequence using these assets:
 
 ${assetDescriptions}
 
-**Requirements:**
+**Email Flow:**
 ${emailRequirements}
 
-**Constraints:**
-- Use the atomic snippets as key proof points in the copy
-- Each email should be 120-180 words
-- Subject lines should be compelling and action-oriented
-- Tone: ${brandVoiceText}
-- Make it feel personal, not generic
+**Remember:**
+- Maximum 120 words per email
+- Use the atomic snippets as specific proof points
+- No marketing jargon or hype
+- Write like you're helping a colleague
 - Generate exactly ${emailCount} emails, one for each asset`;
 
     // Call OpenAI (increased max_tokens for up to 5 emails)
