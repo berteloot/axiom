@@ -207,7 +207,8 @@ CONTENT REQUIREMENTS:
 - Lead with a SPECIFIC problem readers recognize (not "many companies struggle")
 - Use ONLY the atomic snippets provided—never invent stats, quotes, or outcomes
 - State what's IN the resource clearly ("covers X, Y, and Z" or "shows how [specific thing]")
-- Connect emails naturally without templates ("Following up on..." is OK sparingly)
+- Each email should STAND ALONE—don't assume they read previous emails
+- Never reference previous emails ("Following up on...", "Since you read...", "Building on...")
 - Make the resource sound useful, not amazing ("worth a look" not "game-changing guide")
 
 CALL-TO-ACTION RULES:
@@ -222,7 +223,7 @@ WHAT TO ABSOLUTELY AVOID:
 - Enthusiastic/salesy tone
 - Vague benefits ("better insights", "improved outcomes")
 - Passive voice ("can be achieved", "is enhanced by")
-- Repeating the same transition phrases
+- References to previous emails ("Following up", "Since you read", "As mentioned")
 - Making claims beyond what atomic snippets support
 
 QUALITY CHECKLIST BEFORE OUTPUT:
@@ -236,40 +237,52 @@ QUALITY CHECKLIST BEFORE OUTPUT:
 □ Link included in plain text format`;
 
     // Build per-email instructions based on funnel stages
+    // Each email should stand alone - don't assume they read previous emails
     const emailInstructions = assetsWithUrlsForPrompt.map((asset, index) => {
       const stage = asset.funnelStage;
-      const isFirst = index === 0;
-      const isLast = index === emailCount - 1;
       const isBOFU = stage === 'BOFU_DECISION';
+      const isTOFU = stage === 'TOFU_AWARENESS';
+      const isRetention = stage === 'RETENTION';
       
-      if (isFirst) {
+      if (isTOFU) {
         return `Email ${index + 1} (${formatStage(stage)}):
-- Open with a specific problem the reader faces (be concrete, not generic)
-- Position "${asset.title}" as addressing that problem
+- Open with a specific problem or challenge the reader faces
+- Position "${asset.title}" as a helpful resource that addresses it
 - State clearly what's inside using 1-2 atomic snippets as proof
 - Keep it under 120 words
-- Subject line: Focus on the problem or benefit, NOT the topic
+- Subject line: Focus on the problem or benefit
 - Include link: ${asset.resolvedUrl}`;
-      } else if (isBOFU || isLast) {
-        const prevTitles = assetsWithUrlsForPrompt.slice(0, index).map(a => a.title).join(', ');
+      } else if (isBOFU) {
         return `Email ${index + 1} (${formatStage(stage)}):
-- Acknowledge the journey briefly ("You've seen ${prevTitles}...")
-- Position "${asset.title}" as real-world proof/example
+- Open with a results-oriented angle (outcomes, proof, real examples)
+- Position "${asset.title}" as showing real-world results or proof
 - Focus on tangible outcomes from atomic snippets
-- Keep it results-focused, not hype-focused
+- Keep it under 120 words
+- Subject line: Focus on results or proof
+- Include link: ${asset.resolvedUrl}`;
+      } else if (isRetention) {
+        return `Email ${index + 1} (${formatStage(stage)}):
+- Open with a value-add angle for existing customers
+- Position "${asset.title}" as helping them get more value
+- Use atomic snippets to show specific benefits
+- Keep it under 120 words
+- Subject line: Focus on additional value
 - Include link: ${asset.resolvedUrl}`;
       } else {
-        const prevAsset = assetsWithUrlsForPrompt[index - 1];
+        // MOFU - Consideration
         return `Email ${index + 1} (${formatStage(stage)}):
-- Reference Email ${index} casually (e.g., "Since you looked at ${prevAsset.title}...")
-- Position "${asset.title}" as going deeper or addressing related challenge
-- Use atomic snippets to show specific value
-- Keep connection natural, not formulaic
+- Open with a specific use case or scenario they might relate to
+- Position "${asset.title}" as going deeper on how to solve it
+- Use atomic snippets to show specific value and details
+- Keep it under 120 words
+- Subject line: Focus on the specific solution or approach
 - Include link: ${asset.resolvedUrl}`;
       }
     }).join("\n\n");
 
-    const userPrompt = `Create a ${emailCount}-email nurture sequence using these assets in order:
+    const userPrompt = `Create ${emailCount} standalone emails, one for each asset below. Each email should work independently—do NOT assume the reader has seen any previous emails.
+
+ASSETS TO USE:
 
 ${assetDescriptions}
 
@@ -282,12 +295,14 @@ ${emailInstructions}
 ---
 
 CRITICAL REMINDERS:
+- Each email must STAND ALONE—never reference previous emails or assume prior reading
 - Use ONLY the atomic snippets provided—do not invent statistics, outcomes, or customer names
 - Keep each email under 120 words (count carefully)
 - Include the exact link provided for each email in plain text format
 - Write like a helpful colleague, not a marketer
-- No forbidden words or phrases
+- No forbidden words or phrases from the system prompt
 - Subject lines must be benefit-focused and under 8 words
+- Do NOT use phrases like "Following up", "Since you read", "Building on", "As mentioned"
 
 Generate exactly ${emailCount} emails now.`;
 
