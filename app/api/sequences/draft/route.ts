@@ -104,88 +104,192 @@ export async function POST(request: NextRequest) {
       ? `Brand Voice: ${brandVoice.join(", ")}`
       : "Brand Voice: Professional, Customer-Centric";
 
-    // Build the prompt for OpenAI
-    const assetDescriptions = sortedAssets.map((asset, index) => {
+    // Extract URLs for each asset first (needed for prompt)
+    const SEVEN_DAYS_IN_SECONDS = 7 * 24 * 60 * 60;
+    const assetsWithUrlsForPrompt = await Promise.all(
+      sortedAssets.map(async (asset) => {
+        let assetUrl: string | null = null;
+        
+        // Try to extract sourceUrl from atomicSnippets (for imported content)
+        const snippets = asset.atomicSnippets;
+        if (snippets) {
+          if (typeof snippets === 'object' && !Array.isArray(snippets) && (snippets as any).sourceUrl) {
+            assetUrl = (snippets as any).sourceUrl;
+          } else if (Array.isArray(snippets) && snippets.length > 0) {
+            const firstItem = snippets[0];
+            if (typeof firstItem === 'object' && (firstItem as any).sourceUrl) {
+              assetUrl = (firstItem as any).sourceUrl;
+            }
+          }
+        }
+        
+        // If no sourceUrl found, generate presigned S3 URL
+        if (!assetUrl) {
+          try {
+            const s3Key = extractKeyFromS3Url(asset.s3Url);
+            if (s3Key) {
+              assetUrl = await getPresignedDownloadUrl(s3Key, SEVEN_DAYS_IN_SECONDS);
+            } else {
+              assetUrl = asset.s3Url;
+            }
+          } catch (error) {
+            assetUrl = asset.s3Url;
+          }
+        }
+        
+        return { ...asset, resolvedUrl: assetUrl };
+      })
+    );
+
+    const emailCount = sortedAssets.length;
+
+    // Format funnel stage for display
+    const formatStage = (stage: string) => {
+      if (stage === 'TOFU_AWARENESS') return 'TOFU - AWARENESS';
+      if (stage === 'MOFU_CONSIDERATION') return 'MOFU - CONSIDERATION';
+      if (stage === 'BOFU_DECISION') return 'BOFU - DECISION';
+      if (stage === 'RETENTION') return 'RETENTION';
+      return stage.replace('_', ' - ');
+    };
+
+    // Build asset descriptions with URLs
+    const assetDescriptions = assetsWithUrlsForPrompt.map((asset, index) => {
       const snippets = asset.atomicSnippets ? 
         (Array.isArray(asset.atomicSnippets) ? asset.atomicSnippets : []) : [];
       
       const snippetText = snippets
-        .slice(0, 3) // Use top 3 snippets
-        .map((s: any) => `- ${s.content}`)
+        .slice(0, 3)
+        .map((s: any) => `- ${s.content || s}`)
         .join("\n");
 
-      const stageLabel = String(asset.funnelStage).split("_").join(" ");
-      return `**Asset ${index + 1} (${stageLabel}):** ${asset.title}
-${snippetText ? `Key Points:\n${snippetText}` : ""}`;
+      return `**Asset ${index + 1} (${formatStage(asset.funnelStage)}):** ${asset.title}
+Link: ${asset.resolvedUrl}
+Key Points (atomic snippets):
+${snippetText || "- No snippets available"}`;
     }).join("\n\n");
 
-    const emailCount = sortedAssets.length;
-
-    const systemPrompt = `You are an expert B2B email marketing specialist. Write emails like a helpful colleague, not a marketer.
+    const systemPrompt = `You are an expert B2B email marketing specialist. Your job is to write emails that sound like they come from a helpful colleague sharing useful resources—not from a marketing department.
 
 ${brandVoiceText}
 
-LENGTH & STRUCTURE:
-- Maximum 120 words per email
-- 3-4 short paragraphs, each 1-3 sentences max
-- Get to the point in the first 2 sentences
+CRITICAL RULES - READ CAREFULLY:
 
-TONE & LANGUAGE:
-- Conversational, plain language
-- Use contractions naturally (you'll, we've, it's)
-- Replace vague claims with specific, concrete benefits
-- NEVER use these words: "unlock", "optimize", "leverage", "transform", "harness", "elevate", "seamless", "cutting-edge", "game-changing", "revolutionary", "empower", "robust", "synergy", "breakthrough", "discover", "explore"
-- NEVER use phrases like: "in today's rapidly evolving", "don't miss out", "take the next step", "this is your opportunity"
+LENGTH & STRUCTURE:
+- Maximum 120 words per email (count carefully)
+- 3-4 short paragraphs maximum
+- Each paragraph: 1-3 sentences only
+- First paragraph (2 sentences max): Hook with a specific problem or situation
+- Middle paragraph(s): What's in the resource, using atomic snippets as proof
+- Final paragraph (1-2 sentences): Simple CTA
+
+FORBIDDEN WORDS & PHRASES - NEVER USE:
+Words: unlock, optimize, leverage, transform, harness, elevate, seamless, cutting-edge, game-changing, revolutionary, empower, robust, synergy, breakthrough, discover, explore, enhance, drive, enable, deliver, maximize, streamline
+
+Phrases: "in today's [anything]", "don't miss out", "take the next step", "this is your opportunity", "I hope you found", "thank you for engaging", "now that you", "it's time to", "dear [name]"
+
+REQUIRED LANGUAGE STYLE:
+- Write in first person when relevant ("we've seen", "I noticed")
+- Use contractions: you'll, we've, it's, that's, here's
+- Be specific, never vague ("cut forecast time" not "improve efficiency")
+- Use casual connectors: "since", "worth noting", "pairs well with"
+- Start emails naturally: "Hi [Name]," (never "Dear" or "Hello there")
+- End simply: "Best," or "[Your Name]" (never "Best regards," or "Sincerely,")
 
 SUBJECT LINES:
-- Specific and benefit-focused
-- No hype or urgency tactics
-- No colons unless absolutely necessary
-- Focus on "what's in it for them"
+- 6-8 words maximum
+- State a benefit or outcome, not a topic
+- Use concrete language, avoid abstractions
+- NO colons, NO "how to", NO questions
+- Examples of GOOD subjects: "Why SAP shops are adding AI now" / "AI agents that handle IBP forecasts"
+- Examples of BAD subjects: "Unlock AI Value" / "How to: Enhance Your Forecasts" / "Ready to Transform?"
 
-CONTENT RULES:
-- Use ONLY the provided asset titles and atomic snippets as proof points
-- Do NOT invent statistics, quotes, customers, or outcomes
-- Lead with a problem or specific situation they recognize
-- Be direct about what the resource contains
-- Use "real", "actual", "specific" to add credibility
-- Reference concrete outcomes, not abstract benefits
-- Connect each email to the previous one naturally
-- Make CTAs simple and clear (e.g., "Here's the link", "Take a look", "Let me know what you think")
+CONTENT REQUIREMENTS:
+- Lead with a SPECIFIC problem readers recognize (not "many companies struggle")
+- Use ONLY the atomic snippets provided—never invent stats, quotes, or outcomes
+- State what's IN the resource clearly ("covers X, Y, and Z" or "shows how [specific thing]")
+- Connect emails naturally without templates ("Following up on..." is OK sparingly)
+- Make the resource sound useful, not amazing ("worth a look" not "game-changing guide")
 
-WHAT TO AVOID:
-- Exclamation points
-- Multiple questions in one email
-- Overenthusiastic language
-- Claims without specifics
-- Passive voice
-- Corporate buzzwords
-- Salesy pressure tactics`;
+CALL-TO-ACTION RULES:
+- Keep CTAs conversational and low-pressure
+- Good CTAs: "Here's the link" / "Take a look" / "Worth reading if [condition]"
+- Bad CTAs: "Download now" / "Don't miss this" / "Click here to unlock"
+- Always place the link on its own line in plain text format
 
-    const emailRequirements = sortedAssets.map((asset, index) => {
+WHAT TO ABSOLUTELY AVOID:
+- Exclamation points anywhere
+- More than one question per email
+- Enthusiastic/salesy tone
+- Vague benefits ("better insights", "improved outcomes")
+- Passive voice ("can be achieved", "is enhanced by")
+- Repeating the same transition phrases
+- Making claims beyond what atomic snippets support
+
+QUALITY CHECKLIST BEFORE OUTPUT:
+□ No forbidden words or phrases used
+□ Under 120 words each
+□ Subject line is benefit-focused and under 8 words
+□ Opens with specific problem, not generic statement
+□ Uses actual atomic snippets, not invented content
+□ CTA is simple and conversational
+□ Sounds like a colleague, not marketing
+□ Link included in plain text format`;
+
+    // Build per-email instructions based on funnel stages
+    const emailInstructions = assetsWithUrlsForPrompt.map((asset, index) => {
       const stage = asset.funnelStage;
-      if (index === 0) {
-        return `- **Email ${index + 1} (${stage}):** Introduce a relevant problem they recognize, then position "${asset.title}" as helpful. Be direct about what it contains.`;
-      } else if (stage === 'BOFU_DECISION') {
-        return `- **Email ${index + 1} (${stage}):** Reference the previous email briefly, then show real-world proof through "${asset.title}". Focus on concrete results.`;
+      const isFirst = index === 0;
+      const isLast = index === emailCount - 1;
+      const isBOFU = stage === 'BOFU_DECISION';
+      
+      if (isFirst) {
+        return `Email ${index + 1} (${formatStage(stage)}):
+- Open with a specific problem the reader faces (be concrete, not generic)
+- Position "${asset.title}" as addressing that problem
+- State clearly what's inside using 1-2 atomic snippets as proof
+- Keep it under 120 words
+- Subject line: Focus on the problem or benefit, NOT the topic
+- Include link: ${asset.resolvedUrl}`;
+      } else if (isBOFU || isLast) {
+        const prevTitles = assetsWithUrlsForPrompt.slice(0, index).map(a => a.title).join(', ');
+        return `Email ${index + 1} (${formatStage(stage)}):
+- Acknowledge the journey briefly ("You've seen ${prevTitles}...")
+- Position "${asset.title}" as real-world proof/example
+- Focus on tangible outcomes from atomic snippets
+- Keep it results-focused, not hype-focused
+- Include link: ${asset.resolvedUrl}`;
       } else {
-        return `- **Email ${index + 1} (${stage}):** Reference the previous email briefly, then go deeper on a specific application with "${asset.title}". Build on what they've already seen.`;
+        const prevAsset = assetsWithUrlsForPrompt[index - 1];
+        return `Email ${index + 1} (${formatStage(stage)}):
+- Reference Email ${index} casually (e.g., "Since you looked at ${prevAsset.title}...")
+- Position "${asset.title}" as going deeper or addressing related challenge
+- Use atomic snippets to show specific value
+- Keep connection natural, not formulaic
+- Include link: ${asset.resolvedUrl}`;
       }
-    }).join("\n");
+    }).join("\n\n");
 
-    const userPrompt = `Create a ${emailCount}-email nurture sequence using these assets:
+    const userPrompt = `Create a ${emailCount}-email nurture sequence using these assets in order:
 
 ${assetDescriptions}
 
-**Email Flow:**
-${emailRequirements}
+---
 
-**Remember:**
-- Maximum 120 words per email
-- Use the atomic snippets as specific proof points
-- No marketing jargon or hype
-- Write like you're helping a colleague
-- Generate exactly ${emailCount} emails, one for each asset`;
+INSTRUCTIONS FOR EACH EMAIL:
+
+${emailInstructions}
+
+---
+
+CRITICAL REMINDERS:
+- Use ONLY the atomic snippets provided—do not invent statistics, outcomes, or customer names
+- Keep each email under 120 words (count carefully)
+- Include the exact link provided for each email in plain text format
+- Write like a helpful colleague, not a marketer
+- No forbidden words or phrases
+- Subject lines must be benefit-focused and under 8 words
+
+Generate exactly ${emailCount} emails now.`;
 
     // Call OpenAI (increased max_tokens for up to 5 emails)
     const completion = await openai.chat.completions.parse({
@@ -209,57 +313,19 @@ ${emailRequirements}
       throw new Error(`AI returned ${result.emails?.length ?? 0} emails, expected ${emailCount}`);
     }
 
-    // Extract source URLs from atomicSnippets, fall back to presigned S3 URLs for uploaded files
-    const SEVEN_DAYS_IN_SECONDS = 7 * 24 * 60 * 60;
-    const assetsWithUrls = await Promise.all(
-      sortedAssets.map(async (asset) => {
-        let assetUrl: string | null = null;
-        
-        // Try to extract sourceUrl from atomicSnippets (for imported content)
-        const snippets = asset.atomicSnippets;
-        if (snippets) {
-          // Check for sourceUrl at top level (object format)
-          if (typeof snippets === 'object' && !Array.isArray(snippets) && (snippets as any).sourceUrl) {
-            assetUrl = (snippets as any).sourceUrl;
-          }
-          // Check first element if array
-          else if (Array.isArray(snippets) && snippets.length > 0) {
-            const firstItem = snippets[0];
-            if (typeof firstItem === 'object' && (firstItem as any).sourceUrl) {
-              assetUrl = (firstItem as any).sourceUrl;
-            }
-          }
-        }
-        
-        // If no sourceUrl found, generate presigned S3 URL (for uploaded files)
-        if (!assetUrl) {
-          try {
-            const s3Key = extractKeyFromS3Url(asset.s3Url);
-            if (s3Key) {
-              assetUrl = await getPresignedDownloadUrl(s3Key, SEVEN_DAYS_IN_SECONDS);
-            } else {
-              assetUrl = asset.s3Url;
-            }
-          } catch (error) {
-            console.error(`Failed to generate presigned URL for asset ${asset.id}:`, error);
-            assetUrl = asset.s3Url;
-          }
-        }
-        
-        return {
-          id: asset.id,
-          title: asset.title,
-          funnelStage: asset.funnelStage,
-          s3Url: assetUrl,
-          atomicSnippets: Array.isArray(asset.atomicSnippets) ? asset.atomicSnippets.slice(0, 5) : [],
-        };
-      })
-    );
+    // Use the already-resolved URLs from prompt preparation
+    const assetsForResponse = assetsWithUrlsForPrompt.map((asset) => ({
+      id: asset.id,
+      title: asset.title,
+      funnelStage: asset.funnelStage,
+      s3Url: asset.resolvedUrl,
+      atomicSnippets: Array.isArray(asset.atomicSnippets) ? asset.atomicSnippets.slice(0, 5) : [],
+    }));
 
     return NextResponse.json({
       success: true,
       sequence: {
-        assets: assetsWithUrls,
+        assets: assetsForResponse,
         emails: result.emails,
       },
     });
