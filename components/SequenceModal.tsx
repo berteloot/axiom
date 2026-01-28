@@ -17,7 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ChevronUp, ChevronDown, Copy, Check, Download, FileText, FileCode } from "lucide-react";
+import { ChevronUp, ChevronDown, Copy, Check, Download, FileText, FileCode, Loader2 } from "lucide-react";
 import { FunnelStage } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -45,6 +45,7 @@ interface SequenceModalProps {
   sequence: SequenceData | null;
   onReorder?: (newOrder: number[]) => void;
   onRegenerate?: () => void;
+  isRegenerating?: boolean;
 }
 
 const getStageColor = (stage: FunnelStage) => {
@@ -75,6 +76,7 @@ export function SequenceModal({
   sequence,
   onReorder,
   onRegenerate,
+  isRegenerating = false,
 }: SequenceModalProps) {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [localOrder, setLocalOrder] = useState<number[]>([]);
@@ -248,14 +250,24 @@ export function SequenceModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="mt-4 space-y-6">
+        <div className="mt-4 space-y-6 relative">
+          {/* Regenerating overlay */}
+          {isRegenerating && (
+            <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-10 flex items-center justify-center rounded-lg">
+              <div className="flex flex-col items-center gap-3">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <p className="text-sm text-muted-foreground">Regenerating emails...</p>
+              </div>
+            </div>
+          )}
+          
           {orderedEmails.map((email, index) => {
             const asset = orderedAssets[index];
             const isFirst = index === 0;
             const isLast = index === orderedEmails.length - 1;
 
             return (
-              <Card key={index} className="relative">
+              <Card key={index} className={cn("relative", isRegenerating && "opacity-50")}>
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
@@ -386,11 +398,25 @@ export function SequenceModal({
 
           <div className="flex gap-2">
             {onRegenerate && (
-              <Button variant="outline" onClick={onRegenerate}>
-                Regenerate Sequence
+              <Button 
+                variant="outline" 
+                onClick={onRegenerate}
+                disabled={isRegenerating}
+                className="gap-2"
+              >
+                {isRegenerating ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Regenerating...
+                  </>
+                ) : (
+                  "Regenerate Sequence"
+                )}
               </Button>
             )}
-            <Button onClick={() => onOpenChange(false)}>Done</Button>
+            <Button onClick={() => onOpenChange(false)} disabled={isRegenerating}>
+              Done
+            </Button>
           </div>
         </div>
       </DialogContent>

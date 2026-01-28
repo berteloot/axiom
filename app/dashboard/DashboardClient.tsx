@@ -1287,6 +1287,7 @@ export default function DashboardClient() {
         sequence={sequenceData}
         onReorder={handleSequenceReorder}
         onRegenerate={handleRegenerateSequence}
+        isRegenerating={isDraftingSequence}
       />
 
       <CriticalGapsModal
