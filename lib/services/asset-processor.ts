@@ -216,12 +216,13 @@ export async function processAssetAsync(
         outreachTip: analysis.outreachTip,
         atomicSnippets: finalAtomicSnippets as any, // Prisma Json type - includes preserved sourceUrl
         contentQualityScore: analysis.contentQualityScore,
+        applicableIndustries: analysis.applicableIndustries || [], // AI-extracted industries
         // expiryDate is not set - user must set it manually
         dominantColor: dominantColor, // Store extracted dominant color
         status: "PROCESSED",
         // Traceability fields
         aiModel: "gpt-4o-2024-08-06", // Model used for analysis
-        promptVersion: "3.0", // Waterfall logic + multi-product support
+        promptVersion: "3.1", // Added industry extraction
         analyzedAt: new Date(), // When AI analysis was performed
         aiConfidence: analysis.contentQualityScore ? analysis.contentQualityScore / 100 : null, // Convert 0-100 to 0-1
       },

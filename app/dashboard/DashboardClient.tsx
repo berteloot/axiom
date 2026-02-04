@@ -83,6 +83,9 @@ function parseFiltersFromUrl(searchParams: URLSearchParams): Partial<AssetFilter
   
   const assetType = searchParams.get("assetType");
   if (assetType) filters.assetTypes = assetType.split(",");
+
+  const industry = searchParams.get("industry");
+  if (industry) filters.industries = industry.split(",");
   
   const color = searchParams.get("color");
   if (color) {
@@ -259,6 +262,7 @@ export default function DashboardClient() {
       painClusters: urlFilters.painClusters ?? [],
       productLines: urlFilters.productLines ?? [],
       assetTypes: urlFilters.assetTypes ?? [],
+      industries: urlFilters.industries ?? [],
       color: urlFilters.color ?? "",
       inUse: urlFilters.inUse ?? "all",
       uploadedBy: urlFilters.uploadedBy ?? [],
@@ -283,6 +287,7 @@ export default function DashboardClient() {
         painClusters: urlFilters.painClusters ?? [],
         productLines: urlFilters.productLines ?? [],
         assetTypes: urlFilters.assetTypes ?? [],
+        industries: urlFilters.industries ?? [],
         color: urlFilters.color ?? "",
         inUse: urlFilters.inUse ?? "all",
         uploadedBy: urlFilters.uploadedBy ?? [],

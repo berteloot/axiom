@@ -48,6 +48,7 @@ export interface AssetFiltersState {
   painClusters: string[];
   productLines: string[]; // Product/Service line IDs
   assetTypes: string[]; // Asset types (e.g., "Case Study", "Whitepaper")
+  industries: string[]; // Applicable industries (e.g., "Hospital & Health Care", "Financial Services")
   color: string; // Hex color code for filtering (e.g., "#FF5733")
   inUse: InUseFilter; // Filter by in use status
   uploadedBy: string[]; // User IDs who uploaded assets
@@ -110,6 +111,7 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
   const filterOptions = useMemo(() => {
     const icpTargets = new Set<string>();
     const painClusters = new Set<string>();
+    const industries = new Set<string>();
     const productLines = new Map<string, string>(); // id -> name
     const users = new Map<string, string>(); // id -> name
 
@@ -119,6 +121,9 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
       }
       if (asset.painClusters && asset.painClusters.length > 0) {
         asset.painClusters.forEach((cluster) => painClusters.add(cluster));
+      }
+      if (asset.applicableIndustries && asset.applicableIndustries.length > 0) {
+        asset.applicableIndustries.forEach((industry) => industries.add(industry));
       }
       if (asset.productLines && asset.productLines.length > 0) {
         asset.productLines.forEach((pl) => {
@@ -133,6 +138,7 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
     return {
       icpTargets: Array.from(icpTargets).sort(),
       painClusters: Array.from(painClusters).sort(),
+      industries: Array.from(industries).sort(),
       productLines: Array.from(productLines.entries())
         .map(([id, name]) => ({ id, name }))
         .sort((a, b) => a.name.localeCompare(b.name)),
@@ -160,6 +166,7 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
       painClusters: [],
       productLines: [],
       assetTypes: [],
+      industries: [],
       color: "",
       inUse: "all",
       uploadedBy: [],
@@ -176,6 +183,7 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
     filters.painClusters.length +
     filters.productLines.length +
     filters.assetTypes.length +
+    (filters.industries?.length || 0) +
     (filters.search ? 1 : 0) +
     (filters.color ? 1 : 0) +
     (filters.inUse !== "all" ? 1 : 0) +
@@ -373,6 +381,19 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
               />
             </div>
 
+            {/* Industry Filter */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Industry</label>
+              <MultiSelectCombobox
+                options={filterOptions.industries}
+                value={filters.industries || []}
+                onChange={(selected) => updateFilters({ industries: selected })}
+                placeholder="All industries"
+                searchPlaceholder="Search industries..."
+                emptyText="No industries found"
+              />
+            </div>
+
             {/* In Use Filter */}
             <div className="space-y-2">
               <label className="text-sm font-medium flex items-center gap-1.5">
@@ -547,6 +568,22 @@ export function AssetFilters({ assets, filters, onFiltersChange }: AssetFiltersP
                 }
                 className="ml-1 hover:bg-destructive/20 rounded-full p-0.5"
                 aria-label={`Remove ${assetType} filter`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          ))}
+          {filters.industries?.map((industry) => (
+            <Badge key={industry} variant="secondary" className="gap-1">
+              Industry: {industry}
+              <button
+                onClick={() =>
+                  updateFilters({
+                    industries: filters.industries.filter((i) => i !== industry),
+                  })
+                }
+                className="ml-1 hover:bg-destructive/20 rounded-full p-0.5"
+                aria-label={`Remove ${industry} filter`}
               >
                 <X className="h-3 w-3" />
               </button>
@@ -754,6 +791,14 @@ export function applyAssetFilters(assets: Asset[], filters: AssetFiltersState): 
   if (filters.assetTypes.length > 0) {
     filtered = filtered.filter((asset) =>
       asset.assetType && filters.assetTypes.includes(asset.assetType)
+    );
+  }
+
+  // Industry filter
+  if (filters.industries && filters.industries.length > 0) {
+    filtered = filtered.filter((asset) =>
+      asset.applicableIndustries && asset.applicableIndustries.length > 0 && 
+      asset.applicableIndustries.some((industry) => filters.industries.includes(industry))
     );
   }
 

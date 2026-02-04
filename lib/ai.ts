@@ -138,6 +138,10 @@ const BaseAnalysisSchema = z.object({
       message: "Invalid date: must be a valid calendar date (e.g., '2026-02-30' is invalid)",
     })
     .describe("ISO Date string (YYYY-MM-DD format only). When will this content likely become outdated? Consider asset type (News = 6 months, Evergreen = 2 years). Must be a valid calendar date."),
+    
+  applicableIndustries: z.array(z.string())
+    .max(5)
+    .describe("Industries where this asset would be most relevant based on content analysis. Use standard industry names (e.g., 'Hospital & Health Care', 'Financial Services', 'Computer Software'). Extract from: explicit industry mentions, compliance frameworks (HIPAA→Healthcare), terminology patterns, role mentions, customer examples. Maximum 5 industries."),
 });
 
 // Function to create dynamic schema based on available product lines
@@ -161,6 +165,7 @@ function createAnalysisSchema(productLineIds: string[]) {
 // Note: This represents the structure, but matchedProductLineId will be validated dynamically
 export type AnalysisResult = z.infer<typeof BaseAnalysisSchema> & {
   matchedProductLineId: string | null;
+  applicableIndustries: string[];
 };
 
 const BASE_SYSTEM_PROMPT = `You are a Senior B2B Marketing Strategist. 
@@ -278,6 +283,43 @@ STRATEGY GUIDELINES:
    - Do NOT confuse Playbooks with Whitepapers - Playbooks are more tactical and action-oriented.
 
 4. **Outreach**: Write the hook as if you are a rep sending a personal note to a prospect.
+
+5. **Applicable Industries** (EXTRACTION RULES):
+   Identify industries where this asset would be most relevant. Look for these signals in the content:
+   
+   **EXPLICIT MENTIONS:**
+   - Direct industry names: "healthcare organizations", "financial institutions", "manufacturing companies"
+   - Vertical-specific terminology: "patient data", "loan origination", "supply chain"
+   
+   **COMPLIANCE/REGULATION SIGNALS:**
+   - HIPAA, HL7, FHIR → Hospital & Health Care
+   - SOX, Basel III, AML, KYC → Banking, Financial Services
+   - GDPR → Applies broadly, check other signals
+   - PCI-DSS → Retail, Financial Services
+   - FDA 21 CFR Part 11 → Pharmaceuticals, Biotechnology, Medical Devices
+   - FedRAMP, ITAR → Government Administration, Defense & Space
+   - SOC 2, ISO 27001 → Broadly applicable (IT/Security focus)
+   
+   **ROLE-BASED SIGNALS:**
+   - Chief Medical Officer, Clinical Director → Hospital & Health Care
+   - Chief Investment Officer, Portfolio Manager → Investment Management
+   - Plant Manager, Manufacturing Engineer → Industrial Automation, Machinery
+   - Retail Operations Director, Store Manager → Retail
+   
+   **TECHNOLOGY SIGNALS:**
+   - EMR, EHR, PACS → Hospital & Health Care
+   - Core Banking, Payment Processing → Banking, Financial Services
+   - ERP, MES, SCADA → Industrial Automation, Manufacturing
+   - CRM, Marketing Automation → Broadly applicable
+   
+   **CUSTOMER EXAMPLE SIGNALS:**
+   - If case studies mention specific industry customers, include those industries
+   
+   **OUTPUT FORMAT:**
+   - Use standard industry names aligned with common taxonomies
+   - Examples: "Hospital & Health Care", "Financial Services", "Computer Software", "Retail", "Manufacturing", "Insurance", "Telecommunications"
+   - Maximum 5 industries per asset
+   - If truly industry-agnostic (e.g., generic productivity content), use broad categories like "Information Technology & Services"
 
 *** SNIPPET EXTRACTION RULES ***
 Your goal is to "mine" the document for "Atomic Content" that a salesperson or marketer would want to copy-paste.
@@ -570,6 +612,11 @@ Remember: Analyze the actual content above to determine funnel stage, ICP target
         : null,
       // Date is already validated by Zod - use as-is (asset-processor will convert to Date for Prisma)
       suggestedExpiryDate: result.suggestedExpiryDate,
+      // Normalize applicable industries: dedupe, trim, limit to 5
+      applicableIndustries: dedupeArray(result.applicableIndustries || [])
+        .map(industry => industry.trim())
+        .filter(industry => industry.length > 0 && industry.length < 100)
+        .slice(0, 5),
     };
 
     return normalized;

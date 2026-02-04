@@ -52,6 +52,8 @@ export interface Asset {
   uploadedByNameOverride?: string | null; // Custom name override for uploader
   // Product lines relation (many-to-many)
   productLines?: ProductLine[]; // Product/Service lines this asset belongs to
+  // Industry targeting
+  applicableIndustries?: string[]; // Industries where this asset is relevant (extracted by AI)
 }
 
 export interface TranscriptSegment {

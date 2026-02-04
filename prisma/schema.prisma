@@ -292,6 +292,7 @@ model Asset {
   inUse               Boolean     @default(false) // Whether the asset is currently being used
   uploadedById        String? // User who uploaded this asset
   uploadedByNameOverride String? // Custom name override for uploader (if different from user's name)
+  applicableIndustries String[] // Industries where this asset is relevant (extracted by AI from content)
 
   // Relations
   account            Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)

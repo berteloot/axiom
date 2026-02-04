@@ -56,22 +56,22 @@ const STAGE_HELPERS: Record<FunnelStage, { title: string; description: string; e
   TOFU_AWARENESS: {
     title: "Top of Funnel (TOFU)",
     description: "Content that attracts new audiences. The goal is visibility and awareness.",
-    examples: ["Blog posts", "Audiocasts", "Infographics", "Industry newsletters"],
+    examples: ["Blog posts", "Podcasts", "Infographics", "Industry newsletters", "Trend reports"],
   },
   MOFU_CONSIDERATION: {
     title: "Middle of Funnel (MOFU)",
-    description: "Content that educates and builds trust.",
-    examples: ["Whitepapers", "Webinars", "Customer success stories"],
+    description: "Content that educates and builds trust. Buyer is comparing approaches.",
+    examples: ["Whitepapers", "Webinars", "Case studies (narrative)", "Solution briefs", "Feature comparisons"],
   },
   BOFU_DECISION: {
     title: "Bottom of Funnel (BOFU)",
-    description: "Assets that support decision-making.",
-    examples: ["Product demos", "Comparison guides", "Pricing documents", "Personalized consultations"],
+    description: "Assets that support decision-making. Buyer is validating ROI and reducing risk.",
+    examples: ["Case studies with ROI metrics", "Product demos", "Pricing documents", "ROI calculators", "Implementation guides"],
   },
   RETENTION: {
     title: "Retention",
     description: "Content designed to keep customers engaged and loyal.",
-    examples: ["Onboarding tutorials", "Newsletters", "Product updates", "Upsell campaigns"],
+    examples: ["Onboarding tutorials", "Customer newsletters", "Product updates", "Upsell campaigns", "Advanced guides"],
   },
 };
 
