@@ -492,6 +492,7 @@ export function AssetTable({
               <TableHead className="w-20 px-2">Type</TableHead>
               <TableHead className="w-24 px-2">Product</TableHead>
               <TableHead className="w-24 px-2">ICP</TableHead>
+              <TableHead className="w-24 px-2">Industry</TableHead>
               <TableHead className="w-20 px-2">Stage</TableHead>
               <TableHead className="w-24 px-2">Status</TableHead>
               <TableHead className="w-24 px-2">Uploaded By</TableHead>
@@ -670,6 +671,53 @@ export function AssetTable({
                                   .map((target, idx) => (
                                     <Badge key={idx} variant="outline" className="text-xs">
                                       {target}
+                                    </Badge>
+                                  ))}
+                              </div>
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      )
+                    ) : (
+                      <span className="text-muted-foreground text-xs">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="w-24 px-2">
+                    {asset.applicableIndustries && Array.isArray(asset.applicableIndustries) && asset.applicableIndustries.length > 0 ? (
+                      asset.applicableIndustries.length === 1 ? (
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] px-1.5 py-0 truncate max-w-full bg-indigo-50 text-indigo-700 border-indigo-200"
+                          title={asset.applicableIndustries[0] || ""}
+                        >
+                          {asset.applicableIndustries[0] || "—"}
+                        </Badge>
+                      ) : (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <button
+                              type="button"
+                              className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 text-indigo-700 px-1.5 py-0 text-[10px] font-semibold leading-5 transition-colors hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 truncate max-w-full"
+                              aria-label={`View industries (${asset.applicableIndustries.length})`}
+                              title={`View all ${asset.applicableIndustries.length} industries`}
+                            >
+                              {asset.applicableIndustries[0] || "—"} +{asset.applicableIndustries.length - 1}
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent
+                            className="w-64 p-3"
+                            align="start"
+                          >
+                            <div className="space-y-2">
+                              <div className="text-sm font-semibold">
+                                Industries ({asset.applicableIndustries.length})
+                              </div>
+                              <div className="flex flex-wrap gap-1.5">
+                                {asset.applicableIndustries
+                                  .filter(industry => industry && typeof industry === "string")
+                                  .map((industry, idx) => (
+                                    <Badge key={idx} variant="outline" className="text-xs bg-indigo-50 text-indigo-700 border-indigo-200">
+                                      {industry}
                                     </Badge>
                                   ))}
                               </div>
