@@ -111,10 +111,13 @@ function DashboardGoogleAdsContent() {
     let cancelled = false;
     setCampaignsLoading(true);
     setCampaignsError(null);
-    const firstCustomerId = resourceNames.length > 0 ? resourceNames[0].replace(/^customers\//, "") : null;
+    const allIds = resourceNames.map((rn) => rn.replace(/^customers\//, ""));
+    const firstCustomerId = allIds[0] ?? null;
+    const otherIds = allIds.filter((id) => id !== selectedCustomerId);
     const loginParam = firstCustomerId && firstCustomerId !== selectedCustomerId ? `&loginCustomerId=${encodeURIComponent(firstCustomerId)}` : "";
+    const candidatesParam = otherIds.length > 0 ? `&loginCandidateIds=${encodeURIComponent(otherIds.join(","))}` : "";
     fetch(
-      `/api/integrations/google-ads/campaigns?accountId=${currentAccount.id}&customerId=${encodeURIComponent(selectedCustomerId)}${loginParam}`,
+      `/api/integrations/google-ads/campaigns?accountId=${currentAccount.id}&customerId=${encodeURIComponent(selectedCustomerId)}${loginParam}${candidatesParam}`,
       { headers: { "X-Suppress-Error-Log": "true" } }
     )
       .then(async (res) => {
