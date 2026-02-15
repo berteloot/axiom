@@ -101,13 +101,22 @@ export async function listAccessibleCustomers(
 /**
  * Get a Customer instance for running reports/queries.
  * customerId: Google Ads customer ID without dashes (e.g. "1234567890").
+ * loginCustomerId: optional manager (MCC) customer ID when querying a child account.
  */
-export async function getCustomerInstance(accountId: string, customerId: string) {
+export async function getCustomerInstance(
+  accountId: string,
+  customerId: string,
+  loginCustomerId?: string
+) {
   const conn = await getConnection(accountId);
   if (!conn) return null;
   const client = createClient();
-  return client.Customer({
+  const opts: { customer_id: string; refresh_token: string; login_customer_id?: string } = {
     customer_id: customerId.replace(/-/g, ""),
     refresh_token: conn.refreshToken,
-  });
+  };
+  if (loginCustomerId) {
+    opts.login_customer_id = loginCustomerId.replace(/-/g, "");
+  }
+  return client.Customer(opts);
 }

@@ -30,6 +30,7 @@ function DashboardGoogleAdsContent() {
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
   const [campaigns, setCampaigns] = useState<{ id?: string; name?: string; status?: string; advertisingChannelType?: string }[]>([]);
   const [campaignsLoading, setCampaignsLoading] = useState(false);
+  const [campaignsError, setCampaignsError] = useState<string | null>(null);
 
   // Read callback params
   useEffect(() => {
@@ -100,24 +101,38 @@ function DashboardGoogleAdsContent() {
     };
   }, [currentAccount?.id, status?.connected]);
 
-  // When a customer is selected, fetch campaigns
+  // When a customer is selected, fetch campaigns. Pass first account as login (MCC) when selecting others.
   useEffect(() => {
     if (!currentAccount?.id || !selectedCustomerId) {
       setCampaigns([]);
+      setCampaignsError(null);
       return;
     }
     let cancelled = false;
     setCampaignsLoading(true);
+    setCampaignsError(null);
+    const firstCustomerId = resourceNames.length > 0 ? resourceNames[0].replace(/^customers\//, "") : null;
+    const loginParam = firstCustomerId && firstCustomerId !== selectedCustomerId ? `&loginCustomerId=${encodeURIComponent(firstCustomerId)}` : "";
     fetch(
-      `/api/integrations/google-ads/campaigns?accountId=${currentAccount.id}&customerId=${encodeURIComponent(selectedCustomerId)}`,
+      `/api/integrations/google-ads/campaigns?accountId=${currentAccount.id}&customerId=${encodeURIComponent(selectedCustomerId)}${loginParam}`,
       { headers: { "X-Suppress-Error-Log": "true" } }
     )
-      .then((res) => (res.ok ? res.json() : { campaigns: [] }))
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          if (!cancelled) setCampaignsError((data.error as string) || "Failed to load campaigns.");
+          return { campaigns: [] };
+        }
+        return data;
+      })
       .then((data) => {
         if (!cancelled) setCampaigns(data.campaigns || []);
       })
       .catch(() => {
-        if (!cancelled) setCampaigns([]);
+        if (!cancelled) {
+          setCampaigns([]);
+          setCampaignsError("Failed to load campaigns.");
+        }
       })
       .finally(() => {
         if (!cancelled) setCampaignsLoading(false);
@@ -125,7 +140,7 @@ function DashboardGoogleAdsContent() {
     return () => {
       cancelled = true;
     };
-  }, [currentAccount?.id, selectedCustomerId]);
+  }, [currentAccount?.id, selectedCustomerId, resourceNames]);
 
   const handleConnect = () => {
     if (!currentAccount?.id) return;
@@ -285,14 +300,22 @@ function DashboardGoogleAdsContent() {
                 {selectedCustomerId && (
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Campaigns</label>
+                    {campaignsError && (
+                      <Alert variant="destructive" className="py-2">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertDescription>{campaignsError}</AlertDescription>
+                      </Alert>
+                    )}
                     {campaignsLoading ? (
                       <div className="flex items-center gap-2 text-muted-foreground py-4">
                         <Loader2 className="h-4 w-4 animate-spin" />
                         <span>Loading campaigns…</span>
                       </div>
-                    ) : campaigns.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No campaigns found.</p>
-                    ) : (
+                    ) : campaigns.length === 0 && !campaignsError ? (
+                      <p className="text-sm text-muted-foreground">
+                        No campaigns in this account. If this is a manager (MCC) account, select a child account above to see campaigns.
+                      </p>
+                    ) : campaigns.length > 0 ? (
                       <ul className="rounded-lg border divide-y max-h-64 overflow-y-auto">
                         {campaigns.map((c) => (
                           <li
@@ -306,7 +329,7 @@ function DashboardGoogleAdsContent() {
                           </li>
                         ))}
                       </ul>
-                    )}
+                    ) : null}
                   </div>
                 )}
               </>

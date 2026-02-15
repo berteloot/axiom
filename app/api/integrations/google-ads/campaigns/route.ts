@@ -6,8 +6,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * GET /api/integrations/google-ads/campaigns?accountId=...&customerId=...
+ * GET /api/integrations/google-ads/campaigns?accountId=...&customerId=...&loginCustomerId=... (optional)
  * customerId: Google Ads customer ID (with or without dashes).
+ * loginCustomerId: optional manager (MCC) ID when the selected account is a child.
  * Returns list of campaigns (id, name, status, type) for the connected account.
  */
 export async function GET(request: NextRequest) {
@@ -16,6 +17,7 @@ export async function GET(request: NextRequest) {
       request.nextUrl.searchParams.get("accountId") ||
       (await getCurrentAccountId(request));
     const customerId = request.nextUrl.searchParams.get("customerId");
+    const loginCustomerId = request.nextUrl.searchParams.get("loginCustomerId") ?? undefined;
     if (!accountId) {
       return NextResponse.json(
         { error: "accountId required or no account selected" },
@@ -29,7 +31,7 @@ export async function GET(request: NextRequest) {
       );
     }
     await requireAccountAccess(request, accountId);
-    const customer = await getCustomerInstance(accountId, customerId);
+    const customer = await getCustomerInstance(accountId, customerId, loginCustomerId);
     if (!customer) {
       return NextResponse.json(
         { error: "Google Ads not connected for this account" },
