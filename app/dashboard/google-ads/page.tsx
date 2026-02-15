@@ -6,7 +6,14 @@ import { useAccount } from "@/lib/account-context";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { BarChart3, Link2, Unlink, Loader2, CheckCircle, AlertCircle } from "lucide-react";
+import { BarChart3, Link2, Unlink, Loader2, CheckCircle, AlertCircle, List } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 function DashboardGoogleAdsContent() {
   const { currentAccount } = useAccount();
@@ -19,6 +26,10 @@ function DashboardGoogleAdsContent() {
   const [loading, setLoading] = useState(true);
   const [disconnecting, setDisconnecting] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [resourceNames, setResourceNames] = useState<string[]>([]);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
+  const [campaigns, setCampaigns] = useState<{ id?: string; name?: string; status?: string; advertisingChannelType?: string }[]>([]);
+  const [campaignsLoading, setCampaignsLoading] = useState(false);
 
   // Read callback params
   useEffect(() => {
@@ -65,6 +76,56 @@ function DashboardGoogleAdsContent() {
       cancelled = true;
     };
   }, [currentAccount?.id]);
+
+  // When connected, fetch accessible Google Ads accounts
+  useEffect(() => {
+    if (!currentAccount?.id || !status?.connected) {
+      setResourceNames([]);
+      setSelectedCustomerId("");
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/integrations/google-ads/accounts?accountId=${currentAccount.id}`, {
+      headers: { "X-Suppress-Error-Log": "true" },
+    })
+      .then((res) => (res.ok ? res.json() : { resourceNames: [] }))
+      .then((data) => {
+        if (!cancelled) setResourceNames(data.resourceNames || []);
+      })
+      .catch(() => {
+        if (!cancelled) setResourceNames([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentAccount?.id, status?.connected]);
+
+  // When a customer is selected, fetch campaigns
+  useEffect(() => {
+    if (!currentAccount?.id || !selectedCustomerId) {
+      setCampaigns([]);
+      return;
+    }
+    let cancelled = false;
+    setCampaignsLoading(true);
+    fetch(
+      `/api/integrations/google-ads/campaigns?accountId=${currentAccount.id}&customerId=${encodeURIComponent(selectedCustomerId)}`,
+      { headers: { "X-Suppress-Error-Log": "true" } }
+    )
+      .then((res) => (res.ok ? res.json() : { campaigns: [] }))
+      .then((data) => {
+        if (!cancelled) setCampaigns(data.campaigns || []);
+      })
+      .catch(() => {
+        if (!cancelled) setCampaigns([]);
+      })
+      .finally(() => {
+        if (!cancelled) setCampaignsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentAccount?.id, selectedCustomerId]);
 
   const handleConnect = () => {
     if (!currentAccount?.id) return;
@@ -183,6 +244,76 @@ function DashboardGoogleAdsContent() {
           )}
         </CardContent>
       </Card>
+
+      {status?.connected && currentAccount?.id && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <List className="h-5 w-5" />
+              Account & campaigns
+            </CardTitle>
+            <CardDescription>
+              Choose a Google Ads account to view its campaigns. Use this data in PPC and Ad Copy later.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {resourceNames.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Loading accounts…</p>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Google Ads account</label>
+                  <Select
+                    value={selectedCustomerId}
+                    onValueChange={(v) => setSelectedCustomerId(v)}
+                  >
+                    <SelectTrigger className="w-full max-w-md">
+                      <SelectValue placeholder="Select an account" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {resourceNames.map((rn) => {
+                        const customerId = rn.replace(/^customers\//, "");
+                        return (
+                          <SelectItem key={rn} value={customerId}>
+                            {customerId} {rn}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {selectedCustomerId && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Campaigns</label>
+                    {campaignsLoading ? (
+                      <div className="flex items-center gap-2 text-muted-foreground py-4">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Loading campaigns…</span>
+                      </div>
+                    ) : campaigns.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No campaigns found.</p>
+                    ) : (
+                      <ul className="rounded-lg border divide-y max-h-64 overflow-y-auto">
+                        {campaigns.map((c) => (
+                          <li
+                            key={c.id}
+                            className="px-4 py-2 flex items-center justify-between text-sm"
+                          >
+                            <span className="font-medium truncate">{c.name || c.id}</span>
+                            <span className="text-muted-foreground shrink-0 ml-2">
+                              {c.advertisingChannelType || c.status || ""}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
