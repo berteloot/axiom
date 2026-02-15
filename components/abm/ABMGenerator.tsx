@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Sparkles, Bot, Copy, Check } from "lucide-react";
+import { Loader2, Sparkles, Bot, Copy, Check, Download, Upload, ChevronLeft, ChevronRight } from "lucide-react";
+import { saveAs } from "file-saver";
+import { parseABMCSV, type CSVAccountRow } from "@/lib/abm/parse-csv";
 
 type ABMResult = {
   accountBrief: {
@@ -41,6 +43,10 @@ export function ABMGenerator() {
     agentProof?: { backend: string; steps: Array<{ agent: string; model?: string }> };
   } | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [csvRows, setCsvRows] = useState<CSVAccountRow[]>([]);
+  const [csvRowIndex, setCsvRowIndex] = useState(0);
+  const csvInputRef = useRef<HTMLInputElement>(null);
 
   const inputClass =
     "h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -66,6 +72,37 @@ export function ABMGenerator() {
     run();
     return () => { cancelled = true; };
   }, []);
+
+  const applyRowToForm = (row: CSVAccountRow) => {
+    setCompanyName(row.companyName);
+    setIndustry(row.industry);
+    setTargetRole(row.targetRole);
+    setKeyContacts(row.keyContacts);
+  };
+
+  const handleCSVUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !file.name.toLowerCase().endsWith(".csv")) {
+      setError("Please select a CSV file.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result ?? "");
+      const rows = parseABMCSV(text);
+      e.target.value = "";
+      if (rows.length === 0) {
+        setError("No valid accounts found in CSV. Ensure headers: Company, Industry, Target Role, Key Contacts.");
+        return;
+      }
+      setError(null);
+      setCsvRows(rows);
+      setCsvRowIndex(0);
+      applyRowToForm(rows[0]);
+      setResult(null);
+    };
+    reader.readAsText(file, "UTF-8");
+  };
 
   const canGenerate =
     companyName.trim().length > 0 &&
@@ -112,6 +149,36 @@ export function ABMGenerator() {
     }).catch(() => setError("Could not copy to clipboard"));
   };
 
+  const handleExportExcel = async () => {
+    if (!result) return;
+    setIsExporting(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/abm/export-excel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          result: result.result,
+          companyName: companyName.trim() || "Account",
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Export failed.");
+        return;
+      }
+      const blob = await res.blob();
+      const filename =
+        res.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] ??
+        `ABM_${companyName.replace(/\s+/g, "_")}_${Date.now()}.xlsx`;
+      saveAs(blob, filename);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Export failed.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
       {/* Form */}
@@ -126,6 +193,86 @@ export function ABMGenerator() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* CSV upload */}
+            <div className="space-y-2">
+              <Label className={labelClass}>Upload CSV</Label>
+              <input
+                ref={csvInputRef}
+                type="file"
+                accept=".csv"
+                className="hidden"
+                onChange={handleCSVUpload}
+              />
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => csvInputRef.current?.click()}
+                >
+                  <Upload className="h-4 w-4" />
+                  Upload CSV
+                </Button>
+                {csvRows.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      disabled={csvRowIndex <= 0}
+                      onClick={() => {
+                        const next = csvRowIndex - 1;
+                        setCsvRowIndex(next);
+                        applyRowToForm(csvRows[next]);
+                        setResult(null);
+                      }}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <span className="text-sm text-muted-foreground">
+                      Account {csvRowIndex + 1} of {csvRows.length}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      disabled={csvRowIndex >= csvRows.length - 1}
+                      onClick={() => {
+                        const next = csvRowIndex + 1;
+                        setCsvRowIndex(next);
+                        applyRowToForm(csvRows[next]);
+                        setResult(null);
+                      }}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground"
+                      onClick={() => {
+                        setCsvRows([]);
+                        setCsvRowIndex(0);
+                        setCompanyName("");
+                        setIndustry("");
+                        setTargetRole("");
+                        setKeyContacts("");
+                      }}
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                CSV with columns: Company, Industry, Target Role, Key Contacts
+              </p>
+            </div>
+
             <div className="grid gap-2">
               <Label htmlFor="company" className={labelClass}>Target company name *</Label>
               <Input
@@ -247,16 +394,32 @@ export function ABMGenerator() {
         {result && (
           <Card className="border border-border bg-card text-card-foreground shadow-md">
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-foreground">Generated content</CardTitle>
-                {result.agentProof && (
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Bot className="h-4 w-4" />
-                    {result.agentProof.backend === "skills-enhanced"
-                      ? "Claude Agent Skills"
-                      : "Claude"}
-                  </div>
-                )}
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-foreground">Generated content</CardTitle>
+                  {result.agentProof && (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Bot className="h-4 w-4" />
+                      {result.agentProof.backend === "skills-enhanced"
+                        ? "Claude Agent Skills"
+                        : "Claude"}
+                    </div>
+                  )}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleExportExcel}
+                  disabled={isExporting}
+                  className="gap-2 w-fit"
+                >
+                  {isExporting ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4" />
+                  )}
+                  {isExporting ? "Exporting…" : "Export Excel"}
+                </Button>
               </div>
             </CardHeader>
             <CardContent className="space-y-6">
