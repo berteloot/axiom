@@ -1,20 +1,12 @@
 services:
-  # PostgreSQL Database
-  - type: pspg
-    name: asset-organizer-db
-    databaseName: asset_organizer
-    user: asset_organizer_user
-    plan: starter  # Free tier, upgrade as needed
-    region: oregon  # Choose your preferred region
-    postgresMajorVersion: 15
-
   # Next.js Web Service
   - type: web
     name: asset-organizer
     runtime: node
-    plan: starter  # Free tier, upgrade as needed
-    region: oregon  # Should match database region
+    plan: starter
+    region: oregon
     buildCommand: npm ci && npx prisma generate && npm run build
+    preDeployCommand: npx prisma migrate deploy
     startCommand: npm start
     healthCheckPath: /
     envVars:
@@ -65,3 +57,26 @@ services:
         sync: false
       - key: DATAFORSEO_PASSWORD
         sync: false
+
+      # Ad Copy (Claude / Anthropic)
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: AD_COPY_SKILL_ID
+        sync: false
+
+      # Website/Blog extraction (optional)
+      - key: FIRECRAWL_API_KEY
+        sync: false
+      - key: SCRAPFLY_API_KEY
+        sync: false
+
+      # Email sender (alternative to EMAIL_FROM)
+      - key: FROM_EMAIL
+        sync: false
+
+databases:
+  - name: asset-organizer-db
+    databaseName: asset_organizer
+    user: asset_organizer_user
+    plan: starter
+    region: oregon

@@ -15,13 +15,16 @@
     "db:setup": "npx tsx scripts/setup-database.ts",
     "db:push": "prisma db push",
     "db:verify-permissions": "npx tsx scripts/verify-db-permissions.ts",
-    "test:firecrawl": "npx tsx scripts/test-firecrawl.ts"
+    "test:firecrawl": "npx tsx scripts/test-firecrawl.ts",
+    "ad-copy:upload-skill": "npx tsx scripts/upload-ad-copy-skill.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.42",
+    "@anthropic-ai/sdk": "^0.74.0",
     "@auth/prisma-adapter": "^2.11.1",
     "@aws-sdk/client-s3": "^3.958.0",
     "@aws-sdk/lib-storage": "^3.962.0",

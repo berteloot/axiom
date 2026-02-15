@@ -709,6 +709,10 @@ export function applyAssetFilters(assets: Asset[], filters: AssetFiltersState): 
             const customNameMatch = safeIncludes((asset as any).uploadedByNameOverride);
             const contentMatch = safeIncludes(asset.extractedText);
             
+            // Check if search matches any industry
+            const industryMatch = asset.applicableIndustries && Array.isArray(asset.applicableIndustries) &&
+              asset.applicableIndustries.some(industry => safeIncludes(industry));
+            
             // Check if search matches date format or date string (with comprehensive error handling)
             let dateMatch = false;
             try {
@@ -737,7 +741,7 @@ export function applyAssetFilters(assets: Asset[], filters: AssetFiltersState): 
               // Silently ignore date parsing errors
             }
             
-            return titleMatch || userMatch || customNameMatch || contentMatch || dateMatch;
+            return titleMatch || userMatch || customNameMatch || contentMatch || dateMatch || industryMatch;
           } catch (error) {
             // If any error occurs during filtering, exclude this asset to prevent crashes
             console.warn("Error filtering asset:", asset.id, error);

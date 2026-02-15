@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      margin: 0;
+      padding: 16px;
+      font-size: 12px;
+      color: #333;
+    }
+    h2 {
+      margin: 0 0 12px 0;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .section {
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      margin-bottom: 4px;
+      font-weight: 500;
+      color: #666;
+    }
+    textarea {
+      width: 100%;
+      min-height: 120px;
+      padding: 8px;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      font-size: 11px;
+      font-family: monospace;
+      resize: vertical;
+    }
+    button {
+      width: 100%;
+      padding: 10px 16px;
+      margin-top: 8px;
+      background: #7c3aed;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    button:hover { background: #6d28d9; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    .hint {
+      font-size: 10px;
+      color: #888;
+      margin-top: 4px;
+    }
+    .success { color: #059669; }
+    .error { color: #dc2626; }
+  </style>
+</head>
+<body>
+  <h2>Ad Creative Variations</h2>
+  <p class="hint">Paste headlines and descriptions, then select a frame. The plugin duplicates the frame and fills text layers with each variation.</p>
+
+  <div class="section">
+    <label for="copy-input">Headlines (one per line, max 30 chars for RSA)</label>
+    <textarea id="headlines" placeholder="e.g.&#10;Best Project Management Tool&#10;Team Collaboration Made Easy"></textarea>
+  </div>
+
+  <div class="section">
+    <label for="copy-input">Descriptions (one per line, max 90 chars for RSA)</label>
+    <textarea id="descriptions" placeholder="e.g.&#10;Streamline your workflow. Start free today.&#10;Get your team aligned in minutes."></textarea>
+  </div>
+
+  <div class="section">
+    <label>Or paste JSON from Asset Organizer:</label>
+    <textarea id="json-input" placeholder='{"headlines": ["..."], "descriptions": ["..."]}'></textarea>
+    <p class="hint">Paste the full JSON output from Ad Copy Generator to auto-fill.</p>
+  </div>
+
+  <div class="section">
+    <label for="headline-layer">Headline layer name (in selected frame)</label>
+    <input type="text" id="headline-layer" value="Headline" placeholder="e.g. Headline">
+  </div>
+
+  <div class="section">
+    <label for="desc-layer">Description layer name (in selected frame)</label>
+    <input type="text" id="desc-layer" value="Description" placeholder="e.g. Description">
+  </div>
+
+  <button id="generate">Generate Variations</button>
+  <p id="status" class="hint" style="margin-top: 8px;"></p>
+
+  <script>
+    const headlinesEl = document.getElementById('headlines');
+    const descriptionsEl = document.getElementById('descriptions');
+    const jsonInput = document.getElementById('json-input');
+    const headlineLayerEl = document.getElementById('headline-layer');
+    const descLayerEl = document.getElementById('desc-layer');
+    const generateBtn = document.getElementById('generate');
+    const statusEl = document.getElementById('status');
+
+    jsonInput.addEventListener('paste', (e) => {
+      setTimeout(() => {
+        try {
+          const json = JSON.parse(jsonInput.value.trim());
+          if (json.headlines?.length) {
+            headlinesEl.value = json.headlines.join('\n');
+          }
+          if (json.descriptions?.length) {
+            descriptionsEl.value = json.descriptions.join('\n');
+          }
+        } catch (_) {}
+      }, 10);
+    });
+
+    generateBtn.onclick = () => {
+      let headlines = headlinesEl.value.split('\n').map(s => s.trim()).filter(Boolean);
+      let descriptions = descriptionsEl.value.split('\n').map(s => s.trim()).filter(Boolean);
+
+      if (!headlines.length && !descriptions.length) {
+        try {
+          const json = JSON.parse(jsonInput.value.trim());
+          headlines = json.headlines || [];
+          descriptions = json.descriptions || [];
+        } catch {
+          statusEl.textContent = 'Enter headlines, descriptions, or paste JSON.';
+          statusEl.className = 'hint error';
+          return;
+        }
+      }
+
+      if (!headlines.length) {
+        statusEl.textContent = 'Add at least one headline.';
+        statusEl.className = 'hint error';
+        return;
+      }
+
+      parent.postMessage({
+        pluginMessage: {
+          type: 'generate-variations',
+          headlines,
+          descriptions,
+          headlineLayerName: headlineLayerEl.value.trim() || 'Headline',
+          descLayerName: descLayerEl.value.trim() || 'Description',
+        }
+      }, '*');
+      statusEl.textContent = 'Generating...';
+      statusEl.className = 'hint';
+    };
+
+    window.onmessage = (event) => {
+      const msg = event.data.pluginMessage;
+      if (!msg) return;
+      if (msg.type === 'result') {
+        statusEl.textContent = msg.error || msg.message || `Created ${msg.count ?? 0} variation(s).`;
+        statusEl.className = msg.error ? 'hint error' : 'hint success';
+      }
+    };
+  </script>
+</body>
+</html>
