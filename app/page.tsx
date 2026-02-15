@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { FileUploader } from "@/components/FileUploader";
 
 export default function Home() {
@@ -9,6 +10,15 @@ export default function Home() {
           <p className="text-lg sm:text-xl font-semibold text-muted-foreground mb-2 sm:mb-3">Upload Assets</p>
           <p className="text-sm sm:text-base lg:text-lg text-muted-foreground mb-4 sm:mb-6 px-4">
             Upload marketing assets for AI-powered analysis and categorization
+          </p>
+          <p className="text-sm text-muted-foreground">
+            <Link href="/privacy" className="underline underline-offset-4 hover:text-brand-orange text-brand-blue">
+              Privacy Policy
+            </Link>
+            {" · "}
+            <Link href="/terms" className="underline underline-offset-4 hover:text-brand-orange text-brand-blue">
+              Terms of Service
+            </Link>
           </p>
         </div>
         <FileUploader redirectAfterUpload={true} />
