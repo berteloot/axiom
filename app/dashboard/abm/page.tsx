@@ -1,11 +1,11 @@
 "use client";
 
-import { ABMGenerator } from "@/components/abm/ABMGenerator";
+import { SignalResearchGenerator } from "@/components/signal-research/SignalResearchGenerator";
 
 export default function ABMPage() {
   return (
     <div className="space-y-4">
-      <ABMGenerator />
+      <SignalResearchGenerator />
     </div>
   );
 }

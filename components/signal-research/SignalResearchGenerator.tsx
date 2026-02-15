@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import React, { useState, useRef } from "react";
 import {
   Card,
   CardContent,
@@ -20,6 +20,14 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { saveAs } from "file-saver";
 import { parseResearchCSV, type ResearchCSVRow } from "@/lib/signal-research/parse-csv";
 import type { ResearchOutput } from "@/lib/signal-research/types";
@@ -148,6 +156,9 @@ export function SignalResearchGenerator() {
       setIsExporting(false);
     }
   };
+
+  const scoreToStatus = (s: number) =>
+    s >= 8 ? "Hot" : s >= 6 ? "Warm" : s >= 4 ? "Nurture" : "Low";
 
   const sortedCompanies = output
     ? [...output.companies].sort((a, b) => b.overallScore - a.overallScore)
@@ -291,10 +302,10 @@ export function SignalResearchGenerator() {
         <div className="rounded-xl bg-brand-dark-blue px-6 py-5 text-white shadow-lg">
           <h1 className="flex items-center gap-2 text-xl font-bold font-roboto-condensed">
             <Search className="h-6 w-6" />
-            Signal Research
+            ABM Research
           </h1>
           <p className="mt-1 text-sm text-white/90">
-            Research buying signals from websites, forums (Reddit), job postings, press, and partner sites. User-defined research focus and industry.
+            Upload a CSV, define what to research, get results in the table below, and download to Excel.
           </p>
         </div>
 
@@ -323,92 +334,99 @@ export function SignalResearchGenerator() {
                 {output.industry && ` · Industry: ${output.industry}`}
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                {sortedCompanies.map((c) => (
-                  <div
-                    key={c.company}
-                    className="rounded-lg border border-border bg-muted/20 overflow-hidden"
-                  >
-                    <button
-                      type="button"
-                      className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left hover:bg-muted/30 transition-colors"
-                      onClick={() =>
-                        setExpandedCompany(
-                          expandedCompany === c.company ? null : c.company
-                        )
-                      }
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="font-semibold text-foreground truncate">
-                          {c.company}
-                        </span>
-                        <span className="text-sm text-muted-foreground shrink-0">
-                          Score: {c.overallScore}/10
-                        </span>
-                        <div className="flex gap-1 shrink-0">
-                          {c.signals.slice(0, 5).map((s, i) => (
-                            <span
-                              key={i}
-                              className={`rounded px-1.5 py-0.5 text-xs font-medium ${
-                                STRENGTH_COLORS[s.strength] ?? "bg-muted"
-                              }`}
-                            >
-                              {s.strength}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                      {expandedCompany === c.company ? (
-                        <ChevronUp className="h-4 w-4 shrink-0" />
-                      ) : (
-                        <ChevronDown className="h-4 w-4 shrink-0" />
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-12">Rank</TableHead>
+                    <TableHead>Company</TableHead>
+                    <TableHead>Industry</TableHead>
+                    <TableHead className="w-16">Score</TableHead>
+                    <TableHead className="w-20">Status</TableHead>
+                    <TableHead>Opportunity</TableHead>
+                    <TableHead className="w-10"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sortedCompanies.map((c, i) => (
+                    <React.Fragment key={c.company}>
+                      <TableRow
+                        className="cursor-pointer hover:bg-muted/50"
+                        onClick={() =>
+                          setExpandedCompany(
+                            expandedCompany === c.company ? null : c.company
+                          )
+                        }
+                      >
+                        <TableCell className="font-medium">{i + 1}</TableCell>
+                        <TableCell className="font-medium">{c.company}</TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {c.industry ?? "—"}
+                        </TableCell>
+                        <TableCell>{c.overallScore}/10</TableCell>
+                        <TableCell>
+                          <span
+                            className={`rounded px-1.5 py-0.5 text-xs font-medium ${
+                              scoreToStatus(c.overallScore) === "Hot"
+                                ? "bg-red-500/20 text-red-800"
+                                : scoreToStatus(c.overallScore) === "Warm"
+                                  ? "bg-orange-500/20 text-orange-800"
+                                  : scoreToStatus(c.overallScore) === "Nurture"
+                                    ? "bg-yellow-500/20 text-yellow-800"
+                                    : "bg-slate-500/20 text-slate-800"
+                            }`}
+                          >
+                            {scoreToStatus(c.overallScore)}
+                          </span>
+                        </TableCell>
+                        <TableCell className="max-w-xs truncate text-muted-foreground">
+                          {c.salesOpportunity ?? "—"}
+                        </TableCell>
+                        <TableCell>
+                          {expandedCompany === c.company ? (
+                            <ChevronUp className="h-4 w-4" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4" />
+                          )}
+                        </TableCell>
+                      </TableRow>
+                      {expandedCompany === c.company && (
+                        <TableRow key={`${c.company}-detail`}>
+                          <TableCell colSpan={7} className="bg-muted/20">
+                            <div className="space-y-3 py-2">
+                              {c.keyEvidence && (
+                                <p className="text-sm">
+                                  <span className="font-medium text-muted-foreground">
+                                    Evidence:
+                                  </span>{" "}
+                                  {c.keyEvidence}
+                                </p>
+                              )}
+                              <div>
+                                <p className="text-sm font-medium text-muted-foreground mb-1">
+                                  Signals
+                                </p>
+                                <div className="flex flex-wrap gap-1">
+                                  {c.signals.map((s, si) => (
+                                    <span
+                                      key={si}
+                                      className={`rounded px-1.5 py-0.5 text-xs font-medium ${
+                                        STRENGTH_COLORS[s.strength] ?? "bg-muted"
+                                      }`}
+                                    >
+                                      {s.category}: {s.strength}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          </TableCell>
+                        </TableRow>
                       )}
-                    </button>
-                    {expandedCompany === c.company && (
-                      <div className="border-t border-border px-4 py-3 space-y-3 text-sm">
-                        {c.salesOpportunity && (
-                          <p className="text-foreground">
-                            <span className="font-medium text-muted-foreground">
-                              Opportunity:
-                            </span>{" "}
-                            {c.salesOpportunity}
-                          </p>
-                        )}
-                        {c.keyEvidence && (
-                          <p className="text-foreground">
-                            <span className="font-medium text-muted-foreground">
-                              Evidence:
-                            </span>{" "}
-                            {c.keyEvidence}
-                          </p>
-                        )}
-                        <div>
-                          <p className="font-medium text-muted-foreground mb-1">
-                            Signals
-                          </p>
-                          <ul className="space-y-1">
-                            {c.signals.map((s, i) => (
-                              <li key={i} className="flex gap-2">
-                                <span
-                                  className={`rounded px-1.5 py-0.5 text-xs font-medium shrink-0 ${
-                                    STRENGTH_COLORS[s.strength] ?? "bg-muted"
-                                  }`}
-                                >
-                                  {s.strength}
-                                </span>
-                                <span className="text-foreground">
-                                  {s.category}: {s.keyEvidence}
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
+                    </React.Fragment>
+                  ))}
+                </TableBody>
+              </Table>
             </CardContent>
           </Card>
         )}

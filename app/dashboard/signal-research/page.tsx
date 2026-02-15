@@ -1,11 +1,12 @@
 "use client";
 
-import { SignalResearchGenerator } from "@/components/signal-research/SignalResearchGenerator";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 export default function SignalResearchPage() {
-  return (
-    <div className="space-y-4">
-      <SignalResearchGenerator />
-    </div>
-  );
+  const router = useRouter();
+  useEffect(() => {
+    router.replace("/dashboard/abm");
+  }, [router]);
+  return null;
 }
