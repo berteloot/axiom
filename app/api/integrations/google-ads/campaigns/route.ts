@@ -81,7 +81,18 @@ export async function GET(request: NextRequest) {
     }
     await requireAccountAccess(request, accountId);
 
-    const attempts: (string | undefined)[] = [undefined, loginCustomerId, ...loginCandidateIds].filter(
+    const norm = (id: string) => id.replace(/-/g, "");
+    const normalizedCustomerId = norm(customerId);
+    const normalizedLogin = loginCustomerId ? norm(loginCustomerId) : undefined;
+    const normalizedCandidates = loginCandidateIds.map(norm).filter(Boolean);
+    // Try with-login first (manager or self for MCC), then without. Include customerId so MCC can use login_customer_id = self.
+    const rawAttempts: (string | undefined)[] = [
+      normalizedLogin,
+      ...normalizedCandidates,
+      normalizedCustomerId,
+      undefined,
+    ];
+    const attempts: (string | undefined)[] = rawAttempts.filter(
       (id, i, arr) => id === undefined || (id && arr.indexOf(id) === i)
     );
     let lastError: unknown = null;

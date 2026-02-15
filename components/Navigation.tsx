@@ -80,13 +80,13 @@ export function Navigation() {
           <Link href="/" className="flex items-center gap-2 min-w-0 flex-shrink-0">
             <Image 
               src="/NYTRO.png" 
-              alt="AXIOM Logo" 
+              alt="Asset Organizer Logo" 
               width={87} 
               height={40} 
               priority
               className="shrink-0 h-8 sm:h-10 w-auto object-contain"
             />
-            <span className="text-lg sm:text-xl font-semibold truncate font-roboto-condensed text-brand-orange">AXIOM</span>
+            <span className="text-lg sm:text-xl font-semibold truncate font-roboto-condensed text-brand-orange">Asset Organizer</span>
           </Link>
 
           {/* Desktop Navigation */}

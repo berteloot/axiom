@@ -16,7 +16,12 @@ const robotoCondensed = Roboto_Condensed({
 
 export const metadata: Metadata = {
   title: "Asset Organizer",
+  applicationName: "Asset Organizer",
   description: "Marketing Asset Intelligence App",
+  openGraph: {
+    title: "Asset Organizer",
+    siteName: "Asset Organizer",
+  },
 };
 
 export default function RootLayout({
