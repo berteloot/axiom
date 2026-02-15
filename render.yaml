@@ -58,10 +58,12 @@ services:
       - key: DATAFORSEO_PASSWORD
         sync: false
 
-      # Ad Copy (Claude / Anthropic)
+      # Ad Copy & ABM (Claude / Anthropic)
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: AD_COPY_SKILL_ID
+        sync: false
+      - key: ABM_SKILL_ID
         sync: false
 
       # Website/Blog extraction (optional)

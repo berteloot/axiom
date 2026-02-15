@@ -26,13 +26,25 @@ export function BillingGuard({ children }: BillingGuardProps) {
   const isAuthPage = pathname?.startsWith("/auth/") || pathname === "/auth";
   // SEO audit page doesn't require an account (brand consistency is optional)
   const isSeoAuditPage = pathname?.startsWith("/seo-audit");
+  // Public pages: no login required (for OAuth verification and general access)
+  const isPublicPage =
+    pathname === "/" ||
+    pathname?.startsWith("/privacy") ||
+    pathname?.startsWith("/terms");
 
   useEffect(() => {
     // Don't run redirects until component is mounted
     if (!mounted) return;
 
-    // Don't redirect while loading or if already on billing/auth/seo-audit pages
-    if (sessionStatus === "loading" || isLoading || pathname.startsWith("/billing") || isAuthPage || isSeoAuditPage) {
+    // Don't redirect while loading or if already on billing/auth/seo-audit/public pages
+    if (
+      sessionStatus === "loading" ||
+      isLoading ||
+      pathname.startsWith("/billing") ||
+      isAuthPage ||
+      isSeoAuditPage ||
+      isPublicPage
+    ) {
       return;
     }
 
@@ -66,7 +78,7 @@ export function BillingGuard({ children }: BillingGuardProps) {
         return;
       }
     }
-  }, [currentAccount, isTrialExpired, isSubscriptionExpired, isLoading, router, pathname, isAuthPage, isSeoAuditPage, mounted, sessionStatus]);
+  }, [currentAccount, isTrialExpired, isSubscriptionExpired, isLoading, router, pathname, isAuthPage, isSeoAuditPage, isPublicPage, mounted, sessionStatus]);
 
   // On initial render (server or before mount), always render children
   // to prevent hydration mismatch. Redirects will happen in useEffect.
@@ -74,8 +86,8 @@ export function BillingGuard({ children }: BillingGuardProps) {
     return <>{children}</>;
   }
 
-  // Always allow auth pages and SEO audit to render (they handle their own requirements)
-  if (isAuthPage || isSeoAuditPage) {
+  // Always allow auth, public, and SEO audit pages to render without login
+  if (isAuthPage || isSeoAuditPage || isPublicPage) {
     return <>{children}</>;
   }
 

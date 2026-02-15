@@ -16,7 +16,8 @@
     "db:push": "prisma db push",
     "db:verify-permissions": "npx tsx scripts/verify-db-permissions.ts",
     "test:firecrawl": "npx tsx scripts/test-firecrawl.ts",
-    "ad-copy:upload-skill": "npx tsx scripts/upload-ad-copy-skill.ts"
+    "ad-copy:upload-skill": "npx tsx scripts/upload-ad-copy-skill.ts",
+    "abm:upload-skill": "npx tsx scripts/upload-abm-skill.ts"
   },
   "keywords": [],
   "author": "",

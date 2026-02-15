@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAccount } from "@/lib/account-context";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, BarChart3 } from "lucide-react";
+import { LayoutDashboard, BarChart3, Target } from "lucide-react";
 
 const dashboardNav = [
   {
@@ -12,6 +12,12 @@ const dashboardNav = [
     href: "/dashboard",
     icon: LayoutDashboard,
     description: "Assets, matrix & campaigns",
+  },
+  {
+    name: "ABM",
+    href: "/dashboard/abm",
+    icon: Target,
+    description: "Account-based marketing & outreach",
   },
   {
     name: "Google Ads",
@@ -64,7 +70,10 @@ export default function DashboardLayout({
         </div>
 
         {/* Page content */}
-        <div className={cn(!pathname?.startsWith("/dashboard/google-ads") ? "" : "max-w-4xl")}>
+        <div className={cn(
+          pathname?.startsWith("/dashboard/google-ads") ? "max-w-4xl" : "",
+          pathname?.startsWith("/dashboard/abm") ? "max-w-6xl" : ""
+        )}>
           {children}
         </div>
       </div>
