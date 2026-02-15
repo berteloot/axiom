@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAccount } from "@/lib/account-context";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { BarChart3, Link2, Unlink, Loader2, CheckCircle, AlertCircle } from "lucide-react";
 
-export default function DashboardGoogleAdsPage() {
+function DashboardGoogleAdsContent() {
   const { currentAccount } = useAccount();
   const searchParams = useSearchParams();
   const [status, setStatus] = useState<{
@@ -184,5 +184,20 @@ export default function DashboardGoogleAdsPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function DashboardGoogleAdsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center gap-2 text-muted-foreground py-8">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          <span>Loading…</span>
+        </div>
+      }
+    >
+      <DashboardGoogleAdsContent />
+    </Suspense>
   );
 }
