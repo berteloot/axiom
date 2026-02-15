@@ -1,15 +1,46 @@
 "use client";
 
 import * as React from "react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Download, Sparkles, ChevronDown, ChevronUp, Bot, Palette } from "lucide-react";
+import { Loader2, Download, Sparkles, ChevronDown, ChevronUp, Bot, Palette, Target } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { PLATFORMS, type PlatformKey } from "@/lib/ad-copy/platforms";
+import { useAccount } from "@/lib/account-context";
+
+const AXIOM_PPC_CAMPAIGN_KEY = "axiom-ppc-campaign";
+
+interface BrandContextPayload {
+  brandContext: {
+    valueProposition: string | null;
+    primaryICPRoles: string[];
+    brandVoice: string[];
+  } | null;
+  productLines: Array<{
+    id: string;
+    name: string;
+    description: string;
+    valueProposition: string;
+    specificICP: string[];
+  }>;
+}
+
+interface PPCAdGroupPayload {
+  name: string;
+  keywords: string[];
+  primaryAsset?: { title: string; snippet: string };
+}
+
+interface PPCCampaignPayload {
+  campaignName: string;
+  adGroups: PPCAdGroupPayload[];
+  /** Default CTA to prefill when opening from PPC */
+  defaultCta?: string;
+}
 
 const TONE_OPTIONS = [
   "Professional & Authoritative",
@@ -84,6 +115,7 @@ function buildCsvForPlatform(
 }
 
 export function AdCopyGenerator() {
+  const { currentAccount } = useAccount();
   const [brandName, setBrandName] = useState("");
   const [productDescription, setProductDescription] = useState("");
   const [targetAudience, setTargetAudience] = useState("");
@@ -94,6 +126,13 @@ export function AdCopyGenerator() {
   const [platform, setPlatform] = useState<PlatformKey>("google_ads_rsa");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [productLineId, setProductLineId] = useState<string>("");
+  const [productLines, setProductLines] = useState<BrandContextPayload["productLines"]>([]);
+  const [ppcCampaign, setPpcCampaign] = useState<PPCCampaignPayload | null>(null);
+  const [ppcSelectedAdGroup, setPpcSelectedAdGroup] = useState<string>("");
+  const [brandPrefilled, setBrandPrefilled] = useState(false);
+  const [brandOnlyDescription, setBrandOnlyDescription] = useState("");
+  const [brandOnlyAudience, setBrandOnlyAudience] = useState("");
   const [result, setResult] = useState<{
     platform: PlatformKey;
     copy: Record<string, string[]>;
@@ -108,6 +147,85 @@ export function AdCopyGenerator() {
       }>;
     };
   } | null>(null);
+
+  // Prefill from Brand Context + Product Lines
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const [brandRes, _] = await Promise.all([
+          fetch("/api/brand-context"),
+          Promise.resolve(),
+        ]);
+        if (cancelled || !brandRes.ok) return;
+        const data: BrandContextPayload = await brandRes.json();
+        setProductLines(data.productLines ?? []);
+        if (!data.brandContext) return;
+        const bc = data.brandContext;
+        if (currentAccount?.name) {
+          setBrandName((prev) => (prev || currentAccount.name).trim() || "");
+        }
+        const vp = bc.valueProposition || "";
+        const aud = bc.primaryICPRoles?.join(", ") || "";
+        setBrandOnlyDescription(vp);
+        setBrandOnlyAudience(aud);
+        if (!brandPrefilled) {
+          setProductDescription((prev) => prev || vp);
+          setTargetAudience((prev) => prev || aud);
+          setBrandPrefilled(true);
+        }
+      } catch {
+        // ignore
+      }
+    };
+    run();
+    return () => { cancelled = true; };
+  }, [currentAccount?.name, brandPrefilled]);
+
+  // When product line selection changes, update product description and audience (or restore brand-only)
+  useEffect(() => {
+    if (!productLines.length) return;
+    if (!productLineId) {
+      setProductDescription(brandOnlyDescription);
+      setTargetAudience(brandOnlyAudience);
+      return;
+    }
+    const pl = productLines.find((p) => p.id === productLineId);
+    if (!pl) return;
+    setProductDescription(pl.valueProposition || pl.description || "");
+    setTargetAudience(pl.specificICP?.length ? pl.specificICP.join(", ") : "");
+  }, [productLineId, productLines, brandOnlyDescription, brandOnlyAudience]);
+
+  // Load PPC campaign from sessionStorage (when navigated from PPC Export)
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(AXIOM_PPC_CAMPAIGN_KEY);
+      if (!raw) return;
+      const payload = JSON.parse(raw) as PPCCampaignPayload;
+      if (payload?.adGroups?.length) {
+        setPpcCampaign(payload);
+        setPpcSelectedAdGroup(payload.adGroups[0]?.name ?? "");
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // When PPC ad group is selected, prefill keywords, CTA, and additional context
+  useEffect(() => {
+    if (!ppcCampaign || !ppcSelectedAdGroup) return;
+    const group = ppcCampaign.adGroups.find((g) => g.name === ppcSelectedAdGroup);
+    if (!group) return;
+    setKeywordsText(group.keywords.join(", "));
+    setCallToAction(ppcCampaign.defaultCta?.trim() || "Learn More");
+    if (group.primaryAsset?.snippet?.trim()) {
+      setAdditionalContext("[Landing page context]: " + group.primaryAsset.snippet.trim());
+    } else {
+      setAdditionalContext(
+        `Ad group: ${group.name}. Use these keywords in headlines/descriptions for ad relevance.`
+      );
+    }
+  }, [ppcCampaign, ppcSelectedAdGroup]);
 
   const keywords = keywordsText
     .split(/[\n,\s;]+/)
@@ -202,9 +320,9 @@ export function AdCopyGenerator() {
   const labelClass = "text-muted-foreground";
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 min-h-[calc(100vh-6rem)]">
+    <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 min-h-0 w-full max-w-full">
       {/* Left sidebar */}
-      <aside className="w-full lg:w-80 shrink-0">
+      <aside className="w-full lg:w-80 shrink-0 min-w-0">
         <Card className="border border-border bg-card text-card-foreground shadow-md">
           <CardHeader>
             <CardTitle className="text-foreground text-base">
@@ -212,10 +330,63 @@ export function AdCopyGenerator() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {ppcCampaign && ppcCampaign.adGroups.length > 0 && (
+              <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-medium flex items-center gap-1">
+                    <Target className="h-4 w-4" />
+                    PPC campaign loaded
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => {
+                      setPpcCampaign(null);
+                      setPpcSelectedAdGroup("");
+                      sessionStorage.removeItem(AXIOM_PPC_CAMPAIGN_KEY);
+                    }}
+                  >
+                    Clear
+                  </Button>
+                </div>
+                <div className="grid gap-1">
+                  <Label className="text-xs text-muted-foreground">Ad group (keywords pre-filled)</Label>
+                  <select
+                    value={ppcSelectedAdGroup}
+                    onChange={(e) => setPpcSelectedAdGroup(e.target.value)}
+                    className={inputClass + " cursor-pointer"}
+                  >
+                    {ppcCampaign.adGroups.map((g) => (
+                      <option key={g.name} value={g.name}>
+                        {g.name} ({g.keywords.length} keywords)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
             <div className="grid gap-2">
               <Label htmlFor="brand" className={labelClass}>Brand / Company Name</Label>
               <Input id="brand" placeholder="e.g. Acme Cloud" value={brandName} onChange={(e) => setBrandName(e.target.value)} className={inputClass} />
             </div>
+            {productLines.length > 0 && (
+              <div className="grid gap-2">
+                <Label htmlFor="product-line" className={labelClass}>Product line (optional)</Label>
+                <select
+                  id="product-line"
+                  value={productLineId}
+                  onChange={(e) => setProductLineId(e.target.value)}
+                  className={inputClass + " cursor-pointer"}
+                >
+                  <option value="">— None / use brand only —</option>
+                  {productLines.map((pl) => (
+                    <option key={pl.id} value={pl.id}>{pl.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="grid gap-2">
               <Label htmlFor="product" className={labelClass}>Product / Service Description</Label>
               <Textarea id="product" placeholder="e.g. AI-powered project management tool..." value={productDescription} onChange={(e) => setProductDescription(e.target.value)} rows={3} className={textareaClass} />
@@ -273,8 +444,8 @@ export function AdCopyGenerator() {
         </Card>
       </aside>
 
-      <main className="flex-1 min-w-0 space-y-6">
-        <div className="rounded-xl bg-brand-dark-blue px-6 py-5 text-white shadow-lg">
+      <main className="flex-1 min-w-0 space-y-6 overflow-x-hidden">
+        <div className="rounded-xl bg-brand-dark-blue px-4 sm:px-6 py-4 sm:py-5 text-white shadow-lg">
           <h1 className="flex items-center gap-2 text-2xl font-bold font-roboto-condensed">
             <Sparkles className="h-7 w-7" />
             AdCopy Pro

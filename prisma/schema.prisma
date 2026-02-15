@@ -113,6 +113,7 @@ model Account {
   accountManagers  AccountManager[]
   sentInvitations  Invitation[]      @relation("InvitationAccount")
   smartCollections SmartCollection[]
+  googleAdsConnection GoogleAdsConnection?
 
   @@map("accounts")
 }
@@ -160,6 +161,23 @@ model Session {
 
   @@unique([userId])
   @@map("sessions")
+}
+
+// Google Ads OAuth connection per Account (Option 1: each client connects)
+model GoogleAdsConnection {
+  id                   String    @id @default(cuid())
+  accountId             String    @unique
+  refreshToken          String
+  accessToken           String?
+  accessTokenExpiresAt  DateTime?
+  googleAdsCustomerId   String?   // No dashes, e.g. "1234567890"
+  email                 String?   // Google account email (display only)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@map("google_ads_connections")
 }
 
 // VerificationToken model for NextAuth email authentication

@@ -2,11 +2,12 @@
 
 import * as React from "react";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Loader2, ChevronRight, ChevronLeft, Check, AlertCircle, Trash2 } from "lucide-react";
+import { Loader2, ChevronRight, ChevronLeft, Check, AlertCircle, Trash2, Sparkles } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Asset } from "@/lib/types";
 import { KeywordAssetMatrix } from "./KeywordAssetMatrix";
@@ -15,6 +16,8 @@ import { CampaignExport } from "./CampaignExport";
 import { LocationSelector } from "./LocationSelector";
 import { useAccount } from "@/lib/account-context";
 import { DATAFORSEO_LANGUAGES } from "@/lib/keywords/dataforseo-locations";
+
+const AXIOM_PPC_CAMPAIGN_KEY = "axiom-ppc-campaign";
 
 interface SearchIntent {
   main_intent: "informational" | "commercial" | "transactional" | "navigational";
@@ -97,6 +100,7 @@ export function PPCCampaignBuilder({
   const [isLoadingPreferences, setIsLoadingPreferences] = useState(true);
   
   const { currentAccount } = useAccount();
+  const router = useRouter();
 
   // Fetch account PPC preferences on mount
   React.useEffect(() => {
@@ -366,6 +370,37 @@ export function PPCCampaignBuilder({
       setOrganizedAdGroups(new Map(organizedAdGroups));
     }
     setNewAdGroupName("");
+  };
+
+  /** Build PPC payload and navigate to Ad Copy Pro so user can generate copy with these keywords. */
+  const handleOpenInAdCopy = () => {
+    const adGroups: Array<{ name: string; keywords: string[]; primaryAsset?: { title: string; snippet: string } }> = [];
+    organizedAdGroups.forEach((keywords, groupName) => {
+      const firstKw = keywords[0];
+      const assetId = firstKw ? assignedKeywords.get(firstKw.keyword) : undefined;
+      const asset = assetId ? assets.find((a) => a.id === assetId) : null;
+      adGroups.push({
+        name: groupName,
+        keywords: keywords.map((kw) => kw.keyword),
+        primaryAsset: asset
+          ? {
+              title: asset.title || "",
+              snippet: (asset.extractedText || "").slice(0, 500),
+            }
+          : undefined,
+      });
+    });
+    const payload = {
+      campaignName: currentAccount?.name || "PPC Campaign",
+      adGroups,
+      defaultCta: "Learn More",
+    };
+    try {
+      sessionStorage.setItem(AXIOM_PPC_CAMPAIGN_KEY, JSON.stringify(payload));
+      router.push("/ad-copy");
+    } catch (e) {
+      console.error("Failed to store PPC campaign for Ad Copy", e);
+    }
   };
 
   // Handle removing keyword from campaign
@@ -822,6 +857,8 @@ export function PPCCampaignBuilder({
               adGroups={organizedAdGroups}
               negativeKeywords={negativeKeywords}
               assets={assets}
+              campaignName={currentAccount?.name || "PPC Campaign"}
+              onOpenInAdCopy={handleOpenInAdCopy}
             />
           )}
         </CardContent>

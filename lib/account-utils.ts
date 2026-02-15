@@ -102,3 +102,25 @@ export async function isUserAdminOrOwner(
   const role = await getCurrentUserRole(request);
   return role === "OWNER" || role === "ADMIN";
 }
+
+/**
+ * Ensure the current user is authenticated and has access to the given account.
+ * Use for integration routes (e.g. Google Ads) where accountId comes from query or state.
+ * @throws Error if not authenticated or not a member of the account
+ */
+export async function requireAccountAccess(
+  request: NextRequest,
+  accountId: string
+): Promise<{ userId: string }> {
+  const userId = await getUserId(request);
+  if (!userId) {
+    throw new Error("Not authenticated");
+  }
+  const ua = await prisma.userAccount.findFirst({
+    where: { userId, accountId },
+  });
+  if (!ua) {
+    throw new Error("No access to this account");
+  }
+  return { userId };
+}

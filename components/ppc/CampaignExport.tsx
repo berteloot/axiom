@@ -4,7 +4,7 @@ import * as React from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Download, Copy, FileSpreadsheet, FileText } from "lucide-react";
+import { Download, Copy, FileSpreadsheet, FileText, Sparkles } from "lucide-react";
 import { Asset } from "@/lib/types";
 
 interface KeywordWithMatches {
@@ -28,12 +28,20 @@ interface PPCampaignData {
   };
 }
 
+function escapeCsvCell(value: string): string {
+  const s = String(value ?? "");
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
 interface CampaignExportProps {
   campaignData: PPCampaignData;
   assignedKeywords: Map<string, string>; // keyword -> assetId
   adGroups: Map<string, KeywordWithMatches[]>;
   negativeKeywords?: Set<string>;
   assets: Asset[];
+  campaignName?: string;
+  onOpenInAdCopy?: () => void;
 }
 
 export function CampaignExport({
@@ -42,9 +50,10 @@ export function CampaignExport({
   adGroups,
   negativeKeywords = new Set<string>(),
   assets,
+  campaignName = "PPC Campaign",
+  onOpenInAdCopy,
 }: CampaignExportProps) {
   const handleExportCSV = () => {
-    // Create CSV for Google Ads import
     const headers = [
       "Campaign",
       "Ad Group",
@@ -63,34 +72,24 @@ export function CampaignExport({
     adGroups.forEach((keywords, groupName) => {
       keywords.forEach((kw) => {
         const assignedAssetId = assignedKeywords.get(kw.keyword);
-        const asset = assignedAssetId
-          ? assets.find((a) => a.id === assignedAssetId)
-          : null;
-
-        // For PPC campaigns, we need actual landing page URLs, not S3 storage URLs
-        // S3 URLs are private markdown files and won't work as public landing pages
-        // Landing page URLs should be configured based on your website structure
-        // Leave empty for user to fill in manually, or configure based on asset ID
-        const landingPageUrl = ""; // User must configure landing page URLs
+        const landingPageUrl = "";
 
         rows.push([
-          "PPC Campaign", // Campaign name
-          groupName, // Ad Group
-          kw.keyword, // Keyword
-          kw.matchType || "phrase", // Match Type
-          landingPageUrl, // Landing Page (placeholder - user must configure)
-          kw.cpc.toFixed(2), // Max CPC
-          kw.volume.toString(), // Search Volume
-          kw.competition, // Competition
-          kw.searchIntent?.main_intent || "—", // Intent
-          (kw.estimatedMonthlySpend || 0).toFixed(2), // Est. Monthly Spend
+          campaignName,
+          groupName,
+          kw.keyword,
+          kw.matchType || "phrase",
+          landingPageUrl,
+          kw.cpc.toFixed(2),
+          kw.volume.toString(),
+          kw.competition,
+          kw.searchIntent?.main_intent || "—",
+          (kw.estimatedMonthlySpend || 0).toFixed(2),
         ]);
       });
     });
 
-    const csv = [headers, ...rows]
-      .map((row) => row.map((cell) => `"${cell}"`).join(","))
-      .join("\n");
+    const csv = [headers, ...rows].map((row) => row.map(escapeCsvCell).join(",")).join("\n");
 
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -244,6 +243,27 @@ export function CampaignExport({
           </p>
         </CardContent>
       </Card>
+
+      {/* Ad Copy integration */}
+      {onOpenInAdCopy && (
+        <Card className="border-primary/20 bg-primary/5">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" />
+              Ad copy (Claude)
+            </CardTitle>
+            <CardDescription>
+              Open in Ad Copy Pro to generate RSA headlines & descriptions with your campaign keywords.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={onOpenInAdCopy} variant="outline" className="gap-2">
+              <Sparkles className="h-4 w-4" />
+              Open in Ad Copy Pro
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Export Options */}
       <div className="grid gap-4 md:grid-cols-2">
