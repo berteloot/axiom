@@ -43,7 +43,7 @@ function AuthErrorContent() {
                 <li>Token expired (links expire after 24 hours)</li>
                 <li>Token already used (each link works only once)</li>
                 <li>Database connection issue (check Render logs)</li>
-                <li>NEXTAUTH_URL not set correctly (should be https://axiom-ray0.onrender.com)</li>
+                <li>NEXTAUTH_URL not set correctly (must match your app URL, e.g. https://your-app.onrender.com)</li>
               </ul>
               <p className="text-xs mt-2">
                 Check Render dashboard → Logs for detailed error messages.
