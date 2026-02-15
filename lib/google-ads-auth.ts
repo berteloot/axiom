@@ -8,9 +8,16 @@ import { prisma } from "@/lib/prisma";
 
 /** Must match exactly one "Authorized redirect URI" in Google Cloud Console (no trailing slash). */
 function buildRedirectUri(): string {
-  const base = (process.env.NEXTAUTH_URL || "").trim().replace(/\/$/, "");
-  if (!base) return "";
-  return `${base}/api/integrations/google-ads/callback`;
+  const raw = (process.env.NEXTAUTH_URL || "").trim();
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    const origin = url.origin;
+    return `${origin}/api/integrations/google-ads/callback`;
+  } catch {
+    const base = raw.replace(/\/$/, "");
+    return `${base}/api/integrations/google-ads/callback`;
+  }
 }
 const REDIRECT_URI = buildRedirectUri();
 
