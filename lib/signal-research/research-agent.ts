@@ -32,58 +32,13 @@ function scoreToPriority(score: number): PriorityTier {
 
 function buildPrompts(input: ResearchAgentInput) {
   const { company, companyDomain, industry, researchPrompt } = input;
-  const systemPrompt = `You are a sales intelligence research agent. Your job is to research companies and identify buying signals relevant to a specific sales opportunity.
+  const systemPrompt = `Research "${company}"${companyDomain ? ` (${companyDomain})` : ""} for buying signals. Focus: ${researchPrompt}.${industry ? ` Industry: ${industry}.` : ""}
 
-RESEARCH FOCUS (user-defined): ${researchPrompt}
-${industry ? `INDUSTRY CONTEXT: ${industry}` : ""}
+Signal categories: website, job_postings, press_news, forums_communities, partner_vendor. Use web search (site:reddit.com, job boards, press). Rate each STRONG/MODERATE/WEAK/NONE. Return JSON in code block:
+{"company":"${company}","industry":"","revenue":"","employees":"","currentSystem":"","overallScore":7,"salesOpportunity":"","keyEvidence":"","keyDecisionMakers":[],"signals":[{"category":"website","strength":"STRONG","keyEvidence":"","sourceUrls":[],"actionableInsight":"","recommendedNextStep":""}]}
+Include all 5 signal categories. Cite URLs.`;
 
-For the company "${company}"${companyDomain ? ` (website: ${companyDomain})` : ""}, research the following signal categories using web search:
-
-1. **Website**: Visit the company's corporate site. Look for mentions of the research focus on About, News, Careers, or product pages.
-2. **Job postings**: Search for "[company] jobs" and "[company] careers" related to the research focus. Check Indeed, LinkedIn Jobs, Glassdoor for relevant roles.
-3. **Press/news**: Search for "[company]" + keywords from the research focus. Check PR Newswire, company newsrooms, trade publications.
-4. **Forums/communities**: Search site:reddit.com "[company]" and the research focus. Check Glassdoor reviews, Spiceworks, tech communities for employee mentions.
-5. **Partner/vendor**: Search for case studies, success stories, or partner pages mentioning the company and the research focus.
-
-For each category, rate as STRONG, MODERATE, WEAK, or NONE. Provide key evidence and source URLs.
-
-Return a JSON object in a code block with this exact structure:
-\`\`\`json
-{
-  "company": "${company}",
-  "industry": "${industry || ""}",
-  "revenue": "",
-  "employees": "",
-  "currentSystem": "",
-  "overallScore": 7,
-  "salesOpportunity": "Brief summary",
-  "keyEvidence": "Top 1-2 evidence points",
-  "keyDecisionMakers": [{"name": "Name", "title": "Title"}],
-  "signals": [
-    {
-      "category": "website",
-      "strength": "STRONG",
-      "keyEvidence": "What you found",
-      "sourceUrls": ["url1", "url2"],
-      "actionableInsight": "What it means",
-      "recommendedNextStep": "Suggested action"
-    }
-  ]
-}
-\`\`\`
-
-Include all 5 signal categories. Use web search to gather real evidence. Be specific and cite URLs.`;
-
-  const userPrompt = `Research "${company}" for buying signals related to: ${researchPrompt}.
-
-Use web search to check:
-- Company website (${companyDomain || "find it"}) for relevant mentions
-- Job boards: "[company] jobs" + research keywords
-- Press: "[company]" + research keywords
-- Forums: site:reddit.com "[company]" + research keywords
-- Partner/vendor case studies mentioning the company
-
-Return ONLY valid JSON in a code block.`;
+  const userPrompt = `Research "${company}" for: ${researchPrompt}. Use web search (site:reddit.com, job boards, press). Return JSON only.`;
 
   return { systemPrompt, userPrompt };
 }
@@ -146,7 +101,7 @@ function extractTextFromResponse(content: Array<{ type: string; text?: string }>
 const WEB_SEARCH_TOOL = {
   type: "web_search_20250305" as const,
   name: "web_search" as const,
-  max_uses: 5,
+  max_uses: 3,
 };
 
 /**
@@ -160,8 +115,8 @@ async function runResearchViaMessagesApi(
   const { systemPrompt, userPrompt } = buildPrompts(input);
 
   const response = await anthropic.messages.create({
-    model: process.env.CLAUDE_SIGNAL_RESEARCH_MODEL || "claude-sonnet-4-20250514",
-    max_tokens: 2048,
+    model: process.env.CLAUDE_SIGNAL_RESEARCH_MODEL || "claude-haiku-4-5-20251001",
+    max_tokens: 1536,
     system: systemPrompt,
     messages: [{ role: "user", content: userPrompt }],
     tools: [WEB_SEARCH_TOOL],
@@ -184,8 +139,8 @@ async function runSkillsEnhancedResearch(
   const { systemPrompt, userPrompt } = buildPrompts(input);
 
   const response = await anthropic.beta.messages.create({
-    model: process.env.CLAUDE_SIGNAL_RESEARCH_MODEL || "claude-sonnet-4-20250514",
-    max_tokens: 2048,
+    model: process.env.CLAUDE_SIGNAL_RESEARCH_MODEL || "claude-haiku-4-5-20251001",
+    max_tokens: 1536,
     betas: [...BETA_BRANDS],
     container: {
       skills: [

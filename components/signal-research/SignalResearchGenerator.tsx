@@ -104,7 +104,7 @@ export function SignalResearchGenerator() {
     setOutput(null);
     setIsLoading(true);
     try {
-      const toResearch = companies.slice(0, 8);
+      const toResearch = companies.slice(0, 4);
       const res = await fetch("/api/signal-research/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -233,7 +233,7 @@ export function SignalResearchGenerator() {
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                CSV: Company, Email Domain, Industry. Max 8 companies per run (rate limit).
+                CSV: Company, Email Domain, Industry. Max 4 per run. ~2 min per company (60s delay between).
               </p>
               {companies.length > 0 && (
                 <div className="mt-2 max-h-48 overflow-y-auto space-y-1 rounded border p-2">
@@ -280,8 +280,8 @@ export function SignalResearchGenerator() {
                 </>
               ) : (
                 <>
-                  <Search className="h-4 w-4" /> Run research ({Math.min(companies.length, 8)}
-                  {companies.length > 8 ? ` of ${companies.length}` : ""} companies)
+                  <Search className="h-4 w-4" /> Run research ({Math.min(companies.length, 4)}
+                  {companies.length > 4 ? ` of ${companies.length}` : ""} companies)
                 </>
               )}
             </Button>

@@ -15,7 +15,7 @@ const RequestSchema = z.object({
       domain: z.string().optional(),
       industry: z.string().optional(),
     })
-  ).min(1).max(8),
+  ).min(1).max(4),
   researchPrompt: z.string().min(1, "Research focus is required"),
   industry: z.string().optional(),
 });
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
     const { companies, researchPrompt, industry } = parsed.data;
     const results: ResearchOutput["companies"] = [];
 
-    const DELAY_MS = 4000; // 4s between companies to avoid Anthropic rate limit (30k input tokens/min)
+    const DELAY_MS = 60_000; // 60s between companies – web_search multi-turn burns ~20k tokens/company at 30k ITPM
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
     for (let i = 0; i < companies.length; i++) {
@@ -61,9 +61,10 @@ export async function POST(request: NextRequest) {
         } catch (rateErr: unknown) {
           const status = (rateErr as { status?: number }).status;
           const retryAfter = (rateErr as { headers?: Headers }).headers?.get?.("retry-after");
-          if (status === 429 && retryAfter) {
-            const waitMs = Math.min(parseInt(retryAfter, 10) * 1000, 120_000);
-            console.warn(`[Signal Research] Rate limited, waiting ${waitMs}ms before retry for ${c.company}`);
+          if (status === 429) {
+            const seconds = parseInt(retryAfter || "60", 10) || 60;
+            const waitMs = Math.min((seconds + 5) * 1000, 120_000);
+            console.warn(`[Signal Research] Rate limited (retry-after: ${seconds}s), waiting ${waitMs}ms before retry for ${c.company}`);
             await sleep(waitMs);
             research = await runResearchForCompany({
               company: c.company,
