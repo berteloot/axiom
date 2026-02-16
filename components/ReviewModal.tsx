@@ -54,6 +54,7 @@ export function ReviewModal({
     uploadedByNameOverride: (asset as any).uploadedByNameOverride || null,
     extractedText: asset.extractedText || "",
     s3Url: asset.s3Url,
+    notes: asset.notes || "",
   });
   const tryParseDate = (value?: string | null): Date | null => {
     if (!value) return null;
@@ -158,6 +159,7 @@ export function ReviewModal({
         uploadedByNameOverride: (asset as any).uploadedByNameOverride || null,
         extractedText: asset.extractedText || "",
         s3Url: asset.s3Url,
+        notes: asset.notes || "",
       });
       setCustomCreatedAt(getInitialCreatedAt());
       setLastReviewedAt(asset.lastReviewedAt ? new Date(asset.lastReviewedAt) : null);
@@ -202,6 +204,7 @@ export function ReviewModal({
           uploadedByNameOverride: formData.uploadedByNameOverride,
           extractedText: formData.extractedText,
           s3Url: formData.s3Url,
+          notes: formData.notes || null,
         }),
       });
 

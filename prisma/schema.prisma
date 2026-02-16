@@ -308,6 +308,7 @@ model Asset {
   aiConfidence        Float? // Overall confidence score (0-1)
   dominantColor       String? // Dominant color hex code (e.g., "#FF5733")
   inUse               Boolean     @default(false) // Whether the asset is currently being used
+  notes               String?     @db.Text // HTML notes for review (e.g. internal comments, links)
   uploadedById        String? // User who uploaded this asset
   uploadedByNameOverride String? // Custom name override for uploader (if different from user's name)
   applicableIndustries String[] // Industries where this asset is relevant (extracted by AI from content)

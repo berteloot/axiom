@@ -47,6 +47,7 @@ export interface Asset {
   aiConfidence?: number | null;
   dominantColor?: string | null; // Dominant color hex code (e.g., "#FF5733")
   inUse?: boolean; // Whether the asset is currently being used
+  notes?: string | null; // HTML notes for review (e.g. internal comments, links)
   // Upload tracking
   uploadedBy?: { id: string; name: string | null; } | null; // User who uploaded the asset
   uploadedByNameOverride?: string | null; // Custom name override for uploader

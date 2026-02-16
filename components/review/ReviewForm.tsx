@@ -43,6 +43,7 @@ interface ReviewFormProps {
     uploadedByNameOverride?: string | null;
     users?: Array<{ id: string; email: string; name: string | null }>;
     s3Url: string;
+    notes: string;
   };
   customCreatedAt: Date | null;
   lastReviewedAt: Date | null;
@@ -619,6 +620,21 @@ export function ReviewForm({
         }
         return null;
       })()}
+
+      <div className="space-y-2">
+        <Label htmlFor="notes">Notes</Label>
+        <Textarea
+          id="notes"
+          value={formData.notes}
+          onChange={(e) => onFormDataChange({ notes: e.target.value })}
+          placeholder="Add notes (HTML supported, e.g. &lt;b&gt;bold&lt;/b&gt;, &lt;a href='...'&gt;links&lt;/a&gt;)..."
+          rows={4}
+          className="font-mono text-sm"
+        />
+        <p className="text-xs text-muted-foreground">
+          Internal notes, links, or formatted text. HTML tags are supported.
+        </p>
+      </div>
 
       <div className="space-y-2">
         <Label htmlFor="outreachTip">Outreach Tip</Label>
