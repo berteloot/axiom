@@ -104,7 +104,7 @@ export function SignalResearchGenerator() {
     setOutput(null);
     setIsLoading(true);
     try {
-      const toResearch = companies.slice(0, 4);
+      const toResearch = companies.slice(0, 2);
       const res = await fetch("/api/signal-research/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -280,8 +280,8 @@ export function SignalResearchGenerator() {
                 </>
               ) : (
                 <>
-                  <Search className="h-4 w-4" /> Run research ({Math.min(companies.length, 4)}
-                  {companies.length > 4 ? ` of ${companies.length}` : ""} companies)
+                  <Search className="h-4 w-4" /> Run research ({Math.min(companies.length, 2)}
+                  {companies.length > 2 ? ` of ${companies.length}` : ""} companies)
                 </>
               )}
             </Button>

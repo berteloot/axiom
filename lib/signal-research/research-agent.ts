@@ -48,14 +48,23 @@ function parseResponse(
   input: ResearchAgentInput
 ): CompanyResearch {
   const { company, industry } = input;
-  const jsonMatch = textOutput.match(/\{[\s\S]*\}/);
-  const jsonStr = jsonMatch ? jsonMatch[0] : textOutput;
+  const jsonMatch =
+    textOutput.match(/```json?\s*([\s\S]*?)```/) ||
+    textOutput.match(/\{[\s\S]*\}/);
+  const jsonStr = jsonMatch ? (jsonMatch[1] ?? jsonMatch[0]) : textOutput;
 
   let parsed: Record<string, unknown>;
   try {
     parsed = JSON.parse(jsonStr) as Record<string, unknown>;
   } catch {
-    throw new Error("Failed to parse research JSON from Claude response");
+    return {
+      company,
+      industry,
+      overallScore: 0,
+      salesOpportunity: "Response truncated – model output was cut off before completing JSON",
+      keyEvidence: "Failed to parse research JSON (truncated_response)",
+      signals: [],
+    };
   }
 
   const signals = (parsed.signals as Record<string, unknown>[] ?? []).map((s) => ({
@@ -116,7 +125,7 @@ async function runResearchViaMessagesApi(
 
   const response = await anthropic.messages.create({
     model: process.env.CLAUDE_SIGNAL_RESEARCH_MODEL || "claude-haiku-4-5-20251001",
-    max_tokens: 1536,
+    max_tokens: 2048,
     system: systemPrompt,
     messages: [{ role: "user", content: userPrompt }],
     tools: [WEB_SEARCH_TOOL],
@@ -140,7 +149,7 @@ async function runSkillsEnhancedResearch(
 
   const response = await anthropic.beta.messages.create({
     model: process.env.CLAUDE_SIGNAL_RESEARCH_MODEL || "claude-haiku-4-5-20251001",
-    max_tokens: 1536,
+    max_tokens: 2048,
     betas: [...BETA_BRANDS],
     container: {
       skills: [
