@@ -15,11 +15,12 @@ import {
   getGenerationPrompt,
   appendWorkflowAndLimits,
   ORCHESTRATOR_SYSTEM_PROMPT,
-  AD_COPY_WRITER_PROMPT,
+  getWriterPromptForPlatform,
   COPY_VALIDATOR_PROMPT,
   type CampaignBrief,
 } from "./prompts";
 import { createAdToolsMcpServer } from "./mcp-tools";
+import { parseAndTruncateCopy } from "./shared-utils";
 
 const AGENT_TIMEOUT_MS = 180_000; // 3 minutes for full orchestration
 
@@ -27,32 +28,30 @@ export type AdCopyAgentInput = CampaignBrief;
 
 export type AdCopyAgentResult = Record<string, string[]>;
 
-/** Truncate a string to maxLen, adding ... if needed */
-function truncateField(value: string, maxLen: number): string {
-  if (value.length <= maxLen) return value;
-  return value.slice(0, maxLen - 3) + "...";
+function isSuccessResultMessage(
+  msg: unknown
+): msg is { type: "result"; subtype: "success"; result: string } {
+  return (
+    typeof msg === "object" &&
+    msg !== null &&
+    "type" in msg &&
+    (msg as { type: string }).type === "result" &&
+    "subtype" in msg &&
+    (msg as { subtype: string }).subtype === "success" &&
+    "result" in msg &&
+    typeof (msg as { result: unknown }).result === "string"
+  );
 }
 
-/** Parse and truncate copy from agent result; shape varies by platform */
-function parseAndTruncateCopy(
-  raw: string,
-  platform: PlatformConfig
-): Record<string, string[]> {
-  const jsonMatch = raw.match(/\{[\s\S]*\}/);
-  const jsonStr = jsonMatch ? jsonMatch[0] : raw;
-  const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
-
-  const result: Record<string, string[]> = {};
-  for (const [fieldKey, spec] of Object.entries(platform.fields)) {
-    const rawVal = parsed[fieldKey];
-    if (!rawVal) continue;
-    const arr = Array.isArray(rawVal) ? rawVal : [rawVal];
-    const strings = arr
-      .filter((v): v is string => typeof v === "string")
-      .map((s) => truncateField(s, spec.max_chars));
-    result[fieldKey] = strings;
-  }
-  return result;
+function isErrorResultMessage(
+  msg: unknown
+): msg is { type: "result"; errors?: string[] } {
+  return (
+    typeof msg === "object" &&
+    msg !== null &&
+    "type" in msg &&
+    (msg as { type: string }).type === "result"
+  );
 }
 
 export async function runAdCopyAgent(
@@ -89,12 +88,14 @@ export async function runAdCopyAgent(
         "mcp__ad-tools__validate_character_limits",
         "mcp__ad-tools__export_google_ads_csv",
         "mcp__ad-tools__export_meta_ads_csv",
+        "mcp__ad-tools__export_linkedin_ads_csv",
+        "mcp__ad-tools__export_x_ads_csv",
       ],
       agents: {
         "ad-copy-writer": {
           description:
             "Use for all copy generation tasks including headlines, descriptions, primary text, and tweet copy across all ad platforms.",
-          prompt: AD_COPY_WRITER_PROMPT,
+          prompt: getWriterPromptForPlatform(platformKey),
           tools: ["mcp__ad-tools__validate_character_limits"],
         },
         "copy-validator": {
@@ -115,17 +116,14 @@ export async function runAdCopyAgent(
   try {
     for await (const message of q) {
       if (message.type === "result") {
-        if (
-          "subtype" in message &&
-          message.subtype === "success" &&
-          "result" in message
-        ) {
-          const raw = (message as { result: string }).result.trim();
+        if (isSuccessResultMessage(message)) {
+          const raw = message.result.trim();
           return parseAndTruncateCopy(raw, platform);
         }
-        const errMsg =
-          (message as { errors?: string[] }).errors?.join("; ") ?? "Agent error";
-        throw new Error(errMsg);
+        if (isErrorResultMessage(message)) {
+          const errMsg = message.errors?.join("; ") ?? "Agent error";
+          throw new Error(errMsg);
+        }
       }
     }
     throw new Error("Agent finished without a result");

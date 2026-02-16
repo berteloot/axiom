@@ -5,11 +5,31 @@
 
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
+import { getPlatform, generateCsvColumns, type PlatformKey } from "./platforms";
 
 function escapeCsvCell(value: string): string {
   const s = String(value);
   if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
   return s;
+}
+
+/** Build a single CSV row from platform config and copy data (DRY with platforms.ts). */
+function buildCsvForPlatform(
+  platformKey: PlatformKey,
+  copyData: Record<string, string[]>,
+  campaignName: string
+): string {
+  const platform = getPlatform(platformKey);
+  const headers = generateCsvColumns(platform.fields);
+  const row: string[] = [campaignName];
+  for (const [fieldKey, spec] of Object.entries(platform.fields)) {
+    const values = copyData[fieldKey] || [];
+    for (let i = 0; i < spec.default_count; i++) {
+      row.push(values[i] ?? "");
+    }
+  }
+  const csv = [headers.map(escapeCsvCell).join(","), row.map(escapeCsvCell).join(",")].join("\r\n");
+  return csv;
 }
 
 /** Validate copy against platform character limits */
@@ -61,22 +81,12 @@ const exportGoogleAdsCsvTool = tool(
     campaign_name: z.string().optional(),
   }),
   async (args) => {
-    const { copy_data, campaign_name } = args;
-    const campaign = campaign_name || "Campaign";
-    const headers = [
-      "Campaign",
-      ...Array.from({ length: 15 }, (_, i) => `Headline ${i + 1}`),
-      ...Array.from({ length: 4 }, (_, i) => `Description ${i + 1}`),
-    ];
-    const row = [
-      campaign,
-      ...(copy_data.headlines || []).slice(0, 15),
-      ...(copy_data.descriptions || []).slice(0, 4),
-    ];
-    const csv = [headers.map(escapeCsvCell).join(","), row.map(escapeCsvCell).join(",")].join("\r\n");
-    return {
-      content: [{ type: "text" as const, text: csv }],
-    };
+    const csv = buildCsvForPlatform(
+      "google_ads_rsa",
+      { headlines: args.copy_data.headlines, descriptions: args.copy_data.descriptions },
+      args.campaign_name || "Campaign"
+    );
+    return { content: [{ type: "text" as const, text: csv }] };
   }
 );
 
@@ -93,22 +103,66 @@ const exportMetaAdsCsvTool = tool(
     campaign_name: z.string().optional(),
   }),
   async (args) => {
-    const { copy_data, campaign_name } = args;
-    const campaign = campaign_name || "Campaign";
-    const p = (copy_data.primary_text || []).slice(0, 5);
-    const h = (copy_data.headlines || []).slice(0, 5);
-    const d = (copy_data.descriptions || []).slice(0, 5);
-    const headers = [
-      "Campaign",
-      ...Array.from({ length: 5 }, (_, i) => `Primary Text ${i + 1}`),
-      ...Array.from({ length: 5 }, (_, i) => `Headline ${i + 1}`),
-      ...Array.from({ length: 5 }, (_, i) => `Description ${i + 1}`),
-    ];
-    const row = [campaign, ...p, ...h, ...d];
-    const csv = [headers.map(escapeCsvCell).join(","), row.map(escapeCsvCell).join(",")].join("\r\n");
-    return {
-      content: [{ type: "text" as const, text: csv }],
-    };
+    const csv = buildCsvForPlatform(
+      "meta_ads",
+      {
+        primary_text: args.copy_data.primary_text || [],
+        headlines: args.copy_data.headlines || [],
+        descriptions: args.copy_data.descriptions || [],
+      },
+      args.campaign_name || "Campaign"
+    );
+    return { content: [{ type: "text" as const, text: csv }] };
+  }
+);
+
+/** Export LinkedIn Ads to CSV format */
+const exportLinkedInAdsCsvTool = tool(
+  "export_linkedin_ads_csv",
+  "Exports LinkedIn Ads copy (introductory_text, headlines, descriptions) to CSV format.",
+  z.object({
+    copy_data: z.object({
+      introductory_text: z.array(z.string()).optional(),
+      headlines: z.array(z.string()).optional(),
+      descriptions: z.array(z.string()).optional(),
+    }),
+    campaign_name: z.string().optional(),
+  }),
+  async (args) => {
+    const csv = buildCsvForPlatform(
+      "linkedin_ads",
+      {
+        introductory_text: args.copy_data.introductory_text || [],
+        headlines: args.copy_data.headlines || [],
+        descriptions: args.copy_data.descriptions || [],
+      },
+      args.campaign_name || "Campaign"
+    );
+    return { content: [{ type: "text" as const, text: csv }] };
+  }
+);
+
+/** Export X (Twitter) Ads to CSV format */
+const exportXAdsCsvTool = tool(
+  "export_x_ads_csv",
+  "Exports X (Twitter) Ads copy (tweet_text, card_headlines) to CSV format.",
+  z.object({
+    copy_data: z.object({
+      tweet_text: z.array(z.string()).optional(),
+      card_headlines: z.array(z.string()).optional(),
+    }),
+    campaign_name: z.string().optional(),
+  }),
+  async (args) => {
+    const csv = buildCsvForPlatform(
+      "x_ads",
+      {
+        tweet_text: args.copy_data.tweet_text || [],
+        card_headlines: args.copy_data.card_headlines || [],
+      },
+      args.campaign_name || "Campaign"
+    );
+    return { content: [{ type: "text" as const, text: csv }] };
   }
 );
 
@@ -117,6 +171,12 @@ export function createAdToolsMcpServer() {
   return createSdkMcpServer({
     name: "ad-tools",
     version: "1.0.0",
-    tools: [validateCharacterLimitsTool, exportGoogleAdsCsvTool, exportMetaAdsCsvTool],
+    tools: [
+      validateCharacterLimitsTool,
+      exportGoogleAdsCsvTool,
+      exportMetaAdsCsvTool,
+      exportLinkedInAdsCsvTool,
+      exportXAdsCsvTool,
+    ],
   });
 }

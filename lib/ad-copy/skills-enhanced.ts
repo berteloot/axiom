@@ -8,20 +8,16 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import {
-  getPlatform,
-  type PlatformKey,
-  type PlatformConfig,
-} from "./platforms";
+import { getPlatform, type PlatformKey } from "./platforms";
 import {
   getGenerationPrompt,
   type CampaignBrief,
 } from "./prompts";
-
-const BETA_BRANDS = [
-  "code-execution-2025-08-25",
-  "skills-2025-10-02",
-] as const;
+import {
+  parseAndTruncateCopy,
+  AD_COPY_MODEL,
+  BETA_BRANDS,
+} from "./shared-utils";
 
 export type SkillsEnhancedResult = {
   copy: Record<string, string[]>;
@@ -36,32 +32,6 @@ export type SkillsEnhancedResult = {
     }>;
   };
 };
-
-function truncateField(value: string, maxLen: number): string {
-  if (value.length <= maxLen) return value;
-  return value.slice(0, maxLen - 3) + "...";
-}
-
-function parseAndTruncateCopy(
-  raw: string,
-  platform: PlatformConfig
-): Record<string, string[]> {
-  const jsonMatch = raw.match(/\{[\s\S]*\}/);
-  const jsonStr = jsonMatch ? jsonMatch[0] : raw;
-  const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
-
-  const result: Record<string, string[]> = {};
-  for (const [fieldKey, spec] of Object.entries(platform.fields)) {
-    const rawVal = parsed[fieldKey];
-    if (!rawVal) continue;
-    const arr = Array.isArray(rawVal) ? rawVal : [rawVal];
-    const strings = arr
-      .filter((v): v is string => typeof v === "string")
-      .map((s) => truncateField(s, spec.max_chars));
-    result[fieldKey] = strings;
-  }
-  return result;
-}
 
 /**
  * Generate ad copy using beta Messages API with Agent Skills + Code Execution.
@@ -79,7 +49,7 @@ export async function runSkillsEnhancedAdCopy(
   const anthropic = new Anthropic({ apiKey });
 
   const response = await anthropic.beta.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: AD_COPY_MODEL,
     max_tokens: 2048,
     betas: [...BETA_BRANDS],
     container: {

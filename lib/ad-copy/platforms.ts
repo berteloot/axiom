@@ -22,12 +22,38 @@ export type PlatformConfig = {
   csv_columns: string[];
 };
 
+/** Generate CSV header row from platform fields (single source of truth). */
+export function generateCsvColumns(fields: Record<string, FieldSpec>): string[] {
+  const cols = ["Campaign"];
+  for (const spec of Object.values(fields)) {
+    for (let i = 0; i < spec.default_count; i++) {
+      cols.push(`${spec.label} ${i + 1}`);
+    }
+  }
+  return cols;
+}
+
+function definePlatform(
+  key: PlatformKey,
+  name: string,
+  description: string,
+  fields: Record<string, FieldSpec>
+): PlatformConfig {
+  return {
+    key,
+    name,
+    description,
+    fields,
+    csv_columns: generateCsvColumns(fields),
+  };
+}
+
 export const PLATFORMS: Record<PlatformKey, PlatformConfig> = {
-  google_ads_rsa: {
-    key: "google_ads_rsa",
-    name: "Google Ads (Responsive Search Ad)",
-    description: "Responsive Search Ads with multiple headlines and descriptions that Google mixes and matches.",
-    fields: {
+  google_ads_rsa: definePlatform(
+    "google_ads_rsa",
+    "Google Ads (Responsive Search Ad)",
+    "Responsive Search Ads with multiple headlines and descriptions that Google mixes and matches.",
+    {
       headlines: {
         label: "Headlines",
         max_chars: 30,
@@ -44,14 +70,13 @@ export const PLATFORMS: Record<PlatformKey, PlatformConfig> = {
         default_count: 4,
         help: "Up to 4 descriptions, max 90 chars each",
       },
-    },
-    csv_columns: ["Campaign", "Headline 1", "Headline 2", "Headline 3", "Headline 4", "Headline 5", "Headline 6", "Headline 7", "Headline 8", "Headline 9", "Headline 10", "Headline 11", "Headline 12", "Headline 13", "Headline 14", "Headline 15", "Description 1", "Description 2", "Description 3", "Description 4"],
-  },
-  meta_ads: {
-    key: "meta_ads",
-    name: "Meta Ads (Facebook & Instagram)",
-    description: "Primary text, headlines, and descriptions for Facebook and Instagram ads.",
-    fields: {
+    }
+  ),
+  meta_ads: definePlatform(
+    "meta_ads",
+    "Meta Ads (Facebook & Instagram)",
+    "Primary text, headlines, and descriptions for Facebook and Instagram ads.",
+    {
       primary_text: {
         label: "Primary Text",
         max_chars: 125,
@@ -76,14 +101,13 @@ export const PLATFORMS: Record<PlatformKey, PlatformConfig> = {
         default_count: 3,
         help: "Max 155 chars each",
       },
-    },
-    csv_columns: ["Campaign", "Primary Text 1", "Primary Text 2", "Primary Text 3", "Headline 1", "Headline 2", "Headline 3", "Headline 4", "Headline 5", "Description 1", "Description 2", "Description 3"],
-  },
-  linkedin_ads: {
-    key: "linkedin_ads",
-    name: "LinkedIn Ads (Sponsored Content)",
-    description: "Introductory text, headlines, and descriptions for LinkedIn sponsored content.",
-    fields: {
+    }
+  ),
+  linkedin_ads: definePlatform(
+    "linkedin_ads",
+    "LinkedIn Ads (Sponsored Content)",
+    "Introductory text, headlines, and descriptions for LinkedIn sponsored content.",
+    {
       introductory_text: {
         label: "Introductory Text",
         max_chars: 150,
@@ -108,14 +132,13 @@ export const PLATFORMS: Record<PlatformKey, PlatformConfig> = {
         default_count: 3,
         help: "Max 100 chars each",
       },
-    },
-    csv_columns: ["Campaign", "Introductory Text 1", "Introductory Text 2", "Introductory Text 3", "Headline 1", "Headline 2", "Headline 3", "Headline 4", "Headline 5", "Description 1", "Description 2", "Description 3"],
-  },
-  x_ads: {
-    key: "x_ads",
-    name: "X (Twitter) Ads",
-    description: "Tweet copy and card headlines for X (Twitter) ads.",
-    fields: {
+    }
+  ),
+  x_ads: definePlatform(
+    "x_ads",
+    "X (Twitter) Ads",
+    "Tweet copy and card headlines for X (Twitter) ads.",
+    {
       tweet_text: {
         label: "Tweet Text",
         max_chars: 280,
@@ -132,9 +155,8 @@ export const PLATFORMS: Record<PlatformKey, PlatformConfig> = {
         default_count: 3,
         help: "For website card, max 70 chars each",
       },
-    },
-    csv_columns: ["Campaign", "Tweet 1", "Tweet 2", "Tweet 3", "Tweet 4", "Tweet 5", "Card Headline 1", "Card Headline 2", "Card Headline 3"],
-  },
+    }
+  ),
 };
 
 export function getPlatform(key: PlatformKey): PlatformConfig {
@@ -151,4 +173,29 @@ export function getPlatformLimits(key: PlatformKey): Record<string, number> {
     limits[fieldKey] = spec.max_chars;
   }
   return limits;
+}
+
+/** Validate field constraints (e.g. min_count <= max_count). Run at module load. */
+function validateFieldSpec(spec: FieldSpec, fieldKey: string): void {
+  if (spec.min_count > spec.max_count) {
+    throw new Error(
+      `platforms: ${fieldKey}: min_count (${spec.min_count}) > max_count (${spec.max_count})`
+    );
+  }
+  if (spec.default_count < spec.min_count || spec.default_count > spec.max_count) {
+    throw new Error(
+      `platforms: ${fieldKey}: default_count (${spec.default_count}) must be between min_count and max_count`
+    );
+  }
+}
+
+function validatePlatformConfig(config: PlatformConfig): void {
+  for (const [fieldKey, spec] of Object.entries(config.fields)) {
+    validateFieldSpec(spec, fieldKey);
+  }
+}
+
+// Validate all platforms at load time
+for (const platform of Object.values(PLATFORMS)) {
+  validatePlatformConfig(platform);
 }

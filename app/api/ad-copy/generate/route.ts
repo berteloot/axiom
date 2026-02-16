@@ -13,6 +13,7 @@ import {
   getGenerationPrompt,
   type CampaignBrief,
 } from "@/lib/ad-copy/prompts";
+import { parseAndTruncateCopy, AD_COPY_MODEL } from "@/lib/ad-copy/shared-utils";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,33 +31,6 @@ const RequestSchema = z.object({
   additionalContext: z.string().optional(),
   campaignName: z.string().optional(),
 });
-
-function truncateField(value: string, maxLen: number): string {
-  if (value.length <= maxLen) return value;
-  return value.slice(0, maxLen - 3) + "...";
-}
-
-function parseAndTruncateCopy(
-  raw: string,
-  platformKey: PlatformKey
-): Record<string, string[]> {
-  const platform = getPlatform(platformKey);
-  const jsonMatch = raw.match(/\{[\s\S]*\}/);
-  const jsonStr = jsonMatch ? jsonMatch[0] : raw;
-  const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
-
-  const result: Record<string, string[]> = {};
-  for (const [fieldKey, spec] of Object.entries(platform.fields)) {
-    const rawVal = parsed[fieldKey];
-    if (!rawVal) continue;
-    const arr = Array.isArray(rawVal) ? rawVal : [rawVal];
-    const strings = arr
-      .filter((v): v is string => typeof v === "string")
-      .map((s) => truncateField(s, spec.max_chars));
-    result[fieldKey] = strings;
-  }
-  return result;
-}
 
 export type AgentProofStep = {
   agent: string;
@@ -87,7 +61,7 @@ async function runMarketingAgentsViaMessagesApi(
   const systemPrompt = `You are the ad-copy-writer agent, an expert direct-response copywriter for performance ads. Generate benefit-first, conversion-focused copy. CRITICAL: Follow ALL character limits strictly (count spaces). Return ONLY valid JSON in a code block, no other text. Every item must be within its character limit.`;
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: AD_COPY_MODEL,
     max_tokens: 2048,
     system: systemPrompt,
     messages: [{ role: "user", content: prompt }],
@@ -101,7 +75,7 @@ async function runMarketingAgentsViaMessagesApi(
   const raw = textBlock.text.trim();
   let copy: Record<string, string[]>;
   try {
-    copy = parseAndTruncateCopy(raw, platformKey);
+    copy = parseAndTruncateCopy(raw, platform);
   } catch {
     throw new Error("Failed to parse ad copy JSON from response");
   }

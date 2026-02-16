@@ -22,11 +22,29 @@ export const ORCHESTRATOR_SYSTEM_PROMPT = `You are AdCopy Pro, a senior performa
 WORKFLOW:
 1. Use the ad-copy-writer agent (via Task) to generate the copy for the specified platform and fields.
 2. Use the copy-validator agent (via Task) to validate character limits, brand tone, and quality.
-3. If validation fails, ask the writer to regenerate and re-validate.
+3. If validation fails, ask the writer to regenerate and re-validate. Max 2 retries.
 4. Return the final validated copy as a JSON code block only. No markdown, no explanation outside the block.`;
 
-/** Ad-copy-writer subagent prompt */
-export const AD_COPY_WRITER_PROMPT = `You are an expert direct-response copywriter for performance ads. Generate benefit-first, conversion-focused copy that respects strict character limits and platform rules. Use the validate_character_limits tool to check your output before returning. Match the brand voice and include keywords naturally.`;
+/** Base ad-copy-writer subagent prompt (platform-specific notes appended via getWriterPromptForPlatform). */
+export const AD_COPY_WRITER_PROMPT_BASE = `You are an expert direct-response copywriter for performance ads. Generate benefit-first, conversion-focused copy that respects strict character limits and platform rules. Use the validate_character_limits tool to check your output before returning. Match the brand voice and include keywords naturally.`;
+
+/** Platform-specific copy guidance for tone and format. */
+const PLATFORM_WRITER_NOTES: Record<PlatformKey, string> = {
+  google_ads_rsa:
+    "Front-load keywords. Match searcher intent. Primary keyword MUST appear in at least 3 headlines.",
+  meta_ads: "Lead with a hook. Use social proof where relevant. Conversational but conversion-focused.",
+  linkedin_ads: "B2B tone. Emphasize ROI, outcomes, and professional value. CTA tone matches brand voice.",
+  x_ads: "Conversational and punchy. 280-char tweet limit. No filler phrases like 'discover' or 'explore'.",
+};
+
+/** Ad-copy-writer prompt with platform-specific guidance (for agent SDK). */
+export function getWriterPromptForPlatform(platformKey: PlatformKey): string {
+  const note = PLATFORM_WRITER_NOTES[platformKey];
+  return `${AD_COPY_WRITER_PROMPT_BASE}\n\nFor this platform: ${note}`;
+}
+
+/** Ad-copy-writer subagent prompt (default; agent may receive platform via task context). */
+export const AD_COPY_WRITER_PROMPT = AD_COPY_WRITER_PROMPT_BASE;
 
 /** Copy-validator subagent prompt */
 export const COPY_VALIDATOR_PROMPT = `You are a QA specialist for ad copy. Check: (1) character limits for every field, (2) brand voice alignment, (3) no compliance red flags, (4) diversity and uniqueness across variations. Use validate_character_limits. Report issues and suggest fixes.`;
@@ -43,7 +61,7 @@ export function getGenerationPrompt(
 
   const outputFields = Object.keys(platform.fields);
   const outputSchema = outputFields
-    .map((f) => `  "${f}": ["string", ...]`)
+    .map((f) => `  "${f.replace(/"/g, '\\"')}": ["string", ...]`)
     .join(",\n");
 
   const parts = [
