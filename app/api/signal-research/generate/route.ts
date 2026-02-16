@@ -15,7 +15,7 @@ const RequestSchema = z.object({
       domain: z.string().optional(),
       industry: z.string().optional(),
     })
-  ).min(1).max(15),
+  ).min(1).max(8),
   researchPrompt: z.string().min(1, "Research focus is required"),
   industry: z.string().optional(),
 });
@@ -44,27 +44,52 @@ export async function POST(request: NextRequest) {
     const { companies, researchPrompt, industry } = parsed.data;
     const results: ResearchOutput["companies"] = [];
 
+    const DELAY_MS = 4000; // 4s between companies to avoid Anthropic rate limit (30k input tokens/min)
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
     for (let i = 0; i < companies.length; i++) {
       const c = companies[i];
       try {
-        const research = await runResearchForCompany({
-          company: c.company,
-          companyDomain: c.domain,
-          industry: c.industry ?? industry,
-          researchPrompt,
-        });
+        let research;
+        try {
+          research = await runResearchForCompany({
+            company: c.company,
+            companyDomain: c.domain,
+            industry: c.industry ?? industry,
+            researchPrompt,
+          });
+        } catch (rateErr: unknown) {
+          const status = (rateErr as { status?: number }).status;
+          const retryAfter = (rateErr as { headers?: Headers }).headers?.get?.("retry-after");
+          if (status === 429 && retryAfter) {
+            const waitMs = Math.min(parseInt(retryAfter, 10) * 1000, 120_000);
+            console.warn(`[Signal Research] Rate limited, waiting ${waitMs}ms before retry for ${c.company}`);
+            await sleep(waitMs);
+            research = await runResearchForCompany({
+              company: c.company,
+              companyDomain: c.domain,
+              industry: c.industry ?? industry,
+              researchPrompt,
+            });
+          } else {
+            throw rateErr;
+          }
+        }
         results.push(research);
       } catch (err) {
         console.error(`[Signal Research] Failed for ${c.company}:`, err);
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        const isRateLimit = typeof msg === "string" && (msg.includes("rate_limit") || msg.includes("429"));
         results.push({
           company: c.company,
           industry: c.industry ?? industry,
           overallScore: 0,
-          salesOpportunity: "Research failed",
-          keyEvidence: err instanceof Error ? err.message : "Unknown error",
+          salesOpportunity: isRateLimit ? "Rate limited – try fewer companies or wait a minute" : "Research failed",
+          keyEvidence: msg,
           signals: [],
         });
       }
+      if (i < companies.length - 1) await sleep(DELAY_MS);
     }
 
     const output: ResearchOutput = {

@@ -65,6 +65,8 @@ services:
         sync: false
       - key: ABM_SKILL_ID
         sync: false
+      - key: SIGNAL_RESEARCH_SKILL_ID
+        sync: false
 
       # Website/Blog extraction (optional)
       - key: FIRECRAWL_API_KEY

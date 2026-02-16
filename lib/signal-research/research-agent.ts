@@ -1,7 +1,8 @@
 /**
  * Research agent: uses Claude Messages API with web_search to gather signals from
  * websites, forums (Reddit), job postings, press, and partner sites.
- * User prompts define the research focus (generic - e.g., SAP, cloud, AI).
+ * When SIGNAL_RESEARCH_SKILL_ID is set: beta API with Skills + web_search.
+ * Otherwise: plain Messages API with web_search.
  */
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -12,6 +13,8 @@ import type {
   ActionPlanItem,
   PriorityTier,
 } from "./types";
+
+const BETA_BRANDS = ["skills-2025-10-02"] as const;
 
 export interface ResearchAgentInput {
   company: string;
@@ -27,18 +30,8 @@ function scoreToPriority(score: number): PriorityTier {
   return "P4-LOW";
 }
 
-export async function runResearchForCompany(
-  input: ResearchAgentInput
-): Promise<CompanyResearch> {
+function buildPrompts(input: ResearchAgentInput) {
   const { company, companyDomain, industry, researchPrompt } = input;
-
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error("Signal research requires ANTHROPIC_API_KEY");
-  }
-
-  const anthropic = new Anthropic({ apiKey });
-
   const systemPrompt = `You are a sales intelligence research agent. Your job is to research companies and identify buying signals relevant to a specific sales opportunity.
 
 RESEARCH FOCUS (user-defined): ${researchPrompt}
@@ -92,22 +85,14 @@ Use web search to check:
 
 Return ONLY valid JSON in a code block.`;
 
-  const response = await anthropic.messages.create({
-    model: process.env.CLAUDE_SIGNAL_RESEARCH_MODEL || "claude-sonnet-4-20250514",
-    max_tokens: 4096,
-    system: systemPrompt,
-    messages: [{ role: "user", content: userPrompt }],
-    tools: [{ type: "web_search_20250305" as const, name: "web_search" as const, max_uses: 5 }],
-    tool_choice: { type: "auto" as const },
-  });
+  return { systemPrompt, userPrompt };
+}
 
-  let textOutput = "";
-  for (const block of response.content) {
-    if (block.type === "text") {
-      textOutput += block.text;
-    }
-  }
-
+function parseResponse(
+  textOutput: string,
+  input: ResearchAgentInput
+): CompanyResearch {
+  const { company, industry } = input;
   const jsonMatch = textOutput.match(/\{[\s\S]*\}/);
   const jsonStr = jsonMatch ? jsonMatch[0] : textOutput;
 
@@ -146,6 +131,94 @@ Return ONLY valid JSON in a code block.`;
     keyDecisionMakers: keyDecisionMakers?.length ? keyDecisionMakers : undefined,
     signals,
   };
+}
+
+function extractTextFromResponse(content: Array<{ type: string; text?: string }>): string {
+  let text = "";
+  for (const block of content) {
+    if (block.type === "text" && block.text) {
+      text += block.text;
+    }
+  }
+  return text;
+}
+
+const WEB_SEARCH_TOOL = {
+  type: "web_search_20250305" as const,
+  name: "web_search" as const,
+  max_uses: 5,
+};
+
+/**
+ * Fallback: plain Messages API with web_search when Skills are not configured.
+ */
+async function runResearchViaMessagesApi(
+  input: ResearchAgentInput,
+  apiKey: string
+): Promise<CompanyResearch> {
+  const anthropic = new Anthropic({ apiKey });
+  const { systemPrompt, userPrompt } = buildPrompts(input);
+
+  const response = await anthropic.messages.create({
+    model: process.env.CLAUDE_SIGNAL_RESEARCH_MODEL || "claude-sonnet-4-20250514",
+    max_tokens: 2048,
+    system: systemPrompt,
+    messages: [{ role: "user", content: userPrompt }],
+    tools: [WEB_SEARCH_TOOL],
+    tool_choice: { type: "auto" as const },
+  });
+
+  const textOutput = extractTextFromResponse(response.content);
+  return parseResponse(textOutput, input);
+}
+
+/**
+ * Skills-enhanced: beta Messages API with container.skills + web_search.
+ */
+async function runSkillsEnhancedResearch(
+  input: ResearchAgentInput,
+  apiKey: string,
+  skillId: string
+): Promise<CompanyResearch> {
+  const anthropic = new Anthropic({ apiKey });
+  const { systemPrompt, userPrompt } = buildPrompts(input);
+
+  const response = await anthropic.beta.messages.create({
+    model: process.env.CLAUDE_SIGNAL_RESEARCH_MODEL || "claude-sonnet-4-20250514",
+    max_tokens: 2048,
+    betas: [...BETA_BRANDS],
+    container: {
+      skills: [
+        {
+          type: "custom" as const,
+          skill_id: skillId,
+          version: "latest",
+        },
+      ],
+    },
+    tools: [WEB_SEARCH_TOOL],
+    tool_choice: { type: "auto" as const },
+    system: systemPrompt,
+    messages: [{ role: "user", content: userPrompt }],
+  });
+
+  const textOutput = extractTextFromResponse(response.content);
+  return parseResponse(textOutput, input);
+}
+
+export async function runResearchForCompany(
+  input: ResearchAgentInput
+): Promise<CompanyResearch> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error("Signal research requires ANTHROPIC_API_KEY");
+  }
+
+  const skillId = process.env.SIGNAL_RESEARCH_SKILL_ID;
+  if (skillId) {
+    return runSkillsEnhancedResearch(input, apiKey, skillId);
+  }
+  return runResearchViaMessagesApi(input, apiKey);
 }
 
 export function buildActionPlan(companies: CompanyResearch[]): ActionPlanItem[] {
