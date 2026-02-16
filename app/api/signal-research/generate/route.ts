@@ -15,7 +15,7 @@ const RequestSchema = z.object({
       domain: z.string().optional(),
       industry: z.string().optional(),
     })
-  ).min(1).max(2),
+  ).min(1).max(4),
   researchPrompt: z.string().min(1, "Research focus is required"),
   industry: z.string().optional(),
 });
@@ -42,14 +42,15 @@ export async function POST(request: NextRequest) {
     }
 
     const { companies, researchPrompt, industry } = parsed.data;
+    const toProcess = companies.slice(0, 2); // cap at 2 for rate limits; accept up to 4 for backward compat
     const results: ResearchOutput["companies"] = [];
 
     const DELAY_MS = 60_000; // 60s between companies – web_search multi-turn burns ~20k tokens/company at 30k ITPM
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
     const MAX_429_RETRIES = 3;
-    for (let i = 0; i < companies.length; i++) {
-      const c = companies[i];
+    for (let i = 0; i < toProcess.length; i++) {
+      const c = toProcess[i];
       try {
         let research: Awaited<ReturnType<typeof runResearchForCompany>> | null = null;
         for (let attempt = 0; attempt <= MAX_429_RETRIES; attempt++) {
@@ -88,7 +89,7 @@ export async function POST(request: NextRequest) {
           signals: [],
         });
       }
-      if (i < companies.length - 1) await sleep(DELAY_MS);
+      if (i < toProcess.length - 1) await sleep(DELAY_MS);
     }
 
     const output: ResearchOutput = {
