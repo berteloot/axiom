@@ -15,6 +15,7 @@ import type {
 } from "./types";
 
 const BETA_BRANDS = ["skills-2025-10-02"] as const;
+const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
 
 export interface ResearchAgentInput {
   company: string;
@@ -130,7 +131,7 @@ async function runResearchViaMessagesApi(
   const { systemPrompt, userPrompt } = buildPrompts(input);
 
   const response = await anthropic.messages.create({
-    model: process.env.CLAUDE_SIGNAL_RESEARCH_MODEL || "claude-haiku-4-5-20251001",
+    model: process.env.CLAUDE_SIGNAL_RESEARCH_MODEL || DEFAULT_MODEL,
     max_tokens: 2048,
     system: systemPrompt,
     messages: [{ role: "user", content: userPrompt }],
@@ -154,7 +155,7 @@ async function runSkillsEnhancedResearch(
   const { systemPrompt, userPrompt } = buildPrompts(input);
 
   const response = await anthropic.beta.messages.create({
-    model: process.env.CLAUDE_SIGNAL_RESEARCH_MODEL || "claude-haiku-4-5-20251001",
+    model: process.env.CLAUDE_SIGNAL_RESEARCH_MODEL || DEFAULT_MODEL,
     max_tokens: 2048,
     betas: [...BETA_BRANDS],
     container: {

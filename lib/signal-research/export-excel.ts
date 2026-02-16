@@ -10,6 +10,7 @@ import type {
   ResearchSignal,
   ActionPlanItem,
   SignalStrength,
+  PriorityTier,
 } from "./types";
 import { buildActionPlan } from "./research-agent";
 
@@ -25,6 +26,13 @@ const STRENGTH_COLORS: Record<SignalStrength, string> = {
   MODERATE: "FFEAB308",
   WEAK: "FFF97316",
   NONE: "FFEF4444",
+};
+
+const PRIORITY_COLORS: Record<PriorityTier, string> = {
+  "P1-HOT": "FFEF4444",
+  "P2-WARM": "FFF97316",
+  "P3-NURTURE": "FFEAB308",
+  "P4-LOW": "FF94A3B8",
 };
 
 export async function buildResearchExcel(
@@ -82,11 +90,14 @@ export async function buildResearchExcel(
   const scoreToStatus = (s: number) =>
     s >= 8 ? "Hot" : s >= 6 ? "Warm" : s >= 4 ? "Nurture" : "Low";
 
+  // Summary rows: rank, company, industry, revenue, employees, currentSystem, opportunity status,
+  // then signal strength columns H–L (8–12): website, job_postings, press_news, partner_vendor, forums_communities
+  const SIGNAL_COL_INDEXES = [8, 9, 10, 11, 12] as const;
   companies.forEach((c, i) => {
     const sigMap = Object.fromEntries(
       c.signals.map((s) => [s.category, s.strength])
     );
-    wsSummary.addRow([
+    const row = wsSummary.addRow([
       i + 1,
       c.company,
       c.industry ?? "",
@@ -103,13 +114,8 @@ export async function buildResearchExcel(
       c.salesOpportunity ?? "",
       c.keyEvidence ?? "",
     ]);
-  });
-
-  // Color signal strength cells (columns H–L)
-  companies.forEach((_, i) => {
-    const row = i + 2;
-    [8, 9, 10, 11, 12].forEach((col) => {
-      const cell = wsSummary.getCell(row, col);
+    SIGNAL_COL_INDEXES.forEach((col) => {
+      const cell = row.getCell(col);
       const val = cell.value?.toString() ?? "";
       const color = STRENGTH_COLORS[val as SignalStrength];
       if (color) {
@@ -199,13 +205,7 @@ export async function buildResearchExcel(
       a.rationale,
     ]);
     const priorityCell = row.getCell(1);
-    const pColors: Record<string, string> = {
-      "P1-HOT": "FFEF4444",
-      "P2-WARM": "FFF97316",
-      "P3-NURTURE": "FFEAB308",
-      "P4-LOW": "FF94A3B8",
-    };
-    const pc = pColors[a.priority];
+    const pc = PRIORITY_COLORS[a.priority];
     if (pc) {
       priorityCell.fill = {
         type: "pattern",

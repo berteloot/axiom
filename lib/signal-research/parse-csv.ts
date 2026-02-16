@@ -46,6 +46,12 @@ function normalizeHeader(h: string): string {
   return h.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+/** Extract domain from email (user@acme.com) or return normalized domain string (strip www). */
+function extractDomain(text: string): string {
+  const raw = text.includes("@") ? text.slice(text.lastIndexOf("@") + 1) : text;
+  return raw.replace(/^www\./, "").toLowerCase();
+}
+
 /** Convert domain (acme.com) to company name (Acme) */
 function domainToCompanyName(domain: string): string {
   const base = domain.replace(/^www\./, "").split(".")[0] ?? domain;
@@ -121,15 +127,9 @@ export function parseResearchCSV(text: string): ResearchCSVRow[] {
   for (let i = 1; i < lines.length; i++) {
     const values = parseCSVLine(lines[i]);
     let company = companyCol >= 0 ? (values[companyCol] ?? "").trim() : "";
-    let domain = domainCol >= 0 ? (values[domainCol] ?? "").trim().toLowerCase() : "";
+    const domainRaw = domainCol >= 0 ? (values[domainCol] ?? "").trim() : "";
     const emailRaw = emailCol >= 0 ? (values[emailCol] ?? "").trim() : "";
-    if (emailRaw.includes("@") && !domain) {
-      domain = emailRaw.slice(emailRaw.lastIndexOf("@") + 1).toLowerCase();
-    }
-    if (domain.includes("@")) {
-      const at = domain.lastIndexOf("@");
-      domain = domain.slice(at + 1);
-    }
+    let domain = domainRaw ? extractDomain(domainRaw) : emailRaw ? extractDomain(emailRaw) : "";
     const industry = industryCol >= 0 ? (values[industryCol] ?? "").trim() : undefined;
     const keyContactsRaw = keyContactsCol >= 0 ? (values[keyContactsCol] ?? "").trim() : "";
     const targetRole = targetRoleCol >= 0 ? (values[targetRoleCol] ?? "").trim() : undefined;
@@ -141,13 +141,10 @@ export function parseResearchCSV(text: string): ResearchCSVRow[] {
     if (domain && !company) {
       company = domainToCompanyName(domain);
     }
-    if (!company && domain) {
-      company = domain;
-    }
 
     if (!company) continue;
 
-    const normDomain = domain.replace(/^www\./, "");
+    const normDomain = domain;
     if (normDomain && SKIP_DOMAINS.has(normDomain)) continue;
 
     const key = `${company.toLowerCase()}|${normDomain || ""}`;
