@@ -21,6 +21,8 @@ export interface ResearchAgentInput {
   companyDomain?: string;
   industry?: string;
   researchPrompt: string;
+  keyContacts?: string;
+  targetRole?: string;
 }
 
 function scoreToPriority(score: number): PriorityTier {
@@ -31,8 +33,12 @@ function scoreToPriority(score: number): PriorityTier {
 }
 
 function buildPrompts(input: ResearchAgentInput) {
-  const { company, companyDomain, industry, researchPrompt } = input;
-  const systemPrompt = `Research "${company}"${companyDomain ? ` (${companyDomain})` : ""} for buying signals. Focus: ${researchPrompt}.${industry ? ` Industry: ${industry}.` : ""}
+  const { company, companyDomain, industry, researchPrompt, keyContacts, targetRole } = input;
+  const contactContext = [
+    keyContacts ? `Known contacts at this company: ${keyContacts}. Use them in keyDecisionMakers and tailor the sales opportunity.` : "",
+    targetRole ? `Target persona/role to pursue: ${targetRole}.` : "",
+  ].filter(Boolean).join(" ");
+  const systemPrompt = `Research "${company}"${companyDomain ? ` (${companyDomain})` : ""} for buying signals. Focus: ${researchPrompt}.${industry ? ` Industry: ${industry}.` : ""}${contactContext ? ` ${contactContext}` : ""}
 
 Signal categories: website, job_postings, press_news, forums_communities, partner_vendor. Use web search (site:reddit.com, job boards, press). Rate each STRONG/MODERATE/WEAK/NONE. Return JSON in code block:
 {"company":"${company}","industry":"","revenue":"","employees":"","currentSystem":"","overallScore":7,"salesOpportunity":"","keyEvidence":"","keyDecisionMakers":[],"signals":[{"category":"website","strength":"STRONG","keyEvidence":"","sourceUrls":[],"actionableInsight":"","recommendedNextStep":""}]}

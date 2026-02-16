@@ -68,7 +68,7 @@ export function SignalResearchGenerator() {
       e.target.value = "";
       if (rows.length === 0) {
         setError(
-          "No valid companies found. Use columns: Company, Email Domain, or Industry."
+          "No valid companies found. Use: Company, Domain, Industry; or contact sheet: Company, First Name, Last Name, Job Title, Email."
         );
         return;
       }
@@ -98,34 +98,56 @@ export function SignalResearchGenerator() {
   const canGenerate =
     researchPrompt.trim().length > 0 && companies.length > 0;
 
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+
   const handleGenerate = async () => {
     if (!canGenerate) return;
     setError(null);
     setOutput(null);
     setIsLoading(true);
+    const CHUNK_SIZE = 2;
+    const chunks: ResearchCSVRow[][] = [];
+    for (let i = 0; i < companies.length; i += CHUNK_SIZE) {
+      chunks.push(companies.slice(i, i + CHUNK_SIZE));
+    }
+    const allResults: ResearchOutput["companies"] = [];
     try {
-      const toResearch = companies.slice(0, 2);
-      const res = await fetch("/api/signal-research/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          companies: toResearch.map((c) => ({
-            company: c.company.trim(),
-            domain: c.domain?.trim() || undefined,
-            industry: c.industry?.trim() || industry.trim() || undefined,
-          })),
-          researchPrompt: researchPrompt.trim(),
-          industry: industry.trim() || undefined,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Failed to run research.");
-        return;
+      for (let i = 0; i < chunks.length; i++) {
+        setProgress({ done: allResults.length, total: companies.length });
+        const chunk = chunks[i];
+        const res = await fetch("/api/signal-research/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            companies: chunk.map((c) => ({
+              company: c.company.trim(),
+              domain: c.domain?.trim() || undefined,
+              industry: c.industry?.trim() || industry.trim() || undefined,
+              keyContacts: c.keyContacts?.trim() || undefined,
+              targetRole: c.targetRole?.trim() || undefined,
+            })),
+            researchPrompt: researchPrompt.trim(),
+            industry: industry.trim() || undefined,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setError(data.error || "Failed to run research.");
+          return;
+        }
+        if (data.output?.companies?.length) {
+          allResults.push(...data.output.companies);
+        }
       }
-      setOutput(data.output);
+      setProgress(null);
+      setOutput({
+        researchFocus: researchPrompt.trim(),
+        industry: industry.trim() || undefined,
+        companies: allResults,
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Network error.");
+      setProgress(null);
     } finally {
       setIsLoading(false);
     }
@@ -233,36 +255,45 @@ export function SignalResearchGenerator() {
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                CSV: Company, Email Domain, Industry. Max 4 per run. ~2 min per company (60s delay between).
+                CSV: Company, Domain, Industry; or contact sheet: Company, First Name, Last Name, Job Title, Email (domain from email if missing). All companies processed in batches of 2 (~2 min each, 60s between).
               </p>
               {companies.length > 0 && (
-                <div className="mt-2 max-h-48 overflow-y-auto space-y-1 rounded border p-2">
+                <div className="mt-2 max-h-56 overflow-y-auto space-y-1 rounded border p-2">
                   {companies.map((c, i) => (
                     <div
                       key={i}
-                      className="flex items-center gap-1 rounded bg-muted/50 px-2 py-1 text-sm"
+                      className="rounded bg-muted/50 px-2 py-1 text-sm space-y-0.5"
                     >
-                      <Input
-                        value={c.company}
-                        onChange={(e) => updateCompany(i, "company", e.target.value)}
-                        className="h-7 text-sm border-0 bg-transparent px-1"
-                        placeholder="Company"
-                      />
-                      <Input
-                        value={c.domain ?? ""}
-                        onChange={(e) => updateCompany(i, "domain", e.target.value)}
-                        className="h-7 text-sm border-0 bg-transparent px-1 flex-1 min-w-0"
-                        placeholder="Domain"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 shrink-0"
-                        onClick={() => removeCompany(i)}
-                      >
-                        ×
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Input
+                          value={c.company}
+                          onChange={(e) => updateCompany(i, "company", e.target.value)}
+                          className="h-7 text-sm border-0 bg-transparent px-1 flex-1 min-w-0"
+                          placeholder="Company"
+                        />
+                        <Input
+                          value={c.domain ?? ""}
+                          onChange={(e) => updateCompany(i, "domain", e.target.value)}
+                          className="h-7 text-sm border-0 bg-transparent px-1 w-24 min-w-0"
+                          placeholder="Domain"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 shrink-0"
+                          onClick={() => removeCompany(i)}
+                        >
+                          ×
+                        </Button>
+                      </div>
+                      {(c.keyContacts || c.targetRole) && (
+                        <p className="text-xs text-muted-foreground truncate pl-1" title={[c.keyContacts, c.targetRole].filter(Boolean).join(" · ")}>
+                          {c.keyContacts && "Contacts: " + c.keyContacts}
+                          {c.keyContacts && c.targetRole && " · "}
+                          {c.targetRole && "Role: " + c.targetRole}
+                        </p>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -276,12 +307,12 @@ export function SignalResearchGenerator() {
             >
               {isLoading ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Researching…
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {progress ? `Researching ${progress.done + 1}–${Math.min(progress.done + 2, progress.total)} of ${progress.total}…` : "Researching…"}
                 </>
               ) : (
                 <>
-                  <Search className="h-4 w-4" /> Run research ({Math.min(companies.length, 2)}
-                  {companies.length > 2 ? ` of ${companies.length}` : ""} companies)
+                  <Search className="h-4 w-4" /> Run research ({companies.length} companies)
                 </>
               )}
             </Button>

@@ -14,8 +14,10 @@ const RequestSchema = z.object({
       company: z.string().min(1),
       domain: z.string().optional(),
       industry: z.string().optional(),
+      keyContacts: z.string().optional(),
+      targetRole: z.string().optional(),
     })
-  ).min(1).max(4),
+  ).min(1).max(50),
   researchPrompt: z.string().min(1, "Research focus is required"),
   industry: z.string().optional(),
 });
@@ -42,7 +44,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { companies, researchPrompt, industry } = parsed.data;
-    const toProcess = companies.slice(0, 2); // cap at 2 for rate limits; accept up to 4 for backward compat
+    const toProcess = companies.slice(0, 2); // cap at 2 per request for rate limits
     const results: ResearchOutput["companies"] = [];
 
     const DELAY_MS = 60_000; // 60s between companies – web_search multi-turn burns ~20k tokens/company at 30k ITPM
@@ -60,6 +62,8 @@ export async function POST(request: NextRequest) {
               companyDomain: c.domain,
               industry: c.industry ?? industry,
               researchPrompt,
+              keyContacts: c.keyContacts,
+              targetRole: c.targetRole,
             });
             break;
           } catch (rateErr: unknown) {
