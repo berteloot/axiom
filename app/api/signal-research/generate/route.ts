@@ -24,10 +24,10 @@ export async function POST(request: NextRequest) {
   try {
     await requireAccountId(request);
 
-    const apiKey = process.env.OPENAI_API_KEY;
+    const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
-        { error: "Signal research requires OPENAI_API_KEY" },
+        { error: "Signal research requires ANTHROPIC_API_KEY (same as ABM/Ad Copy)" },
         { status: 503 }
       );
     }

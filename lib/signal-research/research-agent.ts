@@ -1,10 +1,10 @@
 /**
- * Research agent: uses OpenAI with web_search to gather signals from
+ * Research agent: uses Claude Messages API with web_search to gather signals from
  * websites, forums (Reddit), job postings, press, and partner sites.
  * User prompts define the research focus (generic - e.g., SAP, cloud, AI).
  */
 
-import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 import type {
   CompanyResearch,
   ResearchSignal,
@@ -13,15 +13,12 @@ import type {
   PriorityTier,
 } from "./types";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-const SIGNAL_CATEGORIES = [
-  "website",
-  "job_postings",
-  "press_news",
-  "forums_communities",
-  "partner_vendor",
-] as const;
+export interface ResearchAgentInput {
+  company: string;
+  companyDomain?: string;
+  industry?: string;
+  researchPrompt: string;
+}
 
 function scoreToPriority(score: number): PriorityTier {
   if (score >= 8) return "P1-HOT";
@@ -30,17 +27,17 @@ function scoreToPriority(score: number): PriorityTier {
   return "P4-LOW";
 }
 
-export interface ResearchAgentInput {
-  company: string;
-  companyDomain?: string;
-  industry?: string;
-  researchPrompt: string;
-}
-
 export async function runResearchForCompany(
   input: ResearchAgentInput
 ): Promise<CompanyResearch> {
   const { company, companyDomain, industry, researchPrompt } = input;
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error("Signal research requires ANTHROPIC_API_KEY");
+  }
+
+  const anthropic = new Anthropic({ apiKey });
 
   const systemPrompt = `You are a sales intelligence research agent. Your job is to research companies and identify buying signals relevant to a specific sales opportunity.
 
@@ -95,18 +92,22 @@ Use web search to check:
 
 Return ONLY valid JSON in a code block.`;
 
-  const response = await openai.responses.create({
-    model: process.env.OPENAI_WEB_SEARCH_MODEL || "gpt-4o",
-    tools: [{ type: "web_search" }],
-    tool_choice: "auto",
-    input: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    text: { verbosity: "medium" },
+  const response = await anthropic.messages.create({
+    model: process.env.CLAUDE_SIGNAL_RESEARCH_MODEL || "claude-sonnet-4-20250514",
+    max_tokens: 4096,
+    system: systemPrompt,
+    messages: [{ role: "user", content: userPrompt }],
+    tools: [{ type: "web_search_20250305" as const, name: "web_search" as const, max_uses: 5 }],
+    tool_choice: { type: "auto" as const },
   });
 
-  const textOutput = (response as { output_text?: () => string }).output_text?.() ?? "";
+  let textOutput = "";
+  for (const block of response.content) {
+    if (block.type === "text") {
+      textOutput += block.text;
+    }
+  }
+
   const jsonMatch = textOutput.match(/\{[\s\S]*\}/);
   const jsonStr = jsonMatch ? jsonMatch[0] : textOutput;
 
@@ -114,7 +115,7 @@ Return ONLY valid JSON in a code block.`;
   try {
     parsed = JSON.parse(jsonStr) as Record<string, unknown>;
   } catch {
-    throw new Error("Failed to parse research JSON from model response");
+    throw new Error("Failed to parse research JSON from Claude response");
   }
 
   const signals = (parsed.signals as Record<string, unknown>[] ?? []).map((s) => ({

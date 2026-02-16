@@ -8,5 +8,9 @@ export default function SignalResearchPage() {
   useEffect(() => {
     router.replace("/dashboard/abm");
   }, [router]);
-  return null;
+  return (
+    <div className="flex items-center justify-center py-12 text-muted-foreground">
+      Redirecting to ABM…
+    </div>
+  );
 }
