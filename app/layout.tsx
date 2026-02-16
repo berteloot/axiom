@@ -5,7 +5,6 @@ import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { AccountProvider } from "@/lib/account-context";
 import { SessionProvider } from "@/components/SessionProvider";
-import { BillingGuard } from "@/components/BillingGuard";
 import { FormPersistenceProvider } from "@/components/FormPersistenceProvider";
 
 const robotoCondensed = Roboto_Condensed({
@@ -17,7 +16,8 @@ const robotoCondensed = Roboto_Condensed({
 export const metadata: Metadata = {
   title: "Asset Organizer",
   applicationName: "Asset Organizer",
-  description: "Marketing Asset Intelligence App",
+  description:
+    "Asset Organizer is a marketing asset intelligence application that helps teams upload, analyze, and organize marketing assets with AI-powered categorization and insights.",
   openGraph: {
     title: "Asset Organizer",
     siteName: "Asset Organizer",
@@ -36,9 +36,7 @@ export default function RootLayout({
           <AccountProvider>
             <FormPersistenceProvider>
               <Navigation />
-              <BillingGuard>
-                {children}
-              </BillingGuard>
+              {children}
               <Footer />
             </FormPersistenceProvider>
           </AccountProvider>
