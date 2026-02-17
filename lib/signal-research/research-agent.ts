@@ -68,8 +68,8 @@ function parseResponse(
       company,
       industry,
       overallScore: 0,
-      salesOpportunity: "Response truncated – model output was cut off before completing JSON",
-      keyEvidence: "Failed to parse research JSON (truncated_response)",
+      salesOpportunity: "Response was cut off before completion.",
+      keyEvidence: "Research output was truncated; try again or use a shorter research focus.",
       signals: [],
     };
   }
@@ -132,7 +132,7 @@ async function runResearchViaMessagesApi(
 
   const response = await anthropic.messages.create({
     model: process.env.CLAUDE_SIGNAL_RESEARCH_MODEL || DEFAULT_MODEL,
-    max_tokens: 2048,
+    max_tokens: 2500,
     system: systemPrompt,
     messages: [{ role: "user", content: userPrompt }],
     tools: [WEB_SEARCH_TOOL],
@@ -156,7 +156,7 @@ async function runSkillsEnhancedResearch(
 
   const response = await anthropic.beta.messages.create({
     model: process.env.CLAUDE_SIGNAL_RESEARCH_MODEL || DEFAULT_MODEL,
-    max_tokens: 2048,
+    max_tokens: 2500,
     betas: [...BETA_BRANDS],
     container: {
       skills: [

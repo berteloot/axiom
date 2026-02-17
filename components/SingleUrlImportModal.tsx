@@ -222,8 +222,8 @@ export function SingleUrlImportModal({
             <Label htmlFor="icpTargets">ICP Targets</Label>
             <MultiSelectCombobox
               options={icpOptions}
-              selectedValues={selectedIcpTargets}
-              onSelectionChange={setSelectedIcpTargets}
+              value={selectedIcpTargets}
+              onChange={setSelectedIcpTargets}
               placeholder={isLoadingIcp ? "Loading job titles..." : "Select ICP targets..."}
               disabled={isImporting || isLoadingIcp}
             />
