@@ -3,7 +3,7 @@
  * Restricts access to only authorized email domains
  */
 
-const ALLOWED_EMAIL_DOMAINS = ["nytromarketing.com"];
+const ALLOWED_EMAIL_DOMAINS = ["nytromarketing.com", "dm-international.com"];
 
 // Admin emails that bypass domain restrictions
 const ADMIN_EMAILS = ["berteloot@gmail.com", "melissa@cleardigitallabs.com"];
@@ -39,5 +39,5 @@ export function isAllowedEmailDomain(email: string): boolean {
  * @returns Error message string
  */
 export function getEmailDomainError(): string {
-  return "Access is restricted to @NytroMarketing.com email addresses only.";
+  return "Access is restricted to authorized email domains only.";
 }
